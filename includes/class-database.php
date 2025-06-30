@@ -1,200 +1,609 @@
 <?php
 
-if (!defined('ABSPATH')) {
-    exit; // Exit if accessed directly
-}
+(!defined('ABSPATH')) ?? exit;
 
 class Database
 {
-
-    /**
-     * Create Customers Table
-     */
     public static function create_customers_table()
     {
         global $wpdb;
-
         $table_name = $wpdb->prefix . 'kit_customers';
         $charset_collate = $wpdb->get_charset_collate();
 
         $sql = "CREATE TABLE $table_name (
-            id mediumint(9) NOT NULL AUTO_INCREMENT,
-            cust_id mediumint(10),
-            name varchar(255) NOT NULL,
-            surname varchar(255) NOT NULL,
-            cell varchar(255) NOT NULL,
-            address varchar(255) NOT NULL,
-            PRIMARY KEY  (id)
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            cust_id MEDIUMINT(10) UNSIGNED NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            surname VARCHAR(255) NOT NULL,
+            cell VARCHAR(20) NOT NULL,
+            email VARCHAR(100),
+            address TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY cust_id (cust_id) -- ✅ This is the missing part!
         ) $charset_collate;";
 
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
     }
-    
-    /**
-     * Create Services Table
-     */
     public static function create_services_table()
     {
         global $wpdb;
-
         $table_name = $wpdb->prefix . 'kit_services';
         $charset_collate = $wpdb->get_charset_collate();
 
         $sql = "CREATE TABLE $table_name (
-            id mediumint(9) NOT NULL AUTO_INCREMENT,
-            name varchar(255) NOT NULL,
-            description text NOT NULL,
-            image varchar(255) DEFAULT NULL,
-            PRIMARY KEY  (id)
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            name VARCHAR(255) NOT NULL,
+            description TEXT NOT NULL,
+            image VARCHAR(255),
+            PRIMARY KEY (id)
         ) $charset_collate;";
-
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
     }
-
-    /**
-     * Create Quotations Table
-     */
-    public static function create_quotations_table()
+    public static function create_deliveries_table()
     {
         global $wpdb;
-
-        $table_name = $wpdb->prefix . 'kit_quotations'; // Use a unique table name
+        $table_name = $wpdb->prefix . 'kit_deliveries';
         $charset_collate = $wpdb->get_charset_collate();
 
-        // SQL query to create the quotations table with additional fields
         $sql = "CREATE TABLE $table_name (
-            id mediumint(9) NOT NULL AUTO_INCREMENT,
-            quoteid int(50) NOT NULL,
-            customer_id varchar(50) NOT NULL,
-            waybill_no varchar(50) NOT NULL,
-            subtotal varchar(50) NOT NULL,
-            total varchar(50) NOT NULL,
-            date_received date NOT NULL,
-            created_by varchar(255) NOT NULL,
-            status ENUM('pending', 'in_progress', 'completed') DEFAULT 'pending',
-            created_at datetime DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY  (id)
-        ) $charset_collate;";
-
-        // Include the upgrade.php to execute the query
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            delivery_reference VARCHAR(100) NOT NULL,
+            direction_id INT UNSIGNED NOT NULL,
+            dispatch_date DATE,
+            truck_number VARCHAR(50),
+            status ENUM('scheduled', 'in_transit', 'delivered') DEFAULT 'scheduled',
+            created_by INT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            FOREIGN KEY (direction_id) REFERENCES {$wpdb->prefix}kit_shipping_directions(id)
+            ) $charset_collate;";
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
     }
-
-   /**
-     * Create Waybill Table
-     */
     public static function create_waybills_table()
     {
         global $wpdb;
-
-        $table_name = $wpdb->prefix . 'kit_waybills'; // Use a unique table name
+        $table_name = $wpdb->prefix . 'kit_waybills';
         $charset_collate = $wpdb->get_charset_collate();
 
-        // SQL query to create the waybill table with additional fields
         $sql = "CREATE TABLE $table_name (
-            id mediumint(9) NOT NULL AUTO_INCREMENT,
-            waybill_id mediumint(10),
-            customer_id varchar(50) NOT NULL,
-            waybill_no varchar(50) NOT NULL,
-            date_received date NOT NULL,
-            customer_name varchar(100) NOT NULL,
-            is_new_customer tinyint(1) DEFAULT 0,
-            destination_country varchar(100) NOT NULL,
-            destination_city varchar(100) NOT NULL,
-            consignor_name varchar(100) NOT NULL,
-            consignor_code varchar(50),
-            warehouse varchar(50),
-            consignor_address text,
-            contact_name varchar(100),
-            vat_number varchar(50),
-            telephone varchar(20),
-            product_invoice_number varchar(50),
-            product_invoice_amount decimal(10,2),
-            item_length decimal(10,2),
-            item_width decimal(10,2),
-            item_height decimal(10,2),
-            total_volume decimal(10,2),
-            total_mass_kg decimal(10,2),
-            unit_volume decimal(10,2),
-            unit_mass decimal(10,2),
-            charge_basis varchar(20),
-            mass_charge decimal(10,2),
-            volume_charge decimal(10,2),
-            created_by INT(10) NOT NULL,
-            last_updated_by INT(10) NOT NULL,
-            last_updated_at datetime DEFAULT CURRENT_TIMESTAMP,
-            status ENUM('pending', 'in_progress', 'completed') DEFAULT 'pending',
-            tracking_number varchar(50),
-            created_at datetime DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY  (id)
-        ) $charset_collate;";
+        id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        direction_id INT UNSIGNED NOT NULL,
+        delivery_id INT UNSIGNED NOT NULL,
+        customer_id MEDIUMINT(10) UNSIGNED NOT NULL,
+        approval ENUM('approved','pending','cancelled', 'rejected', 'completed') DEFAULT 'pending',
+        approval_userid INT UNSIGNED NULL,
+        waybill_no INT UNSIGNED NOT NULL,
+        product_invoice_number VARCHAR(50),
+        product_invoice_amount DECIMAL(10,2),
+        item_length DECIMAL(10,2),
+        item_width DECIMAL(10,2),
+        item_height DECIMAL(10,2),
+        total_mass_kg DECIMAL(10,2),
+        total_volume DECIMAL(10,2),
+        mass_charge DECIMAL(10,2),
+        volume_charge DECIMAL(10,2),
+        charge_basis VARCHAR(20),
+        vat_number VARCHAR(50),
+        warehouse VARCHAR(50),
+        miscellaneous LONGTEXT,
+        include_sad500 TINYINT(1) DEFAULT 0,
+        include_sadc TINYINT(1) DEFAULT 0,
+        return_load TINYINT(1) DEFAULT 0,
+        tracking_number VARCHAR(50),
+        created_by INT UNSIGNED NOT NULL,
+        last_updated_by INT UNSIGNED NOT NULL,
+        status ENUM('pending', 'quoted', 'paid', 'completed') DEFAULT 'pending',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        FOREIGN KEY (direction_id) REFERENCES {$wpdb->prefix}kit_shipping_directions(id),
+        FOREIGN KEY (delivery_id) REFERENCES {$wpdb->prefix}kit_deliveries(id),
+        FOREIGN KEY (customer_id) REFERENCES {$wpdb->prefix}kit_customers(cust_id),
+        INDEX (status),
+        INDEX (customer_id),
+        UNIQUE KEY waybill_no (waybill_no)
+    ) $charset_collate;";
 
-        // Include the upgrade.php to execute the query
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
     }
-
-    /**
-     * Delete Services Table
-     */
-    public static function delete_services_table()
+    public static function create_waybill_items_table()
     {
         global $wpdb;
-        $table_name = $wpdb->prefix . 'kit_services';
-        $wpdb->query("DROP TABLE IF EXISTS $table_name");
-    }
+        $table_name = $wpdb->prefix . 'kit_waybill_items';
+        $charset_collate = $wpdb->get_charset_collate();
 
-    /**
-     * Delete Quotations Table
-     */
-    public static function delete_quotations_table()
+        $sql = "CREATE TABLE $table_name (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            waybillno INT UNSIGNED NOT NULL,
+            item_name VARCHAR(255) NOT NULL,
+            quantity INT NOT NULL,
+            unit_price DECIMAL(10,2) NOT NULL,
+            unit_mass DECIMAL(10,2) DEFAULT 0.00,
+            unit_volume DECIMAL(10,2) DEFAULT 0.00,
+            total_price DECIMAL(10,2) DEFAULT 0.00,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            FOREIGN KEY (waybillno) REFERENCES {$wpdb->prefix}kit_waybills(waybill_no) ON DELETE CASCADE
+        ) $charset_collate;";
+
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+    }
+    public static function create_invoices_table()
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'kit_invoices';
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE $table_name (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            waybill_id INT UNSIGNED NOT NULL,
+            customer_id INT UNSIGNED NOT NULL,
+            invoice_number VARCHAR(50) NOT NULL,
+            invoice_date DATE NOT NULL,
+            due_date DATE NOT NULL,
+            subtotal DECIMAL(10,2) NOT NULL,
+            vat_amount DECIMAL(10,2) DEFAULT 0.00,
+            total DECIMAL(10,2) NOT NULL,
+            status ENUM('unpaid', 'paid', 'overdue') DEFAULT 'unpaid',
+            created_by INT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_updated_by INT NULL,
+            last_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            FOREIGN KEY (waybill_id) REFERENCES {$wpdb->prefix}kit_waybills(id),
+            FOREIGN KEY (customer_id) REFERENCES {$wpdb->prefix}kit_customers(id),
+            INDEX (status)
+        ) $charset_collate;";
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+    }
+    public static function create_quotations_table()
     {
         global $wpdb;
         $table_name = $wpdb->prefix . 'kit_quotations';
-        $wpdb->query("DROP TABLE IF EXISTS $table_name");
-    }
-    /**
-     * Delete Waybill Table
-     */
-    public static function delete_waybills_table()
-    {
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'kit_waybills';
-        $wpdb->query("DROP TABLE IF EXISTS $table_name");
-    }
-    /**
-     * Delete Customers Table
-     */
-    public static function delete_customers_table()
-    {
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'kit_customers';
-        $wpdb->query("DROP TABLE IF EXISTS $table_name");
-    }
+        $charset_collate = $wpdb->get_charset_collate();
 
-    /**
-     * Run on Plugin Activation
-     */
+        $sql = "CREATE TABLE $table_name (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            delivery_id INT UNSIGNED NOT NULL,
+            waybill_id INT UNSIGNED NOT NULL,
+            waybillNo VARCHAR(255) NOT NULL,
+            customer_id MEDIUMINT(10) UNSIGNED NOT NULL,
+            subtotal DECIMAL(10,2) NOT NULL,
+            vat_amount DECIMAL(10,2) DEFAULT 0.00,
+            total DECIMAL(10,2) NOT NULL,
+            quotation_notes TEXT NULL,
+            status ENUM('pending', 'sent', 'accepted', 'declined') DEFAULT 'pending',
+            created_by INT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_updated_by INT NULL,
+            last_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            FOREIGN KEY (delivery_id) REFERENCES {$wpdb->prefix}kit_deliveries(id),
+            FOREIGN KEY (waybill_id) REFERENCES {$wpdb->prefix}kit_waybills(id) ON DELETE CASCADE,
+            FOREIGN KEY (customer_id) REFERENCES {$wpdb->prefix}kit_customers(cust_id),
+            INDEX (status)
+        ) $charset_collate;";
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+    }
+    public static function create_operating_countries_table()
+    {
+        global $wpdb;
+
+        $table_name = $wpdb->prefix . 'kit_operating_countries';
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE $table_name (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            country_name VARCHAR(100) NOT NULL,
+            country_code VARCHAR(10) NULL,
+            is_active TINYINT(1) DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY country_code (country_code)
+        ) $charset_collate;";
+
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+
+        // Prepopulate common operating countries
+        $countries = [
+            ['South Africa', 'ZA', 1],
+            ['Tanzania', 'TZ', 1],
+            ['Botswana', 'BW', 0],
+            ['Zimbabwe', 'ZW', 0],
+            ['Mozambique', 'MZ', 0],
+            ['Zambia', 'ZM', 0],
+            ['Namibia', 'NA', 0],
+            ['Malawi', 'MW', 0],
+            ['Eswatini', 'SZ', 0],
+            ['Lesotho', 'LS', 0],
+        ];
+
+        foreach ($countries as $country) {
+            list($name, $code, $activecode) = $country;
+
+            $exists = $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM $table_name WHERE country_code = %s",
+                $code
+            ));
+
+            if (!$exists) {
+                $wpdb->insert($table_name, [
+                    'country_name' => $name,
+                    'country_code' => $code,
+                    'is_active' => $activecode,
+                    'created_at' => current_time('mysql'),
+                ], [
+                    '%s',
+                    '%s',
+                    '%d',
+                    '%s'
+                ]);
+            }
+        }
+    }
+    public static function create_operating_cities_table()
+    {
+        global $wpdb;
+
+        $city_table = $wpdb->prefix . 'kit_operating_cities';
+        $country_table = $wpdb->prefix . 'kit_operating_countries';
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE $city_table (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            country_id INT UNSIGNED NOT NULL,
+            city_name VARCHAR(100) NOT NULL,
+            is_active TINYINT(1) DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            FOREIGN KEY (country_id) REFERENCES $country_table(id) ON DELETE CASCADE
+        ) $charset_collate;";
+
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+
+        $cities = [
+            'ZA' => ['Johannesburg', 'Cape Town', 'Durban', 'Pretoria', 'Port Elizabeth'],
+            'TZ' => ['Dar es Salaam', 'Dodoma', 'Arusha', 'Mbeya', 'Mwanza'],
+            'BW' => ['Gaborone', 'Francistown', 'Maun', 'Molepolole', 'Serowe'],
+            'ZW' => ['Harare', 'Bulawayo', 'Mutare', 'Gweru', 'Kwekwe'],
+            'MZ' => ['Maputo', 'Matola', 'Beira', 'Nampula', 'Chimoio'],
+            'ZM' => ['Lusaka', 'Kitwe', 'Ndola', 'Livingstone', 'Chingola'],
+            'NA' => ['Windhoek', 'Swakopmund', 'Walvis Bay', 'Otjiwarongo', 'Rundu'],
+            'MW' => ['Lilongwe', 'Blantyre', 'Mzuzu', 'Zomba', 'Kasungu'],
+            'SZ' => ['Mbabane', 'Manzini', 'Lobamba', 'Siteki', 'Piggs Peak'],
+            'LS' => ['Maseru', 'Teyateyaneng', 'Leribe', 'Maputsoe', 'Mohales Hoek']
+        ];
+
+        foreach ($cities as $country_code => $city_list) {
+            $country_id = $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM $country_table WHERE country_code = %s",
+                $country_code
+            ));
+
+            if ($country_id) {
+                foreach ($city_list as $city) {
+                    $exists = $wpdb->get_var($wpdb->prepare(
+                        "SELECT COUNT(*) FROM $city_table WHERE city_name = %s AND country_id = %d",
+                        $city,
+                        $country_id
+                    ));
+
+                    if (!$exists) {
+                        $wpdb->insert($city_table, [
+                            'country_id' => $country_id,
+                            'city_name' => $city,
+                            'is_active' => 1,
+                            'created_at' => current_time('mysql')
+                        ], [
+                            '%d',
+                            '%s',
+                            '%d',
+                            '%s'
+                        ]);
+                    }
+                }
+            }
+        }
+    }
+    public static function create_shipping_directions_table()
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'kit_shipping_directions';
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE $table_name (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            origin_country_id INT UNSIGNED NOT NULL,
+            destination_country_id INT UNSIGNED NOT NULL,
+            description VARCHAR(255) NULL,
+            is_active TINYINT(1) DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            FOREIGN KEY (origin_country_id) REFERENCES {$wpdb->prefix}kit_operating_countries(id),
+            FOREIGN KEY (destination_country_id) REFERENCES {$wpdb->prefix}kit_operating_countries(id),
+            UNIQUE KEY direction_pair (origin_country_id, destination_country_id)
+        ) $charset_collate;";
+
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+
+        // Insert default active routes
+        $sa_id = $wpdb->get_var("SELECT id FROM {$wpdb->prefix}kit_operating_countries WHERE country_name = 'South Africa'");
+        $tanzania_id = $wpdb->get_var("SELECT id FROM {$wpdb->prefix}kit_operating_countries WHERE country_name = 'Tanzania'");
+
+        if ($sa_id && $tanzania_id) {
+            $existing_route_1 = $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM {$wpdb->prefix}kit_shipping_directions WHERE origin_country_id = %d AND destination_country_id = %d",
+                $sa_id,
+                $tanzania_id
+            ));
+
+            $existing_route_2 = $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM {$wpdb->prefix}kit_shipping_directions WHERE origin_country_id = %d AND destination_country_id = %d",
+                $tanzania_id,
+                $sa_id
+            ));
+
+            if (!$existing_route_1) {
+                $wpdb->insert(
+                    "{$wpdb->prefix}kit_shipping_directions",
+                    [
+                        'origin_country_id' => $sa_id,
+                        'destination_country_id' => $tanzania_id,
+                        'description' => 'South Africa to Tanzania',
+                        'is_active' => 1
+                    ]
+                );
+            }
+
+            if (!$existing_route_2) {
+                $wpdb->insert(
+                    "{$wpdb->prefix}kit_shipping_directions",
+                    [
+                        'origin_country_id' => $tanzania_id,
+                        'destination_country_id' => $sa_id,
+                        'description' => 'Tanzania to South Africa',
+                        'is_active' => 1
+                    ]
+                );
+            }
+        }
+    }
+    public static function create_shipping_rate_types_table()
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'kit_shipping_rate_types';
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE $table_name (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            type_name VARCHAR(50) NOT NULL,
+            description TEXT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY type_name (type_name)
+        ) $charset_collate;";
+
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+
+        // Insert default rate types
+        $rate_types = ['Consolidated', 'Dedicated'];
+        foreach ($rate_types as $type) {
+            $wpdb->insert($table_name, [
+                'type_name' => $type,
+                'description' => $type . ' shipping rate type',
+                'created_at' => current_time('mysql')
+            ]);
+        }
+    }
+    public static function create_shipping_rates_mass_table()
+    {
+        global $wpdb;
+        $table_name =  $wpdb->prefix . 'kit_shipping_rates_mass';
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE $table_name (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            direction_id INT UNSIGNED NOT NULL,
+            rate_type_id INT UNSIGNED NOT NULL,
+            min_weight DECIMAL(10,2) NOT NULL,
+            max_weight DECIMAL(10,2) NOT NULL,
+            rate_per_kg DECIMAL(10,2) NOT NULL,
+            effective_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+            is_active TINYINT(1) DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            FOREIGN KEY (direction_id) REFERENCES {$wpdb->prefix}kit_shipping_directions(id),
+            FOREIGN KEY (rate_type_id) REFERENCES {$wpdb->prefix}kit_shipping_rate_types(id),
+            INDEX weight_range (min_weight, max_weight)
+        ) $charset_collate;";
+
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+
+        $wpdb->query("
+        INSERT INTO $table_name (direction_id, rate_type_id, min_weight, max_weight, rate_per_kg)
+        VALUES 
+        (1, 1, 10.00, 500.00, 40.00),
+        (1, 1, 500.01, 1000.00, 35.00),
+        (1, 1, 1000.01, 2500.00, 30.00),
+        (1, 1, 2500.01, 5000.00, 25.00),
+        (1, 1, 5000.01, 7500.00, 20.00),
+        (1, 1, 7500.01, 10000.00, 17.50),
+        (1, 1, 10000.01, 999999.99, 15.00),
+        (2, 1, 10.00, 500.00, 30.00),
+        (2, 1, 500.01, 1000.00, 25.00),
+        (2, 1, 1000.01, 2500.00, 20.00),
+        (2, 1, 2500.01, 5000.00, 15.00),
+        (2, 1, 5000.01, 7500.00, 12.50),
+        (2, 1, 7500.01, 10000.00, 10.00),
+        (2, 1, 10000.01, 999999.99, 7.50)");
+    }
+    public static function create_shipping_rates_volume_table()
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'kit_shipping_rates_volume';
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE $table_name (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            direction_id INT UNSIGNED NOT NULL,
+            rate_type_id INT UNSIGNED NOT NULL,
+            min_volume DECIMAL(10,2) NOT NULL,
+            max_volume DECIMAL(10,2) NOT NULL,
+            rate_per_m3 DECIMAL(10,2) NOT NULL,
+            effective_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+            is_active TINYINT(1) DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            FOREIGN KEY (direction_id) REFERENCES {$wpdb->prefix}kit_shipping_directions(id),
+            FOREIGN KEY (rate_type_id) REFERENCES {$wpdb->prefix}kit_shipping_rate_types(id),
+            INDEX volume_range (min_volume, max_volume)
+        ) $charset_collate;";
+
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+
+        $wpdb->query("
+        INSERT INTO $table_name
+        (`direction_id`, `rate_type_id`, `min_volume`, `max_volume`, `rate_per_m3`, `is_active`) 
+        VALUES
+        (1, 1, 0.00, 1.00, 7500.00, 1),
+        (1, 1, 1.01, 2.00, 7000.00, 1),
+        (1, 1, 2.01, 5.00, 6500.00, 1),
+        (1, 1, 5.01, 10.00, 5500.00, 1),
+        (1, 1, 10.01, 15.00, 5000.00, 1),
+        (1, 1, 15.01, 20.00, 4500.00, 1),
+        (1, 1, 20.01, 30.00, 4000.00, 1),
+        (1, 1, 30.01, 9999.99, 3500.00, 1),
+        (2, 1, 0.00, 1.00, 4000.00, 1),
+        (2, 1, 1.01, 2.00, 3500.00, 1),
+        (2, 1, 2.01, 5.00, 3000.00, 1),
+        (2, 1, 5.01, 10.00, 2500.00, 1),
+        (2, 1, 10.01, 15.00, 2000.00, 1),
+        (2, 1, 15.01, 20.00, 2000.00, 1),
+        (2, 1, 20.01, 30.00, 2000.00, 1),
+        (2, 1, 30.01, 9999.99, 2000.00, 1)
+        ");
+    }
+    public static function create_shipping_dedicated_truck_rates_table()
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'kit_shipping_dedicated_truck_rates';
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE $table_name (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            direction_id INT UNSIGNED NOT NULL,
+            truck_type VARCHAR(50) NOT NULL,
+            capacity_kg DECIMAL(10,2) NOT NULL,
+            flat_rate DECIMAL(10,2) NOT NULL,
+            effective_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+            is_active TINYINT(1) DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            FOREIGN KEY (direction_id) REFERENCES {$wpdb->prefix}kit_shipping_directions(id),
+            INDEX truck_type (truck_type)
+        ) $charset_collate;";
+
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+
+        $wpdb->query("
+        INSERT INTO $table_name 
+        (direction_id, truck_type, capacity_kg, flat_rate) VALUES
+        (1, '8 Ton Truck', 7500, 130000.00),
+        (1, '15 Ton Truck', 14500, 155000.00),
+        (1, '30 Ton Truck', 28000, 220000.00),
+        (2, '8 Ton Truck', 7500, 78000.00),
+        (2, '15 Ton Truck', 14500, 93000.00),
+        (2, '30 Ton Truck', 28000, 132000.00);");
+    }
+    public static function create_discounts_table()
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'kit_discounts';
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE $table_name (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            discount_name VARCHAR(100),
+            discount_type ENUM('percentage', 'fixed') NOT NULL,
+            amount DECIMAL(10,2) NOT NULL,
+            condition_json TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id)
+        ) $charset_collate;";
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+    }
+    public static function delete_table($name)
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . $name;
+        $wpdb->query("DROP TABLE IF EXISTS $table_name");
+    }
     public static function activate()
     {
         self::create_customers_table();
         self::create_services_table();
+        self::create_operating_countries_table();
+        self::create_operating_cities_table();
+        self::create_shipping_directions_table();
+        self::create_shipping_rate_types_table();
+        self::create_shipping_rates_mass_table();
+        self::create_shipping_rates_volume_table();
+        self::create_shipping_dedicated_truck_rates_table();
+        self::create_deliveries_table();
         self::create_waybills_table();
+        self::create_waybill_items_table();
         self::create_quotations_table();
+        self::create_invoices_table();
+        self::create_discounts_table();
     }
-
-    /**
-     * Run on Plugin Deactivation
-     */
     public static function deactivate()
     {
-        // Ensure the tables are deleted
-        self::delete_customers_table();
-        self::delete_quotations_table();
-        self::delete_waybills_table();
-        self::delete_services_table();
+        // 1. Drop tables that depend on everything else (deepest children)
+        self::delete_table('kit_waybill_items');
+        self::delete_table('kit_quotations');
+        self::delete_table('kit_invoices');
+        self::delete_table('kit_waybills');
+
+        // 2. Drop delivery table (depends on directions & cities)
+        self::delete_table('kit_deliveries');
+
+        // 3. Drop rate tables (depend on directions & rate types)
+        self::delete_table('kit_shipping_rates_mass');
+        self::delete_table('kit_shipping_rates_volume');
+        self::delete_table('kit_shipping_dedicated_truck_rates');
+
+        // 4. Drop direction and rate type tables (parents of above)
+        self::delete_table('kit_shipping_rate_types');
+        self::delete_table('kit_shipping_directions');
+
+        // 5. Drop cities (they depend on countries)
+        self::delete_table('kit_operating_cities');
+
+        // 6. Now safe to drop countries
+        self::delete_table('kit_operating_countries');
+
+        // 7. Drop remaining unrelated base tables
+        self::delete_table('kit_customers');
+        //self::delete_table('kit_services');
+        self::delete_table('kit_discounts');
     }
 }

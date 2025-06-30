@@ -166,7 +166,6 @@ function kit_services_shortcode() {
         $output .= '<h5>' . esc_html( $service->name ) . '</h5>';
         $output .= '<p>' . esc_html( $service->description ) . '</p>';
         $output .= '</div>';
-        $output .= '<a href="' . esc_html( $service->name ) . '" class="read-more">Read More</a>';
         $output .= '</div>';
     }
     $output .= '</div>';

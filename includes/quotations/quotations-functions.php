@@ -5,148 +5,450 @@ if (!defined('ABSPATH')) {
 
 global $wpdb;
 $table_quotations = $wpdb->prefix . "kit_quotations";
+$table_waybills = $wpdb->prefix . "kit_waybills";
 
-
-// In your main plugin file (e.g., my-plugin/my-plugin.php)
-add_action('wp_ajax_generate_pdf', 'handle_pdf_generation');
-add_action('wp_ajax_nopriv_generate_pdf', 'handle_pdf_generation'); // For public access
-
-function handle_pdf_generation() {
-    
-    // Verify nonce for security
-    check_ajax_referer('pdf_nonce', 'security');
-
-    // Get quotation ID
-    $quotation_id = isset($_GET['quotation_id']) ? intval($_GET['quotation_id']) : 0;
-    
-    // Include your PDF generator
-    include COURIER_FINANCE_PLUGIN_PATH . 'pdf-generator.php';
-    wp_die(); // Terminate
-}
-
-// ✅ Handle quotation data processing
-function kit_handle_quotation_data($request_type = 'POST')
+class KIT_Quotations
 {
-    $request_data = ($request_type === 'POST') ? $_POST : $_GET;
-
-    // Get the values from the form (sanitized)
-    $weightKg = isset($request_data['weight']) ? floatval($request_data['weight']) : 0;
-    $length = isset($request_data['length']) ? floatval($request_data['length']) : 0;
-    $width = isset($request_data['width']) ? floatval($request_data['width']) : 0;
-    $height = isset($request_data['height']) ? floatval($request_data['height']) : 0;
-    $volumeM3 = $length * $width * $height;
-
-    // Get shipping method
-    $shippingMethod = isset($request_data['shipping_method']) ? sanitize_text_field($request_data['shipping_method']) : 'weight';
-
-    // Define the constant costs
-    $sad500Fee = 350; // R350
-    $sadcCertificateFee = 1000; // R1000
-
-    // Get the values of the checkboxes
-    $includeSAD500 = isset($request_data['include_sad500']);
-    $includeSADC = isset($request_data['include_sadc']);
-    $returnLoad = isset($request_data['return_load']);
-
-    // Base cost calculation
-    $baseCost = 0;
-    $weightCost = 0;
-    $volumeCost = 0;
-
-    if ($shippingMethod === 'weight' && $weightKg > 0) {
-        // Weight-based cost calculation
-        if ($weightKg <= 500) $weightCost = $weightKg * 40;
-        elseif ($weightKg <= 1000) $weightCost = $weightKg * 35;
-        elseif ($weightKg <= 2500) $weightCost = $weightKg * 30;
-        elseif ($weightKg <= 5000) $weightCost = $weightKg * 25;
-        elseif ($weightKg <= 7500) $weightCost = $weightKg * 20;
-        elseif ($weightKg <= 10000) $weightCost = $weightKg * 17.5;
-        else $weightCost = $weightKg * 15;
-
-        $baseCost = $weightCost;
-    } elseif ($shippingMethod === 'volume' && $volumeM3 > 0) {
-        // Volume-based cost calculation
-        if ($volumeM3 <= 1) $volumeCost = 7500;
-        elseif ($volumeM3 <= 2) $volumeCost = 7000;
-        elseif ($volumeM3 <= 5) $volumeCost = 6500;
-        elseif ($volumeM3 <= 10) $volumeCost = 5500;
-        elseif ($volumeM3 <= 15) $volumeCost = 5000;
-        elseif ($volumeM3 <= 20) $volumeCost = 4500;
-        elseif ($volumeM3 <= 30) $volumeCost = 4000;
-        else $volumeCost = 3500;
-
-        $baseCost = $volumeCost;
+    public static function init()
+    {
+        // In your main plugin file (e.g., my-plugin/my-plugin.php)
+        add_action('wp_ajax_generate_pdf', [self::class, 'handle_pdf_generation']);
+        add_action('wp_ajax_nopriv_generate_pdf', [self::class, 'handle_pdf_generation']); // For public access
+        add_action('wp_ajax_create_quotation_from_waybill', [self::class, 'createQuotation_from_waybill_ajax']);
+        add_action('wp_ajax_nopriv_create_quotation_from_waybill', [self::class, 'createQuotation_from_waybill_ajax']);
     }
 
-    // Calculate sub total (base cost + additional fees)
-    $subTotal = $baseCost;
+    public static function calculate_waybill_estimate_by_id($waybill_id)
+    {
+        global $wpdb;
+        $table = $wpdb->prefix . 'kit_waybills';
 
-    // Add the constant costs if selected
-    if ($includeSAD500) $subTotal += $sad500Fee;
-    if ($includeSADC) $subTotal += $sadcCertificateFee;
+        $waybill = $wpdb->get_row(
+            $wpdb->prepare("SELECT * FROM $table WHERE id = %d", $waybill_id)
+        );
 
-    // Apply return load discount if selected (assuming 10% discount)
-    $finalCost = $subTotal;
-    if ($returnLoad) {
-        $finalCost = $subTotal * 0.9; // 10% discount
+        if (! $waybill) return 0;
+
+        // Extract fields
+        $mass = floatval($waybill->total_mass_kg);
+        $length = floatval($waybill->item_length);
+        $width = floatval($waybill->item_width);
+        $height = floatval($waybill->item_height);
+        $charge_basis = strtoupper($waybill->charge_basis);
+        $misc_raw = maybe_unserialize($waybill->miscellaneous); // Important!
+
+        // Calculate volume in m³
+        $volume = ($length * $width * $height) / 1000000;
+
+        // MASS rates
+        if ($mass >= 10 && $mass <= 500) $mass_rate = 40;
+        elseif ($mass <= 1000) $mass_rate = 35;
+        elseif ($mass <= 2500) $mass_rate = 30;
+        elseif ($mass <= 5000) $mass_rate = 25;
+        elseif ($mass <= 7500) $mass_rate = 20;
+        elseif ($mass <= 10000) $mass_rate = 17.5;
+        else $mass_rate = 15;
+
+        $mass_charge = $mass * $mass_rate;
+
+        // VOLUME rates
+        if ($volume <= 1) $volume_rate = 7500;
+        elseif ($volume <= 2) $volume_rate = 7000;
+        elseif ($volume <= 5) $volume_rate = 6500;
+        elseif ($volume <= 10) $volume_rate = 5500;
+        else $volume_rate = 5000;
+
+        $volume_charge = $volume * $volume_rate;
+
+        // Determine base charge
+        if ($charge_basis === 'MASS') {
+            $main_charge = $mass_charge;
+        } elseif ($charge_basis === 'VOLUME') {
+            $main_charge = $volume_charge;
+        } else {
+            $main_charge = max($mass_charge, $volume_charge);
+        }
+
+        // Handle miscellaneous
+        $misc_total = 0;
+        if (is_array($misc_raw)) {
+            foreach ($misc_raw as $item) {
+                $misc_total += floatval($item['price'] ?? 0);
+            }
+        }
+
+        $final_total = $main_charge + $misc_total;
+
+        return round($final_total, 2);
     }
 
-    return [
-        'customer_name' => sanitize_text_field($request_data['customer_name']),
-        'customer_email' => sanitize_email($request_data['customer_email']),
-        'customer_phone' => sanitize_text_field($request_data['customer_phone']),
+    public static function get_AllQuotedWaybill()
+    {
+        global $wpdb, $table_quotations;
 
-        'sender_name' => sanitize_text_field($request_data['sender_name']),
-        'sender_email' => sanitize_email($request_data['sender_email']),
-        'sender_phone' => sanitize_text_field($request_data['sender_phone']),
-        'sender_address' => sanitize_textarea_field($request_data['sender_address']),
+        $query = "SELECT COUNT(*) as total_quotations FROM $table_quotations";
+        $result = $wpdb->get_var($query);
+        return intval($result);
+    }
 
-        'receiver_name' => sanitize_text_field($request_data['receiver_name']),
-        'receiver_email' => sanitize_email($request_data['receiver_email']),
-        'receiver_phone' => sanitize_text_field($request_data['receiver_phone']),
-        'receiver_address' => sanitize_textarea_field($request_data['receiver_address']),
+    public static function get_AllPendingWaybill()
+    {
+        global $wpdb, $table_waybills;
 
-        'shipping_method' => $shippingMethod,
-        'weight' => $weightKg,
-        'length' => $length,
-        'width' => $width,
-        'height' => $height,
-        'send_location' => sanitize_text_field($request_data['send_location']),
+        $query = "SELECT COUNT(*) as total_pending_quotations FROM $table_waybills WHERE status = 'pending'";
+        $result = $wpdb->get_var($query);
+        return intval($result);
+    }
 
-        'delivery_address' => sanitize_textarea_field($request_data['delivery_address']),
+    public static function convertToQuotation($waybill_id)
+    {
+        global $wpdb;
 
-        'const_cost' => ($includeSAD500 ? $sad500Fee : 0) + ($includeSADC ? $sadcCertificateFee : 0),
-        'sub_total' => $subTotal,
-        'final_cost' => $finalCost,
-        'include_sad500' => $includeSAD500 ? 1 : 0,
-        'include_sadc' => $includeSADC ? 1 : 0,
-        'return_load' => $returnLoad ? 1 : 0,
-    ];
+        // Step 1: Get the waybill
+        $waybill = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}kit_waybills WHERE id = %d",
+            $waybill_id
+        ));
+
+        if (!$waybill) {
+            return new WP_Error('invalid_waybill', 'Waybill not found');
+        }
+
+        echo '<pre>';
+        print_r($waybill);
+        echo '</pre>';
+        exit();
+        // Step 2: If already quoted, block
+        if ($waybill->approval === 'approved') {
+            //return new WP_Error('already_quoted', 'This waybill has already been quoted');
+        }
+
+
+        // Step 3: Auto-approve pending waybills
+        if ($waybill->approval === 'pending') {
+            $wpdb->update(
+                "{$wpdb->prefix}kit_waybills",
+                [
+                    'approval' => 'approved',
+                    'last_updated_by' => get_current_user_id(),
+                    'last_updated_at' => current_time('mysql')
+                ],
+                ['id' => $waybill_id],
+                ['%s', '%d', '%s'],
+                ['%d']
+            );
+            // Refresh updated status
+            $waybill->approval = 'approved';
+        }
+
+        // === bitch Step 4: Financial calculations ===
+
+        $rate_per_kg = 12.00;
+        $rate_per_cm3 = 0.002;
+
+        $totalPrice_mass = floatval($waybill->total_mass_kg) * $rate_per_kg;
+        $volume_cm3 = floatval($waybill->item_length) * floatval($waybill->item_width) * floatval($waybill->item_height);
+        $totalPrice_volume = $volume_cm3 * $rate_per_cm3;
+
+        $base_price = max($totalPrice_mass, $totalPrice_volume);
+
+        $misc = floatval($waybill->miscellaneous);
+        $sad500_fee = (!empty($waybill->include_sad500) && $waybill->include_sad500) ? 350 : 0;
+        $sadc_fee = (!empty($waybill->include_sadc) && $waybill->include_sadc) ? 1000 : 0;
+
+        $subtotal = $base_price + $misc + $sad500_fee + $sadc_fee;
+
+        $vat = 0;
+        if (!empty($waybill->vat_number)) {
+            $vat = $subtotal * 0.15;
+        }
+
+        $total = $subtotal + $vat;
+
+        // === Step 5: Save quotation ===
+
+        $quotation_data = [
+            'delivery_id'      => $waybill->delivery_id,
+            'waybill_id'       => $waybill->id,
+            'waybillno'      => $waybill->waybill_no,
+            'customer_id'      => $waybill->customer_id,
+            'subtotal'         => 0,
+            'vat_amount'       => 0,
+            'total'            => $waybill->product_invoice_amount || 0,
+            'quotation_notes'  => sprintf('Generated from waybill #%s', $waybill->waybill_no),
+            'status'           => 'pending',
+            'created_by'       => get_current_user_id(),
+            'created_at'       => current_time('mysql'),
+            'last_updated_by'  => get_current_user_id(),
+            'last_updated_at'  => current_time('mysql')
+        ];
+
+        $wpdb->query('START TRANSACTION');
+
+        try {
+            // Insert into quotations table
+            $quotation_inserted = $wpdb->insert(
+                "{$wpdb->prefix}kit_quotations",
+                $quotation_data,
+                [
+                    '%d', //delivery_id
+                    '%d', //waybill_id
+                    '%d', //waybillno
+                    '%d', //customer_id
+                    '%d', //subtotal
+                    '%d', //vat_amount
+                    '%d', //total
+                    '%s', //quotation_notes
+                    '%s', //status
+                    '%d', //created_by
+                    '%s', //created_at
+                    '%d', //last_updated_by
+                    '%s', //last_updated_at
+                ]
+            );
+
+            if (!$quotation_inserted) {
+                throw new Exception('Failed to create quotation: ' . $wpdb->last_error);
+            }
+
+            $quotation_id = $wpdb->insert_id;
+
+            // Update waybill status to quoted only id approval is approved
+            if ($waybill->approval === 'approved') {
+            $waybill_updated = $wpdb->update(
+                "{$wpdb->prefix}kit_waybills",
+                [
+                    'status' => 'quoted',
+                    'last_updated_by' => get_current_user_id(),
+                    'last_updated_at' => current_time('mysql')
+                ],
+                ['id' => $waybill_id],
+                ['%s', '%d', '%s'],
+                    ['%d']
+                );
+            }
+
+            if ($waybill_updated === false) {
+                throw new Exception('Failed to update waybill status: ' . $wpdb->last_error);
+            }
+
+            // Optional: log activity
+            $wpdb->insert(
+                "{$wpdb->prefix}kit_activity_logs",
+                [
+                    'entity_type' => 'quotation',
+                    'entity_id'   => $quotation_id,
+                    'action'      => 'created',
+                    'description' => sprintf('Quotation created from waybill #%s', $waybill->waybill_no),
+                    'user_id'     => get_current_user_id(),
+                    'created_at'  => current_time('mysql')
+                ]
+            );
+
+            $wpdb->query('COMMIT');
+            return $quotation_id;
+        } catch (Exception $e) {
+            $wpdb->query('ROLLBACK');
+            return new WP_Error('quotation_error', $e->getMessage());
+        }
+    }
+
+    public static function createQuotation_from_waybill_ajax()
+    {
+
+        // Verify nonce first
+        if (!check_ajax_referer('kit_waybill_nonce', '_ajax_nonce', false)) {
+            wp_send_json_error('Invalid nonce', 403);
+            wp_die();
+        }
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Unauthorized', 403);
+        }
+
+        $waybill_id = isset($_POST['waybill_id']) ? intval($_POST['waybill_id']) : 0;
+
+        if (!$waybill_id) {
+            wp_send_json_error('Waybill ID required', 400);
+        }
+
+        // Call your quotation conversion function
+        $result = self::convertToQuotation($waybill_id);
+
+        if (is_wp_error($result)) {
+            wp_send_json_error($result->get_error_message());
+        }
+
+        exit(var_dump($wpdb->last_query));
+        wp_send_json_success([
+            'message' => 'Quotation created successfully',
+            'quotation_id' => $result
+        ]);
+    }
+
+    // ✅ Get all quotations
+    public static function kit_get_all_quotations()
+    {
+        global $wpdb, $table_quotations;
+
+        $query = "
+            SELECT q.*, c.name AS customer_name, w.waybill_no
+            FROM $table_quotations q
+            LEFT JOIN {$wpdb->prefix}kit_customers c ON q.customer_id = c.cust_id
+            LEFT JOIN {$wpdb->prefix}kit_waybills w ON q.waybill_id = w.id
+        ";
+        return $wpdb->get_results($query, ARRAY_A);
+    }
+
+    public static function generate_quotation($waybill_no)
+    {
+        global $wpdb;
+
+        // Get waybill data
+        $waybill = $wpdb->get_row(
+            $wpdb->prepare("SELECT * FROM {$wpdb->prefix}kit_waybills WHERE waybill_no = %d", $waybill_no)
+        );
+
+        if (!$waybill) {
+            return false;
+        }
+
+        $misc_combined = unserialize($waybill->miscellaneous ?? []);
+        $misc_total = $misc_combined['total'];
+        $subtotal = $waybill->product_invoice_amount;
+
+        // Prepare quotation data
+
+        $quotation_data = [
+            'delivery_id'      => $waybill->delivery_id,
+            'waybill_id'       => $waybill->id,
+            'waybillno'      => $waybill->waybill_no,
+            'customer_id'      => $waybill->customer_id,
+            'subtotal'         => 0,
+            'vat_amount'       => 0,
+            'total'            => $waybill->product_invoice_amount || 0,
+            'quotation_notes'  => sprintf('Generated from waybill #%s', $waybill->waybill_no),
+            'status'           => 'pending',
+            'created_by'       => get_current_user_id(),
+            'created_at'       => current_time('mysql'),
+            'last_updated_by'  => get_current_user_id(),
+            'last_updated_at'  => current_time('mysql')
+        ];
+
+        $wpdb->query('START TRANSACTION');
+
+        // Insert into quotations table
+        $quotation_inserted = $wpdb->insert(
+            "{$wpdb->prefix}kit_quotations",
+            $quotation_data,
+            [
+                '%d', //delivery_id
+                '%d', //waybill_id
+                '%d', //waybillno
+                '%d', //customer_id
+                '%d', //subtotal
+                '%d', //vat_amount
+                '%d', //total
+                '%s', //quotation_notes
+                '%s', //status
+                '%d', //created_by
+                '%s', //created_at
+                '%d', //last_updated_by
+                '%s', //last_updated_at
+            ]
+        );
+
+        if ($quotation_inserted) {
+
+            // Update waybill status to 'quoted'
+            $wpdb->update(
+                $wpdb->prefix . "kit_waybills",
+                ['status' => 'quoted'],
+                ['waybill_no' => $waybill->waybill_no],
+                ['%s'],
+                ['%d']
+            );
+            $wpdb->query('COMMIT');
+
+            return $wpdb->insert_id;
+        }
+
+        return false;
+    }
+
+    // Function to check if the waybill.status is 'quoted'
+    // Return True if 'quoted' else false
+    public static function checkWaybillStatus($waybill_no)
+    {
+        global $wpdb;
+
+        // Get the waybill status
+        $status = $wpdb->get_var(
+            $wpdb->prepare("SELECT status FROM {$wpdb->prefix}kit_waybills WHERE waybill_no = %d", $waybill_no)
+        );
+
+        // Check if the status is 'quoted'
+        if ($status === 'quoted') {
+            return true;
+        }
+
+        return false;
+    }
+
+
+    public static function handle_pdf_generation()
+    {
+
+        check_ajax_referer('pdf_nonce', 'pdf_nonce');
+
+        $quotation_id = null;
+        // Get quotation ID
+        $waybill_no = isset($_GET['waybill_no']) ? intval($_GET['waybill_no']) : 0;
+        if (self::checkWaybillStatus($waybill_no)) {
+            global $wpdb;
+            $quotation_id = $wpdb->get_var(
+                $wpdb->prepare("SELECT id FROM {$wpdb->prefix}kit_quotations WHERE waybillNo = %d", $waybill_no)
+            );
+        } else {
+            // Generate quotation from waybill
+            $quotation_id = self::generate_quotation($waybill_no);
+
+            if (!$quotation_id) {
+                echo 'Error generating quotation';
+                exit;
+            }
+        }
+
+        $quotation_id_global = $quotation_id; // Define a new variable
+        // Include your PDF generator
+        include COURIER_FINANCE_PLUGIN_PATH . 'pdf-generator.php';
+        wp_die(); // Terminate
+    }
 }
+KIT_Quotations::init();
 
 
-// ✅ Add Quotation
-// Add this to your functions.php or plugin file
 
 /**
  * Generate quotation from waybill
  */
-function kit_generate_quotation_from_waybill($waybill_id) {
+function kit_generate_quotation_from_waybill($waybill_id)
+{
     global $wpdb;
-    
+
     // Get waybill data
     $waybill = $wpdb->get_row(
         $wpdb->prepare("SELECT * FROM {$wpdb->prefix}kit_waybills WHERE id = %d", $waybill_id)
     );
-    
+
     if (!$waybill) {
         return false;
     }
-    
+
     // Calculate charges based on waybill data
     $subtotal = 0;
     $total = 0;
-    
+
     if ($waybill->charge_basis === 'MASS') {
         $subtotal = $waybill->mass_charge;
     } elseif ($waybill->charge_basis === 'VOLUME') {
@@ -154,23 +456,24 @@ function kit_generate_quotation_from_waybill($waybill_id) {
     } elseif ($waybill->charge_basis === 'BOTH') {
         $subtotal = max($waybill->mass_charge, $waybill->volume_charge);
     }
-    
+
     // Apply any additional calculations here (taxes, discounts, etc.)
     $total = $subtotal;
-    
     // Prepare quotation data
     $quotation_data = [
-        'quoteid' => 'QUO-' . time(), // Generate unique quote ID
-        'customer_id' => $waybill->cust_id,
-        'waybill_no' => $waybill->waybill_no,
+        'delivery_id' => $waybill->delivery_id,
+        'waybill_id' => $waybill->id,
+        'customer_id' => $waybill->customer_id,
         'subtotal' => $subtotal,
+        'miscellaneous' => $waybill->miscellaneous,
         'total' => $total,
-        'date_received' => $waybill->date_received,
         'created_by' => wp_get_current_user()->user_login,
         'status' => 'pending',
         'created_at' => current_time('mysql')
     ];
-    
+
+
+
     return $quotation_data;
 }
 
@@ -179,30 +482,33 @@ function kit_generate_quotation_from_waybill($waybill_id) {
  */
 add_action('admin_post_kit_add_quotation', 'kit_add_quotation');
 
-function kit_add_quotation() {
+function kit_add_quotation()
+{
     if (!isset($_POST['kit_add_quotation_nonce']) || !wp_verify_nonce($_POST['kit_add_quotation_nonce'], 'kit_add_quotation_action')) {
         wp_die('Security check failed');
     }
-    
+
     if (!current_user_can('manage_options')) {
         wp_die('Unauthorized');
     }
 
     global $wpdb;
     $table_quotations = $wpdb->prefix . 'kit_quotations';
-    
+
     // Check if we're generating from a waybill
     if (isset($_POST['waybill_id']) && !empty($_POST['waybill_id'])) {
         $waybill_id = intval($_POST['waybill_id']);
         $quotation_data = kit_generate_quotation_from_waybill($waybill_id);
-        
+
         if (!$quotation_data) {
             wp_die('Invalid waybill ID');
         }
     } else {
         // Handle manual quotation creation (your existing code)
         $quotation_data = kit_handle_quotation_data('POST');
-        
+
+
+
         if (empty($quotation_data['customer_name'])) {
             wp_die('Required fields are missing.');
         }
@@ -213,22 +519,21 @@ function kit_add_quotation() {
         $table_quotations,
         $quotation_data,
         [
-            '%s', // quoteid
-            '%s', // customer_id
-            '%s', // waybill_no
-            '%s', // subtotal
+            '%s', // delivery_id
+            '%s', // waybill_id 
+            '%s', // customer_id 
+            '%s', // subtotal 
+            '%s', // miscellaneous
             '%s', // total
-            '%s', // date_received
             '%s', // created_by
             '%s', // status
             '%s'  // created_at
         ]
     );
-    
     if (!$inserted) {
         wp_die('Error creating quotation');
     }
-    
+
     $last_inserted_id = $wpdb->insert_id;
     wp_redirect(admin_url('admin.php?page=kit-quotation-edit&quotation_id=' . $last_inserted_id . '&message=success'));
     exit;
@@ -237,30 +542,38 @@ function kit_add_quotation() {
 /**
  * Add a button to waybill view to generate quotation
  */
-add_action('admin_init', function() {
+add_action('admin_init', function () {
     if (isset($_GET['generate_quotation']) && isset($_GET['waybill_id'])) {
         $waybill_id = intval($_GET['waybill_id']);
         $quotation_data = kit_generate_quotation_from_waybill($waybill_id);
-        
+
         if ($quotation_data) {
             global $wpdb;
             $table_quotations = $wpdb->prefix . 'kit_quotations';
-            
+
             $inserted = $wpdb->insert(
                 $table_quotations,
                 $quotation_data,
                 [
-                    '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'
+                    '%s',
+                    '%s',
+                    '%s',
+                    '%s',
+                    '%s',
+                    '%s',
+                    '%s',
+                    '%s',
+                    '%s'
                 ]
             );
-            
+
             if ($inserted) {
                 $last_inserted_id = $wpdb->insert_id;
                 wp_redirect(admin_url('admin.php?page=kit-quotation-edit&quotation_id=' . $last_inserted_id));
                 exit;
             }
         }
-        
+
         wp_die('Error generating quotation from waybill');
     }
 });
@@ -268,7 +581,7 @@ add_action('admin_init', function() {
 /**
  * Add generate quotation button to waybill view
  */
-add_filter('kit_waybill_actions', function($actions, $waybill_id) {
+add_filter('kit_waybill_actions', function ($actions, $waybill_id) {
     $actions['generate_quotation'] = [
         'url' => admin_url('admin.php?page=kit-waybill-list&generate_quotation=1&waybill_id=' . $waybill_id),
         'label' => 'Generate Quotation',
@@ -296,8 +609,12 @@ function kit_get_quotation_by_id($id)
 
 // ✅ Update Quotation
 add_action('admin_post_kit_update_quotation', 'kit_update_quotation');
+
+
+
 function kit_update_quotation()
 {
+    // Security checks
     if (!isset($_POST['kit_quotation_nonce']) || !wp_verify_nonce($_POST['kit_quotation_nonce'], 'kit_edit_quotation_action')) {
         wp_die('Security check failed');
     }
@@ -312,8 +629,45 @@ function kit_update_quotation()
     if (empty($quotation_id)) {
         wp_die('Invalid quotation ID.');
     }
-    
-    $wpdb->update($table_quotations, $data, ['id' => $quotation_id], ['%s', '%s', '%s', '%s', '%f', '%f', '%f', '%s', '%s', '%f', '%f', '%f', '%f', '%f', '%f', '%f', '%s'], ['%d']);
+
+    // Corrected update statement
+    $result = $wpdb->update(
+        $table_quotations,
+        $data,
+        ['id' => $quotation_id],
+        [
+            '%s',
+            '%s',
+            '%s',
+            '%s',
+            '%s',
+            '%s',
+            '%s',
+            '%s',
+            '%s',
+            '%s',
+            '%s',
+            '%s',
+            '%f',
+            '%f',
+            '%f',
+            '%f',
+            '%s',
+            '%s',
+            '%f',
+            '%f',
+            '%f',
+            '%d',
+            '%d',
+            '%d'
+        ],
+        ['%d']
+    );
+
+    if ($result === false) {
+        wp_die('Error updating quotation');
+    }
+
     wp_redirect(admin_url('admin.php?page=kit-quotation-edit&quotation_id=' . $quotation_id . '&message=updated'));
     exit;
 }
@@ -321,69 +675,96 @@ function kit_update_quotation()
 // ✅ Shortcode to display all quotations
 function kit_get_all_quotations_table()
 {
-    $quotations = kit_get_all_quotations();
-    if (!$quotations) {
-        return '<p class="text-gray-500 text-center">No quotations found.</p>';
-    }
+    $quotations = KIT_Waybills::get_waybills(array(
+        'approval' => 'approved',
+        'custom_format' => true
+    ));
+
+    $approvedWaybills = KIT_Waybills::get_waybills(array(
+        'approval' => 'approved',
+        'custom_format' => true
+    ));
+
+
     ob_start();
-    ?>
-        <div class="overflow-x-auto">
-            <table class="min-w-full bg-white border border-gray-200 rounded-lg shadow-md">
-                <thead>
-                    <tr class="bg-gray-100 text-gray-700 text-left text-sm">
-                        <th class="py-3 px-4 border-b">Customer Name</th>
-                        <th class="py-3 px-4 border-b">From > To</th>
-                        <th class="py-3 px-4 border-b">Total Amount</th>
-                        <th class="py-3 px-4 border-b"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($quotations as $quotation): ?>
-                    <tr class="border-b hover:bg-gray-50">
-                        <td class="py-3 px-4"> <?php echo esc_html($quotation['customer_name']); ?> </td>
-                        <td class="py-3 px-4">
-                            <?php echo esc_html($quotation['sender_address']) . " > " . esc_html($quotation['delivery_location']) . esc_html($quotation['delivery_country']); ?>
-                        </td>
-                        <td class="py-3 px-4"> <?php echo esc_html(number_format($quotation['final_cost'], 2)); ?> </td>
-                        <td class="py-3 px-4">
-                            <div class="flex items-center space-x-2">
-                                <div>
-                                    <a href="?page=kit-quotation-edit&quotation_id=<?php echo esc_html($quotation['id']); ?>"
-                                        class="bg-blue-600 text-white px-4 py-2 rounded">
-                                        <span class="dashicons dashicons-visibility" style="font-size: 18px;"></span>
-                                    </a>
-                                </div>
-                                <div>
-                                    <a href="<?php echo plugins_url('pdf-generator.php', plugin_dir_path(__DIR__)); ?>?quotation_id=<?php echo $quotation['id']; ?>"
-                                        class="bg-blue-600 text-white px-4 py-2 rounded">
-                                        <span class="dashicons dashicons-download" style="font-size: 18px;"></span>
-                                    </a>
-                                </div>
-                                <form method="post" action="<?php echo admin_url('admin-post.php'); ?>" class="">
-                                    <input type="hidden" name="action" value="kit_delete_quotation">
-                                    <input type="hidden" name="quotation_id" value="<?php echo esc_attr($quotation['id']); ?>">
-                                    <input type="hidden" name="redirect_page" value="Quotations">
-                                    <?php wp_nonce_field('kit_delete_quotation_action', 'kit_delete_quotation_nonce'); ?>
-                                    <button type="submit" class="bg-red-600 text-white px-4 py-2 rounded"
-                                        onclick="return confirm('Are you sure you want to delete this quotation?');">
-                                        <span class="dashicons dashicons-trash" style="font-size: 18px;"></span>
-                                    </button>
-                                </form>
-                            </div>
-                        </td>
-                    </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
+?>
+    <div class="">
+        <!-- Dashboard Header -->
+        <div class="bg-white p-6 rounded border-2 border-1 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-6">
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full md:w-auto">
+                <div class="bg-slate-200 rounded border-2 p-4 flex items-center gap-4">
+                    <div>
+                        <h3 class="text-xs font-medium text-gray-500">Pending</h3>
+                        <p class="text-2xl font-bold text-gray-900 text-center">
+                            <?php echo KIT_Quotations::get_AllPendingWaybill(); ?></p>
+                    </div>
+                </div>
+
+                <div class="bg-slate-200 rounded border-2 p-4 flex items-center gap-4">
+
+                    <div>
+                        <h3 class="text-xs font-medium text-gray-500">QuotedD</h3>
+                        <p class="text-2xl font-bold text-gray-900 text-center">
+                            <?php echo KIT_Quotations::get_AllQuotedWaybill(); ?></p>
+                    </div>
+                </div>
+
+                <div class="bg-slate-200 rounded border-2 p-4 flex items-center gap-4">
+
+                    <div>
+                        <h3 class="text-xs font-medium text-gray-500">Invoiced</h3>
+                        <p class="text-2xl font-bold text-gray-900 text-center">
+                            <?php echo 0; ?></p>
+                    </div>
+                </div>
+            </div>
         </div>
-        <?php
+
+
+        <div class="grid grid-cols-2 gap-4">
+            <div class="bg-white p-6 rounded border-2">
+                <h4 class="text-lg font-bold text-gray-800 mb-1">Pending Waybills</h4>
+                <p class="text-gray-500 mb-4">
+                    Below is a list of all waybills that are currently <span class="font-semibold text-yellow-600">pending</span> and have not yet been quoted. Review and generate quotations as needed.
+                </p>
+                <!-- All waybills with no quotations, wp_kit_waybills`.`status = pending -->
+                <?php
+                $pendingWaybills = KIT_Waybills::getWaybillsStatusPending();
+                echo KIT_Waybills::render_table_with_pagination($pendingWaybills, [
+                    'fields' => ['waybill_no', 'delivery_id', 'customer_id', 'status'],
+                    'table_class' => 'min-w-full divide-y divide-gray-200 text-xs',
+                    'show_create_quotation' => true
+                ]);
+
+                ?>
+            </div>
+            <div class="bg-white p-6 rounded border-2">
+                <h4 class="text-lg font-bold text-gray-800 mb-1">Quoted Waybills</h4>
+                <p class="text-gray-500 mb-4">
+                    Below is a list of all quotations for waybills.
+                </p>
+                <!-- All waybills with no quotations, wp_kit_waybills`.`status = quoted and quotation -->
+                <?php
+                $quotations = KIT_Quotations::kit_get_all_quotations();
+
+                echo KIT_Waybills::RenderTable($quotations, [
+                    'fields' => ['waybill_no', 'delivery_id', 'customer_id', 'status'],
+                    'table_class' => 'min-w-full divide-y divide-gray-200 text-xs',
+                    'quoted_already' => true,
+                ]);
+                ?>
+            </div>
+        </div>
+    </div>
+<?php
     return ob_get_clean();
 }
-add_shortcode('kit_quotations', 'kit_get_all_quotations_table');
 
 // ✅ Delete Quotation
 add_action('admin_post_kit_delete_quotation', 'kit_delete_quotation');
-function kit_delete_quotation() {
+function kit_delete_quotation()
+{
     if (!isset($_POST['kit_delete_quotation_nonce']) || !wp_verify_nonce($_POST['kit_delete_quotation_nonce'], 'kit_delete_quotation_action')) {
         wp_die('Security check failed');
     }
@@ -399,13 +780,13 @@ function kit_delete_quotation() {
     }
 
     $wpdb->delete($table_quotations, ['id' => $quotation_id], ['%d']);
-    
+
     // Redirect back to the appropriate page
     $redirect_url = admin_url('admin.php?page=Quotations');
     if (isset($_POST['redirect_page'])) {
         $redirect_url = admin_url('admin.php?page=' . sanitize_text_field($_POST['redirect_page']));
     }
-    
+
     wp_redirect($redirect_url);
     exit;
 }

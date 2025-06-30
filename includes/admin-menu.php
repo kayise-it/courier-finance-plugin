@@ -19,16 +19,6 @@ function plugin_add_menu()
         6 // Position
     );
 
-    // Add submenu for services
-    add_submenu_page(
-        '08600-services-quotations', // Parent slug
-        'All Services', // Page title
-        'All Services', // Menu title
-        'edit_pages', // Capability
-        '08600-services-list', // Submenu slug
-        'plugin_services_list_page' // Callback function
-    );
-
     // Add main menu
     add_menu_page(
         'Quotations', // Page title
@@ -41,14 +31,14 @@ function plugin_add_menu()
     );
 
     // Add submenu for services
-    add_submenu_page(
+   /*  add_submenu_page(
         'Quotations', // Parent slug
         'Create Quotations', // Page title
         'Create Quotations', // Menu title
         'manage_options', // Capability
         '08600-quotations-insert', // Submenu slug
         'quotation_insert_page' // Callback function
-    );
+    ); */
     // Add submenu for services
     add_submenu_page(
         'Quotations',       // Parent slug (e.g., under Pages)
@@ -71,15 +61,6 @@ function plugin_add_menu()
     // Add submenu for services
     add_submenu_page(
         '08600-Waybill', // Parent slug
-        'All Waybills', // Page title
-        'All Waybills', // Menu title
-        'edit_pages', // Capability
-        '08600-Waybill-list', // Submenu slug
-        'plugin_Waybill_list_page' // Callback function
-    );
-    // Add submenu for services
-    add_submenu_page(
-        '08600-Waybill', // Parent slug
         'Create Waybills', // Page title
         'Create Waybills', // Menu title
         'edit_pages', // Capability
@@ -93,13 +74,14 @@ function plugin_add_menu()
         '', // Empty menu title hides it
         'edit_pages',
         '08600-Waybill-view',
-        ['KIT_Waybills', 'plugin_Waybill_view_page'] // Array syntax for class method
+        ['KIT_Waybills', 'waybillView'] // Array syntax for class method
+        //['KIT_Waybills', 'plugin_Waybill_view_page'] // Array syntax for class method
     );
 
     add_menu_page(
         '08600 Customers',       // Page title
         '08600 Customers',       // Menu title
-        'manage_options',       // Capability
+        'edit_pages',       // Capability
         'customers-dashboard',    // Menu slug
         'customer_dashboard',    // Callback function
         'dashicons-admin-site', // Icon
@@ -121,6 +103,14 @@ function plugin_add_menu()
         'edit_pages',
         'edit-customer',
         'edit_customer'
+    );
+    add_submenu_page(
+        'Customers',       // Parent slug
+        '',// Page title
+        'edit Customers',// Menu title
+        'edit_pages',// Capability
+        'all-customer-waybills', // Submenu slug
+        'view_customer_waybills'// Callback function
     );
 }
 add_action('admin_menu', 'plugin_add_menu');

@@ -17,10 +17,10 @@ function uni_modal($atts)
             <!-- Modal content -->
             <form method="POST" action="<?php echo admin_url('admin-post.php'); ?>" class="space-y-4">
                 <?php wp_nonce_field('nds_add_education_path_nonce', 'nds_nonce'); ?>
-                <label for="path_name" class="block text-sm font-medium text-gray-700">Path Name:</label>
+                <label for="path_name" class="block text-xs font-medium text-gray-700">Path Name:</label>
                 <input type="text" name="path_name" placeholder="Path Name" required
                     class="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                <label for="path_description" class="block text-sm font-medium text-gray-700">Description</label>
+                <label for="path_description" class="block text-xs font-medium text-gray-700">Description</label>
                 <textarea name="path_description" placeholder="Path Description"
                     class="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
 
