@@ -16,8 +16,12 @@ class Database
             name VARCHAR(255) NOT NULL,
             surname VARCHAR(255) NOT NULL,
             cell VARCHAR(20) NOT NULL,
-            email VARCHAR(100),
+            email_address VARCHAR(255) NOT NULL,
+            country_id INT UNSIGNED NULL,
+            city_id INT UNSIGNED NULL,
+            vat_number VARCHAR(50),
             address TEXT NOT NULL,
+            company_name VARCHAR(255) NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             UNIQUE KEY cust_id (cust_id) -- ✅ This is the missing part!
@@ -42,6 +46,7 @@ class Database
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
     }
+
     public static function create_deliveries_table()
     {
         global $wpdb;
@@ -52,17 +57,29 @@ class Database
             id INT UNSIGNED NOT NULL AUTO_INCREMENT,
             delivery_reference VARCHAR(100) NOT NULL,
             direction_id INT UNSIGNED NOT NULL,
+            destination_city_id INT UNSIGNED NOT NULL,
             dispatch_date DATE,
             truck_number VARCHAR(50),
             status ENUM('scheduled', 'in_transit', 'delivered') DEFAULT 'scheduled',
             created_by INT NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
-            FOREIGN KEY (direction_id) REFERENCES {$wpdb->prefix}kit_shipping_directions(id)
+            FOREIGN KEY (direction_id) REFERENCES {$wpdb->prefix}kit_shipping_directions(id),
+            FOREIGN KEY (destination_city_id) REFERENCES {$wpdb->prefix}kit_operating_cities(id)
             ) $charset_collate;";
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
+
+        // Create a system delivery row for warehoused items
+        $wpdb->insert($table_name, [
+            'delivery_reference' => 'warehoused',
+            'direction_id' => 1,
+            'destination_city_id' => 1,
+            'created_by' => 0,
+            'created_at' => current_time('mysql')
+        ]);
     }
+    
     public static function create_waybills_table()
     {
         global $wpdb;
@@ -79,15 +96,15 @@ class Database
         waybill_no INT UNSIGNED NOT NULL,
         product_invoice_number VARCHAR(50),
         product_invoice_amount DECIMAL(10,2),
-        item_length DECIMAL(10,2),
-        item_width DECIMAL(10,2),
-        item_height DECIMAL(10,2),
-        total_mass_kg DECIMAL(10,2),
-        total_volume DECIMAL(10,2),
-        mass_charge DECIMAL(10,2),
-        volume_charge DECIMAL(10,2),
+        item_length INT(10),
+        item_width INT(10),
+        item_height INT(10),
+        total_mass_kg INT(10),
+        total_volume INT(10),
+        mass_charge INT(10),
+        volume_charge INT(10),
         charge_basis VARCHAR(20),
-        vat_number VARCHAR(50),
+        vat_include VARCHAR(50),
         warehouse VARCHAR(50),
         miscellaneous LONGTEXT,
         include_sad500 TINYINT(1) DEFAULT 0,
@@ -96,7 +113,8 @@ class Database
         tracking_number VARCHAR(50),
         created_by INT UNSIGNED NOT NULL,
         last_updated_by INT UNSIGNED NOT NULL,
-        status ENUM('pending', 'quoted', 'paid', 'completed') DEFAULT 'pending',
+        status ENUM('warehoused', 'pending', 'quoted', 'paid', 'completed') DEFAULT 'pending',
+        status_userid INT UNSIGNED DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         last_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (id),
@@ -123,9 +141,9 @@ class Database
             item_name VARCHAR(255) NOT NULL,
             quantity INT NOT NULL,
             unit_price DECIMAL(10,2) NOT NULL,
-            unit_mass DECIMAL(10,2) DEFAULT 0.00,
-            unit_volume DECIMAL(10,2) DEFAULT 0.00,
-            total_price DECIMAL(10,2) DEFAULT 0.00,
+            unit_mass INT(10) DEFAULT 0,
+            unit_volume INT(10) DEFAULT 0,
+            total_price DECIMAL(10,2) DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             FOREIGN KEY (waybillno) REFERENCES {$wpdb->prefix}kit_waybills(waybill_no) ON DELETE CASCADE
@@ -148,7 +166,7 @@ class Database
             invoice_date DATE NOT NULL,
             due_date DATE NOT NULL,
             subtotal DECIMAL(10,2) NOT NULL,
-            vat_amount DECIMAL(10,2) DEFAULT 0.00,
+            vat_amount DECIMAL(10,2) DEFAULT 0,
             total DECIMAL(10,2) NOT NULL,
             status ENUM('unpaid', 'paid', 'overdue') DEFAULT 'unpaid',
             created_by INT NOT NULL,
@@ -204,6 +222,7 @@ class Database
             id INT UNSIGNED NOT NULL AUTO_INCREMENT,
             country_name VARCHAR(100) NOT NULL,
             country_code VARCHAR(10) NULL,
+            charge_group TINYINT(1),
             is_active TINYINT(1) DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -215,20 +234,20 @@ class Database
 
         // Prepopulate common operating countries
         $countries = [
-            ['South Africa', 'ZA', 1],
-            ['Tanzania', 'TZ', 1],
-            ['Botswana', 'BW', 0],
-            ['Zimbabwe', 'ZW', 0],
-            ['Mozambique', 'MZ', 0],
-            ['Zambia', 'ZM', 0],
-            ['Namibia', 'NA', 0],
-            ['Malawi', 'MW', 0],
-            ['Eswatini', 'SZ', 0],
-            ['Lesotho', 'LS', 0],
+            ['South Africa', 'ZA', 1, 1],
+            ['Tanzania', 'TZ', 1, 2],
+            ['Botswana', 'BW', 0, 2],
+            ['Zimbabwe', 'ZW', 0, 2],
+            ['Mozambique', 'MZ', 0, 2],
+            ['Zambia', 'ZM', 0, 2],
+            ['Namibia', 'NA', 0, 2],
+            ['Malawi', 'MW', 0, 2],
+            ['Eswatini', 'SZ', 0, 2],
+            ['Lesotho', 'LS', 0, 2],
         ];
 
         foreach ($countries as $country) {
-            list($name, $code, $activecode) = $country;
+            list($name, $code, $activecode, $charge_group) = $country;
 
             $exists = $wpdb->get_var($wpdb->prepare(
                 "SELECT COUNT(*) FROM $table_name WHERE country_code = %s",
@@ -239,11 +258,13 @@ class Database
                 $wpdb->insert($table_name, [
                     'country_name' => $name,
                     'country_code' => $code,
+                    'charge_group' => $charge_group,
                     'is_active' => $activecode,
                     'created_at' => current_time('mysql'),
                 ], [
                     '%s',
                     '%s',
+                    '%d',
                     '%d',
                     '%s'
                 ]);
@@ -337,7 +358,14 @@ class Database
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
 
-        // Insert default active routes
+        // Insert default active routes and a system delivery row for warehoused items
+        $wpdb->insert($table_name, [
+            'origin_country_id' => 1,
+            'destination_country_id' => 1,
+            'description' => 'Warehoused items',
+            'is_active' => 1,
+            'created_at' => current_time('mysql')
+        ]);
         $sa_id = $wpdb->get_var("SELECT id FROM {$wpdb->prefix}kit_operating_countries WHERE country_name = 'South Africa'");
         $tanzania_id = $wpdb->get_var("SELECT id FROM {$wpdb->prefix}kit_operating_countries WHERE country_name = 'Tanzania'");
 
@@ -417,9 +445,9 @@ class Database
             id INT UNSIGNED NOT NULL AUTO_INCREMENT,
             direction_id INT UNSIGNED NOT NULL,
             rate_type_id INT UNSIGNED NOT NULL,
-            min_weight DECIMAL(10,2) NOT NULL,
-            max_weight DECIMAL(10,2) NOT NULL,
-            rate_per_kg DECIMAL(10,2) NOT NULL,
+            min_weight INT(10) NOT NULL,
+            max_weight INT(10) NOT NULL,
+            rate_per_kg INT(10) NOT NULL,
             effective_date DATETIME DEFAULT CURRENT_TIMESTAMP,
             is_active TINYINT(1) DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -436,20 +464,20 @@ class Database
         $wpdb->query("
         INSERT INTO $table_name (direction_id, rate_type_id, min_weight, max_weight, rate_per_kg)
         VALUES 
-        (1, 1, 10.00, 500.00, 40.00),
-        (1, 1, 500.01, 1000.00, 35.00),
-        (1, 1, 1000.01, 2500.00, 30.00),
-        (1, 1, 2500.01, 5000.00, 25.00),
-        (1, 1, 5000.01, 7500.00, 20.00),
-        (1, 1, 7500.01, 10000.00, 17.50),
-        (1, 1, 10000.01, 999999.99, 15.00),
-        (2, 1, 10.00, 500.00, 30.00),
-        (2, 1, 500.01, 1000.00, 25.00),
-        (2, 1, 1000.01, 2500.00, 20.00),
-        (2, 1, 2500.01, 5000.00, 15.00),
-        (2, 1, 5000.01, 7500.00, 12.50),
-        (2, 1, 7500.01, 10000.00, 10.00),
-        (2, 1, 10000.01, 999999.99, 7.50)");
+        (1, 1, 10, 499, 40),
+        (1, 1, 500, 999, 35),
+        (1, 1, 1000, 2499, 30),
+        (1, 1, 2500, 4999, 25),
+        (1, 1, 5000, 7499, 20),
+        (1, 1, 7500, 9999, 17.50),
+        (1, 1, 10000, 999999.99, 15),
+        (2, 1, 10, 499, 30),
+        (2, 1, 500, 999, 25),
+        (2, 1, 1000, 2499, 20),
+        (2, 1, 2500, 4999, 15),
+        (2, 1, 5000, 7499, 12.50),
+        (2, 1, 7500, 9999, 10),
+        (2, 1, 10000, 999999.99, 7.50)");
     }
     public static function create_shipping_rates_volume_table()
     {
@@ -461,9 +489,9 @@ class Database
             id INT UNSIGNED NOT NULL AUTO_INCREMENT,
             direction_id INT UNSIGNED NOT NULL,
             rate_type_id INT UNSIGNED NOT NULL,
-            min_volume DECIMAL(10,2) NOT NULL,
-            max_volume DECIMAL(10,2) NOT NULL,
-            rate_per_m3 DECIMAL(10,2) NOT NULL,
+            min_volume INT(10) NOT NULL,
+            max_volume INT(10) NOT NULL,
+            rate_per_m3 INT(10) NOT NULL,
             effective_date DATETIME DEFAULT CURRENT_TIMESTAMP,
             is_active TINYINT(1) DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -481,22 +509,22 @@ class Database
         INSERT INTO $table_name
         (`direction_id`, `rate_type_id`, `min_volume`, `max_volume`, `rate_per_m3`, `is_active`) 
         VALUES
-        (1, 1, 0.00, 1.00, 7500.00, 1),
-        (1, 1, 1.01, 2.00, 7000.00, 1),
-        (1, 1, 2.01, 5.00, 6500.00, 1),
-        (1, 1, 5.01, 10.00, 5500.00, 1),
-        (1, 1, 10.01, 15.00, 5000.00, 1),
-        (1, 1, 15.01, 20.00, 4500.00, 1),
-        (1, 1, 20.01, 30.00, 4000.00, 1),
-        (1, 1, 30.01, 9999.99, 3500.00, 1),
-        (2, 1, 0.00, 1.00, 4000.00, 1),
-        (2, 1, 1.01, 2.00, 3500.00, 1),
-        (2, 1, 2.01, 5.00, 3000.00, 1),
-        (2, 1, 5.01, 10.00, 2500.00, 1),
-        (2, 1, 10.01, 15.00, 2000.00, 1),
-        (2, 1, 15.01, 20.00, 2000.00, 1),
-        (2, 1, 20.01, 30.00, 2000.00, 1),
-        (2, 1, 30.01, 9999.99, 2000.00, 1)
+        (1, 1, 0, 1, 7500, 1),
+        (1, 1, 1, 2, 7000, 1),
+        (1, 1, 2, 5, 6500, 1),
+        (1, 1, 5, 10, 5500, 1),
+        (1, 1, 10, 15, 5000, 1),
+        (1, 1, 15, 20, 4500, 1),
+        (1, 1, 20, 30, 4000, 1),
+        (1, 1, 30, 9999.99, 3500, 1),
+        (2, 1, 0, 1, 4000, 1),
+        (2, 1, 1, 2, 3500, 1),
+        (2, 1, 2, 5, 3000, 1),
+        (2, 1, 5, 10, 2500, 1),
+        (2, 1, 10, 15, 2000, 1),
+        (2, 1, 15, 20, 2000, 1),
+        (2, 1, 20, 30, 2000, 1),
+        (2, 1, 30, 9999.99, 2000, 1)
         ");
     }
     public static function create_shipping_dedicated_truck_rates_table()
@@ -509,8 +537,8 @@ class Database
             id INT UNSIGNED NOT NULL AUTO_INCREMENT,
             direction_id INT UNSIGNED NOT NULL,
             truck_type VARCHAR(50) NOT NULL,
-            capacity_kg DECIMAL(10,2) NOT NULL,
-            flat_rate DECIMAL(10,2) NOT NULL,
+            capacity_kg INT(10) NOT NULL,
+            flat_rate INT(10) NOT NULL,
             effective_date DATETIME DEFAULT CURRENT_TIMESTAMP,
             is_active TINYINT(1) DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -526,12 +554,12 @@ class Database
         $wpdb->query("
         INSERT INTO $table_name 
         (direction_id, truck_type, capacity_kg, flat_rate) VALUES
-        (1, '8 Ton Truck', 7500, 130000.00),
-        (1, '15 Ton Truck', 14500, 155000.00),
-        (1, '30 Ton Truck', 28000, 220000.00),
-        (2, '8 Ton Truck', 7500, 78000.00),
-        (2, '15 Ton Truck', 14500, 93000.00),
-        (2, '30 Ton Truck', 28000, 132000.00);");
+        (1, '8 Ton Truck', 7500, 130000),
+        (1, '15 Ton Truck', 14500, 155000),
+        (1, '30 Ton Truck', 28000, 220000),
+        (2, '8 Ton Truck', 7500, 78000),
+        (2, '15 Ton Truck', 14500, 93000),
+        (2, '30 Ton Truck', 28000, 132000);");
     }
     public static function create_discounts_table()
     {
@@ -551,6 +579,7 @@ class Database
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
     }
+
     public static function delete_table($name)
     {
         global $wpdb;
@@ -577,6 +606,7 @@ class Database
     }
     public static function deactivate()
     {
+
         // 1. Drop tables that depend on everything else (deepest children)
         self::delete_table('kit_waybill_items');
         self::delete_table('kit_quotations');
@@ -605,5 +635,6 @@ class Database
         self::delete_table('kit_customers');
         //self::delete_table('kit_services');
         self::delete_table('kit_discounts');
+        
     }
 }

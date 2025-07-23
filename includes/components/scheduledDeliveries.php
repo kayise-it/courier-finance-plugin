@@ -5,8 +5,8 @@
         $default_country = ''; // or set a default country code
         $delivery_going = KIT_Deliveries::getScheduledDeliveries();
 
-        foreach ($delivery_going as $delivery): ?>
-            <?= KIT_Commons::DestinationButtonBox([
+        foreach ($delivery_going as $delivery):
+            echo KIT_Commons::DestinationButtonBox([
                 'name'               => 'direction_id',
                 'delivery_reference' => 'delivery_id',
                 'direction_id'       => $delivery->direction_id,
@@ -16,9 +16,10 @@
                 'description' => $delivery->description,
                 'destination_country_id'     => $delivery->destination_country_id,
                 'origin_country_id'        => $delivery->origin_country_id,
+                'class' => 'delivery-button',
+                'onclick' => 'handleDeliveryChange(' . $delivery->direction_id . ')',
             ]);
-            ?>
-        <?php endforeach; ?>
+        endforeach; ?>
     </div>
     <div id="deliveryDetails"></div>
 </div>

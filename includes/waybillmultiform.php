@@ -36,23 +36,20 @@ function kit_render_waybill_multiform($atts)
         <?php endif; ?>
         <?php wp_nonce_field($is_edit_mode ? 'update_waybill_nonce' : 'add_waybill_nonce'); ?>
         <!-- Step 1: Waybill Header -->
-        <div class="step step-1 active" id="step-1">
+        <div class="step step-1 active" id="step-1" style="min-width: 500px;">
             <?php require __DIR__ . '/waybill/steps/step1.php'; ?>
         </div>
-        <!-- Step 2: Customer Section -->
-        <div class="step step-2 hidden" id="step-2">
-            <?php /* require __DIR__ . '/waybill/steps/step2a.php' */; ?>
-        </div>
+        
         <!-- Step 3: Items -->
-        <div class="step step-3 hidden" id="step-3">
+        <div class="step step-3 hidden" id="step-3" style="min-width: 500px;">
             <?php require __DIR__ . '/waybill/steps/step3.php'; ?>
         </div>
         <!-- Step 4: Item Section -->
-        <div class="step step-4 hidden" id="step-4">
+        <div class="step step-4 hidden" id="step-4" style="min-width: 500px;">
             <?php require __DIR__ . '/waybill/steps/step4.php'; ?>
         </div>
         <!-- Step 5: Charge Basis Section -->
-        <div class="step step-5 hidden" id="step-5">
+        <div class="step step-5 hidden" id="step-5" style="min-width: 500px;">
             <?php require __DIR__ . '/waybill/steps/step5.php'; ?>
         </div>
     </form>
@@ -191,7 +188,7 @@ function kit_render_waybill_multiform($atts)
                     miscItemGroup.style = 'display: flex; gap: 10px; margin-bottom: 10px; align-items: center;';
                     miscItemGroup.innerHTML = `
             <input type="text" name="misc_item[]" placeholder="Item description" style="flex: 2; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-            <input type="number" name="misc_price[]" placeholder="Amount" step="0.01" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+            <input type="number" name="misc_price[]" placeholder="Amount" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
             <button type="button" class="remove-misc-btn" style="background-color: #ef4444; color: white; padding: 8px; border-radius: 4px; border: none; cursor: pointer;">×</button>`;
                     miscItemsContainer.appendChild(miscItemGroup);
                 });

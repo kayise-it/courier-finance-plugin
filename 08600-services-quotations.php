@@ -56,15 +56,13 @@ require_once plugin_dir_path(__FILE__) . 'includes/customers/customers-functions
 require_once plugin_dir_path(__FILE__) . 'includes/deliveries/deliveries-functions.php';
 require_once plugin_dir_path(__FILE__) . 'includes/waybillmultiform.php';
 require_once plugin_dir_path(__FILE__) . 'includes/countries/opc-functions.php';
+require_once plugin_dir_path(__FILE__) . 'includes/routes/routes-functions.php';
 
 function my_plugin_enqueue_scripts()
 {
-    // Enqueue JS
-    // Enqueue scripts
-    wp_enqueue_script('kitscript', plugin_dir_url(__FILE__) . '/js/kitscript.js', ['jquery'], null, true);
+    wp_enqueue_script('kitscript', plugin_dir_url(__FILE__) . 'js/kitscript.js', ['jquery'], null, true);
     wp_enqueue_script('waybill-pagination', plugin_dir_url(__FILE__) . '/js/waybill-pagination.js', ['jquery'], null, true);
 
-    // Localize BOTH scripts
     $localize_data = [
         'ajax_url' => admin_url('admin-ajax.php'),
         'nonces' => [
@@ -72,18 +70,16 @@ function my_plugin_enqueue_scripts()
             'delete' => wp_create_nonce('delete_waybill_nonce'),
             'update' => wp_create_nonce('update_waybill_nonce'),
             'get_waybills_nonce' => wp_create_nonce('get_waybills_nonce'),
-            'get_cities_nonce' => wp_create_nonce('get_cities_nonce'),
-            'kit_waybill_nonce' => wp_create_nonce('kit_waybill_nonce'),
-            'pdf_nonce' => wp_create_nonce('pdf_nonce')
-        ]
+            'get_cities_nonce'   => wp_create_nonce('get_cities_nonce'),
+            'kit_waybill_nonce'  => wp_create_nonce('kit_waybill_nonce'),
+            'pdf_nonce'          => wp_create_nonce('pdf_nonce'),
+        ],
     ];
 
-    wp_localize_script('kitscript', 'myPluginAjax', $localize_data);
+    // Localize both
     wp_localize_script('waybill-pagination', 'myPluginAjax', $localize_data);
+    wp_localize_script('kitscript', 'myPluginAjax', $localize_data);
 }
-
-
-
 
 /**
  * Main plugin page callback with form to insert new service
@@ -832,7 +828,7 @@ function quotation_form($type, $quotation = null)
             <!-- Weight-Based Input -->
             <div id="weightInput" class="mt-4">
                 <label class="block text-sm font-medium text-gray-600">Weight (kg)</label>
-                <input type="number" name="weight" min="0.1" step="0.1" class="w-full p-2 border rounded-lg"
+                <input type="number" name="weight" class="w-full p-2 border rounded-lg"
                     placeholder="Enter weight in kg">
             </div>
 
@@ -840,17 +836,17 @@ function quotation_form($type, $quotation = null)
             <div id="volumeInput" class="hidden mt-4">
                 <label class="block text-sm font-medium text-gray-600">Dimensions (m)</label>
                 <div class="grid grid-cols-3 gap-2">
-                    <input type="number" name="length" min="0.1" step="0.01" placeholder="Length"
+                    <input type="number" name="length" placeholder="Length"
                         class="p-2 border rounded-lg">
-                    <input type="number" name="width" min="0.1" step="0.01" placeholder="Width"
+                    <input type="number" name="width" placeholder="Width"
                         class="p-2 border rounded-lg">
-                    <input type="number" name="height" min="0.1" step="0.01" placeholder="Height"
+                    <input type="number" name="height" placeholder="Height"
                         class="p-2 border rounded-lg">
                 </div>
             </div>
         </div>
 
-        <!-- Additional Fees -->
+        <!-- Additional Fees otherz-->
         <div class="space-y-4 mt-6">
             <h3 class="text-lg font-semibold">Additional Fees</h3>
             <label class="flex items-center space-x-2">

@@ -1,109 +1,121 @@
 //file location: js/kitscript.js
-document.addEventListener('DOMContentLoaded', function () {
-    const feeOptions = document.querySelectorAll('.fee-option');
-    const vatOption = document.getElementById('vat_option');
+function toggleDropdownDeliveryStatus(delivery_id) {
+    const dropdown = document.getElementById('delivery-status-dropdown-' + delivery_id);
+    dropdown.classList.toggle('hidden');
+}
 
-    feeOptions.forEach(option => {
-        // Handle click on the label/button area
-        option.addEventListener('click', function (e) {
-            // If the click is directly on the input, let it handle itself
-            if (e.target.tagName === 'INPUT') return;
+function hello() {
+    alert("Hello");
+}
 
-            // Find the input element within the fee-option
-            const input = this.querySelector('input[type="checkbox"]');
-            if (!input) return;
+function fetchRatePerKg() {
+    const total_mass_kg = parseFloat(jQuery('#total_mass_kg').val()) || 0;
+    const country_id = jQuery('#countrydestination_id').val(); // Hidden input or radio
+    let current_rate = jQuery('#current_rate').val();
 
-            // Prevent checking others if VAT is already checked
-            if (vatOption.checked && input.id !== 'vat_option') {
-                return;
+
+    if (total_mass_kg > 0) {
+        jQuery.ajax({
+            url: myPluginAjax.ajax_url,
+            type: 'POST',
+            dataType: 'json',
+            data: {
+                action: 'handle_get_price_per_kg',
+                total_mass_kg: total_mass_kg,
+                origin_country_id: country_id,
+                nonce: myPluginAjax.nonces.get_waybills_nonce
+            },
+            success: function (response) {
+
+                if (response.success) {
+                    const rate = response.data.rate_per_kg;
+
+                    console.log('Rate per kg: R' + rate);
+                    current_rate = rate;
+
+                    jQuery('#mass_charge_display').text(rate);
+                    jQuery('#mass_charge').val(rate * total_mass_kg);
+                    jQuery('#mass_rate').val(rate);
+                } else {
+                    console.warn(response.data.message);
+                }
+            },
+            error: function (xhr, status, error) {
+                console.error('AJAX Error:', error);
             }
-
-            // Toggle the checkbox state
-            input.checked = !input.checked;
-
-            // If VAT was just checked, uncheck all others
-            if (input.id === 'vat_option' && input.checked) {
-                feeOptions.forEach(opt => {
-                    const otherInput = opt.querySelector('input[type="checkbox"]');
-                    if (otherInput && otherInput.id !== 'vat_option') {
-                        otherInput.checked = false;
-                        opt.classList.remove('bg-blue-100', 'border-blue-500');
-                    }
-                });
-            }
-
-            // If another option was checked while VAT is checked, uncheck VAT
-            if (input.id !== 'vat_option' && input.checked && vatOption.checked) {
-                vatOption.checked = false;
-                vatOption.closest('.fee-option').classList.remove('bg-blue-100', 'border-blue-500');
-            }
-
-            // Update visual state
-            updateVisualState(input);
         });
+    }
+}
 
-        // Also handle changes directly on the input (in case user clicks it)
-        const input = option.querySelector('input[type="checkbox"]');
-        if (input) {
-            input.addEventListener('change', function () {
-                // Prevent checking others if VAT is already checked
-                if (vatOption.checked && this.id !== 'vat_option') {
-                    this.checked = false;
-                    return;
-                }
+document.addEventListener('DOMContentLoaded', function () {
+    const massInput = document.getElementById('total_mass_kg');
+    if (massInput) {
+        massInput.addEventListener('click', fetchRatePerKg);
+    }
 
-                // If VAT was checked, uncheck all others
-                if (this.id === 'vat_option' && this.checked) {
-                    feeOptions.forEach(opt => {
-                        const otherInput = opt.querySelector('input[type="checkbox"]');
-                        if (otherInput && otherInput.id !== 'vat_option') {
-                            otherInput.checked = false;
-                            opt.classList.remove('bg-blue-100', 'border-blue-500');
-                        }
-                    });
-                }
-
-                // If another option was checked while VAT is checked, uncheck VAT
-                if (this.id !== 'vat_option' && this.checked && vatOption.checked) {
-                    vatOption.checked = false;
-                    vatOption.closest('.fee-option').classList.remove('bg-blue-100', 'border-blue-500');
-                }
-
-                updateVisualState(this);
-            });
-        }
+    let timeout;
+    jQuery('#total_mass_kg').on('input', function () {
+        clearTimeout(timeout);
+        timeout = setTimeout(fetchRatePerKg, 0); // Wait 500ms after user stops typing
     });
+    // Dispatch date validation
+    const dispatchDateInput = document.getElementById('dispatch_date');
+    const today = new Date().toISOString().split('T')[0];
 
-    function updateVisualState(input) {
-        const parent = input.closest('.fee-option');
-        if (input.checked) {
-            parent.classList.add('bg-blue-100', 'border-blue-500');
-        } else {
-            parent.classList.remove('bg-blue-100', 'border-blue-500');
+    if (dispatchDateInput) {
+        // Set min date attribute
+        dispatchDateInput.min = today;
+
+        // Additional validation on form submission
+        document.querySelector('form').addEventListener('submit', function (e) {
+            const selectedDate = dispatchDateInput.value;
+            if (selectedDate < today) {
+                e.preventDefault();
+                dispatchDateInput.focus();
+            }
+        });
+    }
+
+    // VAT checkbox functionality
+    const vatCheckbox = document.getElementById('vat_option');
+    const optionz = document.querySelectorAll('.optionz');
+
+    function toggleOptionzDisabled() {
+        if (vatCheckbox && vatCheckbox.checked) {
+            optionz.forEach(function (opt) {
+                opt.disabled = true;
+            });
+        } else if (vatCheckbox) {
+            optionz.forEach(function (opt) {
+                opt.disabled = false;
+            });
         }
     }
 
+    if (vatCheckbox) {
+        vatCheckbox.addEventListener('change', toggleOptionzDisabled);
+        // Run on page load in case VAT is pre-checked
+        toggleOptionzDisabled();
+    }
 
-});
 
-
-jQuery(function ($) {
-    $(document).on('click', '.delete-waybill', function (e) {
+    // Delete waybill
+    jQuery(document).on('click', '.delete-waybill', function (e) {
         e.preventDefault();
 
-        const $form = $(this).closest('form');
+        const $form = jQuery(this).closest('form');
         const waybillId = $form.find('input[name="waybill_id"]').val();
         const waybillNo = $form.find('input[name="waybill_no"]').val();
         const deliveryId = $form.find('input[name="delivery_id"]').val();
         const userId = $form.find('input[name="user_id"]').val();
         const nonce = $form.find('input[name="_wpnonce"]').val();
-        const $row = $(this).closest('tr');
+        const $row = jQuery(this).closest('tr');
 
         if (!confirm('Are you sure you want to delete this waybill?')) {
             return;
         }
 
-        $.ajax({
+        jQuery.ajax({
             url: myPluginAjax.ajax_url,
             type: 'POST',
             data: {
@@ -119,10 +131,8 @@ jQuery(function ($) {
             },
             success: function (response) {
                 if (response.success) {
-                    $row.fadeOut(300, function () {
-                        $(this).remove();
-                        checkEmptyTable();
-                    });
+                    /* After deleting waybill reload the table #waybill-table-container */
+                    jQuery('#waybill-table-parent').load(window.location.href + ' #waybill-table-container');
                 } else {
                     alert('Error: ' + (response.data?.message || 'Failed to delete waybill'));
                     $row.css('opacity', '1');
@@ -134,18 +144,136 @@ jQuery(function ($) {
             }
         });
     });
+
+    // Select all rows
+    jQuery(document).on('change', '.selectRow', function () {
+        // Check if all rows are checked
+        const allChecked = jQuery('.selectRow:checked').length === jQuery('.selectRow').length;
+        jQuery('.selectAllRows').prop('checked', allChecked);
+    });
+
+    // Select all rows
+    jQuery(document).on('change', '.selectAllRows', function () {
+        // Check if all rows are checked
+        const allChecked = jQuery(this).prop('checked');
+        jQuery('.selectRow').prop('checked', allChecked);
+    });
+
+    // Delete delivery
+    jQuery(document).on('click', '.delete-delivery', function (e) {
+        e.preventDefault();
+        const deliveryId = jQuery(this).data('delivery-id');
+        if (!confirm('Are you sure you want to delete this delivery?')) {
+            return;
+        }
+    });
+
+    // Warehoused checkbox
+    jQuery(document).on('change', '#warehoused_option', function () {
+        const scheduledDeliveriesList = document.getElementById('scheduled-deliveries-list');
+        if (jQuery(this).is(':checked')) {
+            scheduledDeliveriesList.classList.add('hidden');
+            const specialDeliveryBtn = document.getElementById('specialDeliveryBtn');
+            specialDeliveryBtn.disabled = false;
+            specialDeliveryBtn.classList.remove('bg-gray-300', 'text-gray-500');
+            specialDeliveryBtn.classList.add('bg-blue-600', 'text-white');
+        } else {
+            scheduledDeliveriesList.classList.remove('hidden');
+        }
+    });
+
+    jQuery('#enable_price_manipulator').on('change', function () {
+        if (this.checked) {
+            /* When mass_charge_manipulator is changed, then alert the value after 2 seconds */
+            jQuery('#mass_charge_manipulator').on('focusout', function () {
+                const manipulatorVal = parseFloat(jQuery('#mass_charge_manipulator').val()) || 0;
+                const rateVal = parseFloat(current_rate) || 0;
+                const sum = rateVal + manipulatorVal;
+                jQuery('#manipulated_mass_charge_display').text('+ R' + manipulatorVal + ' = ' + sum);
+
+                /* Now update the #mass_charge where we take now the new value 'sum' and multiply it by the total_mass_kg */
+                const total_mass_kg = parseFloat(jQuery('#total_mass_kg').val()) || 0;
+                const new_mass_charge = sum * total_mass_kg;
+                jQuery('#mass_charge').val(new_mass_charge);
+                jQuery('#mass_rate').val(sum);
+
+                // Take this new new_mass_charge and add create a hidden input called new_mass_rate to send via POST
+                // If the input doesn't exist, create it; otherwise, update its value
+                if (jQuery('#new_mass_rate').length === 0) {
+                    jQuery('<input>').attr({
+                        type: 'hidden',
+                        id: 'new_mass_rate',
+                        name: 'new_mass_rate',
+                        value: sum
+                    }).appendTo('form');
+                } else {
+                    jQuery('#new_mass_rate').val(sum);
+                }
+
+            });
+        } else {
+            jQuery('#mass_charge_display').text(rate);
+        }
+    });
 });
 
-// Attach event listeners for relevant fields to recalculate the cost when values change
-function attachEventListeners() {
-    const fields = ['weight_kg', 'volume_m3', 'additional_fees', 'discount_percent', 'include_sad500', 'include_sadc_certificate', 'include_tra_clearing_fee'];
+// Global spinner management system
+const SpinnerManager = {
+    // Store active spinners to prevent duplicates
+    activeSpinners: new Set(),
 
-    fields.forEach(field => {
-        const element = document.getElementById(field);
-        element.addEventListener('input', calculateTotalCost);
-        element.addEventListener('change', calculateTotalCost); // For checkboxes
-    });
-}
+    // CSS for the spinner (injected once)
+    injectStyles: function () {
+        if (!document.getElementById('spinner-styles')) {
+            const style = document.createElement('style');
+            style.id = 'spinner-styles';
+            style.textContent = `
+                .input-spinner {
+                    position: relative;
+                }
+                .input-spinner::after {
+                    content: '';
+                    position: absolute;
+                    right: 8px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    width: 16px;
+                    height: 16px;
+                    border: 2px solid rgba(0,0,0,0.1);
+                    border-radius: 50%;
+                    border-top-color: #3498db;
+                    animation: spin 1s linear infinite;
+                }
+                @keyframes spin {
+                    to { transform: translateY(-50%) rotate(360deg); }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+    },
 
-// Call the function to set up event listeners and initialize values
-window.onload = () => {};
+    // Show spinner on specific input
+    show: function (inputElement) {
+        this.injectStyles();
+        if (!this.activeSpinners.has(inputElement)) {
+            inputElement.classList.add('input-spinner');
+            this.activeSpinners.add(inputElement);
+        }
+    },
+
+    // Hide spinner from specific input
+    hide: function (inputElement) {
+        if (this.activeSpinners.has(inputElement)) {
+            inputElement.classList.remove('input-spinner');
+            this.activeSpinners.delete(inputElement);
+        }
+    },
+
+    // Hide all spinners
+    hideAll: function () {
+        this.activeSpinners.forEach(input => {
+            input.classList.remove('input-spinner');
+        });
+        this.activeSpinners.clear();
+    }
+};

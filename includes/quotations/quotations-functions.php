@@ -114,10 +114,6 @@ class KIT_Quotations
             return new WP_Error('invalid_waybill', 'Waybill not found');
         }
 
-        echo '<pre>';
-        print_r($waybill);
-        echo '</pre>';
-        exit();
         // Step 2: If already quoted, block
         if ($waybill->approval === 'approved') {
             //return new WP_Error('already_quoted', 'This waybill has already been quoted');
@@ -215,15 +211,15 @@ class KIT_Quotations
 
             // Update waybill status to quoted only id approval is approved
             if ($waybill->approval === 'approved') {
-            $waybill_updated = $wpdb->update(
-                "{$wpdb->prefix}kit_waybills",
-                [
-                    'status' => 'quoted',
-                    'last_updated_by' => get_current_user_id(),
-                    'last_updated_at' => current_time('mysql')
-                ],
-                ['id' => $waybill_id],
-                ['%s', '%d', '%s'],
+                $waybill_updated = $wpdb->update(
+                    "{$wpdb->prefix}kit_waybills",
+                    [
+                        'status' => 'quoted',
+                        'last_updated_by' => get_current_user_id(),
+                        'last_updated_at' => current_time('mysql')
+                    ],
+                    ['id' => $waybill_id],
+                    ['%s', '%d', '%s'],
                     ['%d']
                 );
             }
@@ -279,7 +275,6 @@ class KIT_Quotations
             wp_send_json_error($result->get_error_message());
         }
 
-        exit(var_dump($wpdb->last_query));
         wp_send_json_success([
             'message' => 'Quotation created successfully',
             'quotation_id' => $result
@@ -292,7 +287,7 @@ class KIT_Quotations
         global $wpdb, $table_quotations;
 
         $query = "
-            SELECT q.*, c.name AS customer_name, w.waybill_no
+            SELECT q.*, c.name AS customer_name, c.surname AS customer_surname, w.id AS waybill_id, w.waybill_no, w.product_invoice_amount, w.miscellaneous, w.charge_basis, w.mass_charge, w.volume_charge
             FROM $table_quotations q
             LEFT JOIN {$wpdb->prefix}kit_customers c ON q.customer_id = c.cust_id
             LEFT JOIN {$wpdb->prefix}kit_waybills w ON q.waybill_id = w.id
@@ -313,8 +308,14 @@ class KIT_Quotations
             return false;
         }
 
-        $misc_combined = unserialize($waybill->miscellaneous ?? []);
-        $misc_total = $misc_combined['total'];
+        // if $waybill->miscellaneous is not empty, then unserialize it
+        if (!empty($waybill->miscellaneous)) {
+            $misc_combined = unserialize($waybill->miscellaneous);
+            $misc_total = $misc_combined['total'] ?? 0;
+        } else {
+            $misc_total = 0;
+        }
+
         $subtotal = $waybill->product_invoice_amount;
 
         // Prepare quotation data
@@ -590,12 +591,6 @@ add_filter('kit_waybill_actions', function ($actions, $waybill_id) {
     return $actions;
 }, 10, 2);
 
-// ✅ Get all quotations
-function kit_get_all_quotations()
-{
-    global $wpdb, $table_quotations;
-    return $wpdb->get_results("SELECT * FROM $table_quotations", ARRAY_A);
-}
 
 // ✅ Get Quotation by ID
 function kit_get_quotation_by_id($id)
@@ -731,11 +726,51 @@ function kit_get_all_quotations_table()
                 <!-- All waybills with no quotations, wp_kit_waybills`.`status = pending -->
                 <?php
                 $pendingWaybills = KIT_Waybills::getWaybillsStatusPending();
-                echo KIT_Waybills::render_table_with_pagination($pendingWaybills, [
-                    'fields' => ['waybill_no', 'delivery_id', 'customer_id', 'status'],
-                    'table_class' => 'min-w-full divide-y divide-gray-200 text-xs',
-                    'show_create_quotation' => true
-                ]);
+
+                $options = [
+                    'itemsPerPage' => 5,
+                    'currentPage' => $_GET['paged'] ?? 1,
+                    'tableClass' => 'min-w-full text-left text-xs text-gray-700',
+                    'emptyMessage' => 'No customers records found',
+                    'id' => 'customerTable',
+
+                ];
+
+
+                $columns = [
+                    'waybill_no' => ['label' => 'Waybill #', 'align' => 'text-left'],
+                    'customer_name' => ['label' => 'Name', 'align' => 'text-left'],
+                    'charge_basis' => ['label' => 'Charge Basis', 'align' => 'text-left'],
+                    'total' => ['label' => 'Total', 'align' => 'text-right'],
+                    'actions' => ['label' => 'Actions', 'align' => 'text-center'],
+                ];
+
+                $waybill_actions = function ($key, $row) {
+                    if ($key === 'waybill_no') {
+                        return  '<a href="?page=08600-Waybill-view&waybill_id=' . $row->waybill_id . '&waybill_atts=view_waybill" target="_blank" class="text-blue-600 hover:underline">' . $row->waybill_no . '</a>';
+                    }
+                    if ($key === 'status') {
+                        return  KIT_Commons::statusBadge($row->status);
+                    }
+                    
+                    if ($key === 'customer_name') {
+                        return $row->customer_name . ' ' . $row->customer_surname;
+                    }
+                    if ($key === 'total') {
+                        return KIT_Commons::currency() . ' ' . ((int) $row->product_invoice_amount + (int) $row->miscellaneous);
+                    }
+                    if ($key === 'approval') {
+                        return KIT_Commons::statusBadge($row->approval);
+                    }
+                    if ($key === 'actions') {
+                        $html = '<a href="?page=08600-Waybill-view&waybill_id=' . $row->waybill_id . '&waybill_atts=view_waybill" class="text-blue-600 hover:underline">View</a> ';
+                        $html .= '<a href="?page=08600-Waybill&delete_waybill=' . $row->waybill_no . '" class="text-red-600 hover:underline" onclick="return confirm(\'Are you sure you want to delete this waybill?\');">Delete</a>';
+                        return $html;
+                    }
+                    return htmlspecialchars(($row->$key ?? '') ?: '');
+                };
+
+                echo KIT_Commons::render_versatile_table($pendingWaybills, $columns, $waybill_actions, $options);
 
                 ?>
             </div>
@@ -747,12 +782,54 @@ function kit_get_all_quotations_table()
                 <!-- All waybills with no quotations, wp_kit_waybills`.`status = quoted and quotation -->
                 <?php
                 $quotations = KIT_Quotations::kit_get_all_quotations();
+    
+                $options = [
+                    'itemsPerPage' => 5,
+                    'currentPage' => $_GET['paged'] ?? 1,
+                    'tableClass' => 'min-w-full text-left text-xs text-gray-700',
+                    'emptyMessage' => 'No customers records found',
+                    'id' => 'customerTable',
 
-                echo KIT_Waybills::RenderTable($quotations, [
-                    'fields' => ['waybill_no', 'delivery_id', 'customer_id', 'status'],
-                    'table_class' => 'min-w-full divide-y divide-gray-200 text-xs',
-                    'quoted_already' => true,
-                ]);
+                ];
+
+                $columns = [
+                    'waybill_no' => ['label' => 'Waybill #', 'align' => 'text-left'],
+                    'customer_name' => ['label' => 'Name', 'align' => 'text-left'],
+                    'charge_basis' => ['label' => 'Charge Basis', 'align' => 'text-left'],
+                    'total' => ['label' => 'Total', 'align' => 'text-right'],
+                    'actions' => ['label' => 'Actions', 'align' => 'text-center'],
+                ];
+
+
+                $waybill_actions = function ($key, $row) {
+                    if ($key === 'charge_basis') {
+                        return $row['charge_basis'];
+                    }   
+                    if ($key === 'customer_name') {
+                        return $row['customer_name'] . ' ' . $row['customer_surname'];
+                    }   
+                    if ($key === 'waybill_no') {
+                        // link to waybill view example: ?href="?page=08600-Waybill-view&waybill_id=7&waybill_atts=view_waybill"
+                        return '<a href="?page=08600-Waybill-view&waybill_id=' . $row['waybill_id'] . '&waybill_atts=view_waybill" target="_blank" class="text-blue-600 hover:underline">' . $row['waybillNo'] . '</a>';
+                    }
+
+                    if ($key === 'total') {
+                        return KIT_Commons::currency() . ' ' . ((int) $row['product_invoice_amount'] + (int) ($row['miscellaneous'] ?? 0));
+                    }
+                    if ($key === 'actions') {
+                        //$html download PDF button
+                        $html = '';
+                        $html .= '<div class="flex">';
+                        $html .= '<a href="?page=08600-Waybill-view&waybill_id=' . $row['waybill_id'] . '" class="text-blue-600 hover:underline">View</a> ';
+                        $html .= '<a href="?page=waybill-dashboard&delete_waybill=' . $row['waybillNo'] . '" class="text-red-600 hover:underline" onclick="return confirm(\'Are you sure you want to delete this waybill?\');">Delete</a>';
+                        $html .= '</div>';
+
+                        return $html;
+                    }
+   
+                };
+
+                echo KIT_Commons::render_versatile_table($quotations, $columns, $waybill_actions, $options);
                 ?>
             </div>
         </div>

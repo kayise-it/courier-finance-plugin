@@ -26,6 +26,19 @@
         </button>
 
         <div class="customer-details-content px-4 py-3 bg-white">
+            <div class=" gap-4">
+                <div>
+                    <?= KIT_Commons::Linput([
+                        'label' => 'Company Name',
+                        'name'  => 'company_name',
+                        'id'    => 'company_name',
+                        'type'  => 'text',
+                        'value' => esc_attr($is_existing_customer ? $customer->name : rand(1, 23)),
+                        'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500',
+                        'special' => ''
+                    ]); ?>
+                </div>
+            </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <?= KIT_Commons::Linput([
@@ -62,15 +75,31 @@
                 </div>
                 <div>
                     <?= KIT_Commons::Linput([
-                        'label' => 'Address',
-                        'name'  => 'address',
-                        'id'    => 'address',
+                        'label' => 'Email',
+                        'name'  => 'email_address',
+                        'id'    => 'email_address',
                         'type'  => 'text',
-                        'value' => esc_attr($is_existing_customer ? $customer->address : ''),
+                        'value' => esc_attr($is_existing_customer ? $customer->email_address : 'me@me.com'),
                         'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500',
                         'special' => ''
                     ]); ?>
                 </div>
+
+            </div>
+            <div>
+
+                <?= KIT_Commons::Linput([
+                    'label' => 'Address',
+                    'name'  => 'address',
+                    'id'    => 'address',
+                    'type'  => 'text',
+                    'value' => esc_attr($is_existing_customer ? $customer->address : ''),
+                    'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500',
+                    'special' => ''
+                ]); ?>
+            </div>
+            <div>
+                <?php require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/selectsOrigin.php'); ?>
             </div>
         </div>
     </div>

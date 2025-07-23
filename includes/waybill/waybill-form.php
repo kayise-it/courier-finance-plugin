@@ -94,7 +94,7 @@ $scheduled_deliveries = KIT_Deliveries::getScheduledDeliveries();
 
 ?>
 
-<div class="wrap bg-gray-100">
+<div class="wrap">
     <?php
     echo do_shortcode('[showheader title="Capture New Waybill" desc=""]');
     ?>

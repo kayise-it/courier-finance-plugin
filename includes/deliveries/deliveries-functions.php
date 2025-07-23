@@ -7,13 +7,15 @@ class KIT_Deliveries
 {
     public static function init()
     {
-        add_action('admin_menu', [__CLASS__, 'add_admin_menu']);
-        add_action('wp_ajax_kit_deliveries_crud', [__CLASS__, 'handle_ajax']);
-        add_action('wp_ajax_delivery_changeTo_Intransit', [__CLASS__, 'delivery_changeTo_Intransit']);
-        add_action('wp_ajax_delivery_changeTo_Delivered', [__CLASS__, 'delivery_changeTo_Delivered']);
-        add_action('wp_ajax_delivery_changeTo_Scheduled', [__CLASS__, 'delivery_changeTo_Scheduled']);
-        add_action('wp_ajax_get_scheduled_deliveries', [__CLASS__, 'getScheduledDeliveries']);
-        add_action('wp_ajax_get_customers', [__CLASS__, 'get_customers']);
+        add_action('admin_menu', [self::class, 'add_admin_menu']);
+        add_action('wp_ajax_kit_deliveries_crud', [self::class, 'handle_ajax']);
+        add_action('admin_post_kit_deliveries_crud', [self::class, 'handle_ajax']);
+        add_action('wp_ajax_kit_deliveries_crud', [self::class, 'handle_ajax']);
+        add_action('wp_ajax_delivery_changeTo_Intransit', [self::class, 'delivery_changeTo_Intransit']);
+        add_action('wp_ajax_delivery_changeTo_Delivered', [self::class, 'delivery_changeTo_Delivered']);
+        add_action('wp_ajax_delivery_changeTo_Scheduled', [self::class, 'delivery_changeTo_Scheduled']);
+        add_action('wp_ajax_get_scheduled_deliveries', [self::class, 'getScheduledDeliveries']);
+        add_action('wp_ajax_get_customers', [self::class, 'get_customers']);
         add_action('wp_ajax_get_deliveries_by_country', [self::class, 'handle_get_deliveries_by_country']);
         add_action('wp_ajax_nopriv_get_deliveries_by_country', [self::class, 'handle_get_deliveries_by_country']);
         add_action('wp_ajax_get_deliveries_by_country_id', [self::class, 'handle_get_deliveries_by_country_id']);
@@ -25,6 +27,8 @@ class KIT_Deliveries
         add_action('wp_ajax_nopriv_handle_get_price_per_kg', [self::class, 'handle_get_price_per_kg']);
         add_action('wp_ajax_handle_get_price_per_m3', [self::class, 'handle_get_price_per_m3']);
         add_action('wp_ajax_nopriv_handle_get_price_per_m3', [self::class, 'handle_get_price_per_m3']);
+        add_action('wp_ajax_handle_get_cities_for_country', [self::class, 'handle_get_cities_for_country_callback']);
+        add_action('wp_ajax_nopriv_handle_get_cities_for_country', [self::class, 'handle_get_cities_for_country_callback']);
     }
     public static function shippingDirections()
     {
@@ -53,10 +57,12 @@ class KIT_Deliveries
 
         $direction_id = isset($_POST['direction_id']) ? intval($_POST['direction_id']) : 0;
         $total_volume_m3 = isset($_POST['total_volume_m3']) ? floatval($_POST['total_volume_m3']) : 0;
+        $chargeGroup = KIT_Waybills::chargeGroup($_POST['origin_country_id']);
 
-        if (!$direction_id || !$total_volume_m3) {
-            wp_send_json_error(['message' => 'Missing direction_id or volume.']);
+        if (!$chargeGroup || !$total_volume_m3) {
+            wp_send_json_error(['message' => 'Missing chargeGroup or volume.']);
         }
+        
 
         $table = $wpdb->prefix . 'kit_shipping_rates_volume';
 
@@ -65,7 +71,7 @@ class KIT_Deliveries
         FROM $table
         WHERE direction_id = %d
           AND %f BETWEEN min_volume AND max_volume
-        LIMIT 1", $direction_id, $total_volume_m3));
+        LIMIT 1", $chargeGroup, $total_volume_m3));
 
         if ($rate_per_m3 !== null) {
             wp_send_json_success(['rate_per_m3' => $rate_per_m3]);
@@ -78,28 +84,41 @@ class KIT_Deliveries
     {
         global $wpdb;
 
+        /*   
         if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'get_waybills_nonce')) {
             wp_send_json_error(['message' => 'Invalid security token.']);
-        }
+        } 
+            */
+
+
+        $chargeGroup = KIT_Waybills::chargeGroup($_POST['origin_country_id']);
 
         $direction_id = isset($_POST['direction_id']) ? intval($_POST['direction_id']) : 0;
         $total_mass_kg = isset($_POST['total_mass_kg']) ? floatval($_POST['total_mass_kg']) : 0;
 
-        if (!$direction_id || !$total_mass_kg) {
+
+        if (!$total_mass_kg) {
             wp_send_json_error(['message' => 'Missing direction_id or total_mass_kg.']);
         }
 
         $table = $wpdb->prefix . 'kit_shipping_rates_mass';
 
+        // safer than BETWEEN
         $rate_per_kg = $wpdb->get_var($wpdb->prepare("
         SELECT rate_per_kg
         FROM $table
         WHERE direction_id = %d
-          AND %f BETWEEN min_weight AND max_weight
-        LIMIT 1", $direction_id, $total_mass_kg));
+          AND min_weight <= %f
+          AND max_weight >= %f
+        ORDER BY effective_date DESC
+        LIMIT 1", $chargeGroup, $total_mass_kg, $total_mass_kg));
 
         if ($rate_per_kg !== null) {
-            wp_send_json_success(['rate_per_kg' => $rate_per_kg]);
+
+            wp_send_json_success([
+                'rate_per_kg' => $rate_per_kg,
+                'total_charge' => round($rate_per_kg * $total_mass_kg, 2)
+            ]);
         } else {
             wp_send_json_error(['message' => 'No matching rate found.']);
         }
@@ -243,10 +262,7 @@ class KIT_Deliveries
         check_ajax_referer('deliveries_nonce', 'nonce');
 
         $country_code = sanitize_text_field($_POST['country']);
-        echo '<pre>';
-        print_r($_POST);
-        echo '</pre>';
-        exit();
+
         if (empty($country_code)) {
             wp_send_json_error(['message' => 'Country code is required']);
         }
@@ -317,6 +333,70 @@ class KIT_Deliveries
 
         return $wpdb->get_results($sql);
     }
+
+    public static function tailSelect($atts)
+    {
+        // Properly output the HTML using PHP, not short tags inside a string
+        ob_start();
+
+        $delivery_id = isset($atts['delivery_id']) ? esc_attr($atts['delivery_id']) : '';
+        $status = isset($atts['status']) ? $atts['status'] : '';
+        ?>
+        <div class="relative">
+            <button type="button"
+                class="inline-flex justify-center w-full rounded-md border shadow-sm px-4 py-2 bg-white text-sm font-medium hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                id="delivery-status-button-<?php echo $delivery_id; ?>"
+                onclick="toggleDropdownDeliveryStatus('<?php echo $delivery_id; ?>')">
+                <span class="flex items-center">
+                    <span class="mr-2"><?php echo esc_html(ucfirst(str_replace('_', ' ', $status))); ?></span>
+                    <svg class="-mr-1 ml-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                    </svg>
+                </span>
+            </button>
+
+            <div id="delivery-status-dropdown-<?php echo $delivery_id; ?>" class="hidden absolute right-0 mt-2 w-56 bg-white shadow-lg rounded-md z-10">
+                <div class="py-1">
+                    <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Scheduled</a>
+                    <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">In Transit</a>
+                    <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Delivered</a>
+                    <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Cancelled</a>
+                </div>
+            </div>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    public static function deliveryStatus($atts)
+    {
+        if ($atts['insideForm'] == 'false') {
+            echo "adffda";
+            //just get the delivery status from the database
+            global $wpdb;
+            $table_name = $wpdb->prefix . 'kit_deliveries';
+            $status = $wpdb->get_var($wpdb->prepare("SELECT status FROM $table_name WHERE id = %d", $atts['delivery_id']));
+
+            //just get the delivery status from the database
+            $status = $wpdb->get_var($wpdb->prepare("SELECT status FROM $table_name WHERE id = %d", $atts['delivery_id']));
+
+            ob_start();
+        ?>
+            <form method="POST" action="<?= esc_url(admin_url('admin-post.php')) ?>" id="delivery-status-form">
+                <input type="hidden" name="action" value="update_delivery_status">
+                <input type="hidden" name="delivery_id" value="<?= esc_attr($atts['delivery_id'] ?? '') ?>">
+                <?php wp_nonce_field('update_delivery_status_nonce'); ?>
+                <div class="relative inline-block text-left">
+                    <?= self::tailSelect($atts) ?>
+                </div>
+            </form>
+
+        <?php
+        } else {
+            return  self::tailSelect($atts);
+        }
+    }
+
     public static function getScheduledDeliveries($country_code = '')
     {
         global $wpdb;
@@ -347,9 +427,8 @@ class KIT_Deliveries
 
                 LEFT JOIN {$wpdb->prefix}kit_operating_countries oc2 
                     ON sd.destination_country_id = oc2.id 
-
                 WHERE $table_name.status = 'scheduled'
-                ";
+                AND  $table_name.delivery_reference != 'warehoused'";
 
         if (!empty($country_code)) {
             $query .= $wpdb->prepare(" AND destination_country = %s", $country_code);
@@ -357,6 +436,19 @@ class KIT_Deliveries
 
         $query .= " ORDER BY dispatch_date ASC";
         return $wpdb->get_results($query);
+    }
+
+
+    public static function getCityData($city_id)
+    {
+        global $wpdb;
+
+        $cities_table = $wpdb->prefix . 'kit_operating_cities';
+        $query = $wpdb->prepare(
+            "SELECT id, city_name FROM $cities_table WHERE id = %d",
+            $city_id
+        );
+        return $wpdb->get_row($query, OBJECT);
     }
 
     public static function view_deliveries_page()
@@ -391,35 +483,42 @@ class KIT_Deliveries
             ?>
             <div class="<?= KIT_Commons::container() ?>">
                 <div class="grid md:grid-cols-8 gap-4">
-                    <div class="md:col-span-3">
-                    <div class=" bg-white rounded-lg shadow p-6">
-                        <table class="min-w-full divide-y divide-gray-200">
-                            <tbody class="bg-white divide-y divide-gray-100">
-                                <tr>
-                                    <th class="text-left py-2 pr-4 text-gray-600 font-medium">Reference Number</th>
-                                    <td class="py-2 text-gray-900"><?php echo esc_html($delivery->delivery_reference); ?></td>
-                                </tr>
-                                <tr>
-                                    <th class="text-left py-2 pr-4 text-gray-600 font-medium">Origin Country</th>
-                                    <td class="py-2 text-gray-900"><?php echo esc_html($delivery->origin_country); ?></td>
-                                </tr>
-                                <tr>
-                                    <th class="text-left py-2 pr-4 text-gray-600 font-medium">Destination Country</th>
-                                    <td class="py-2 text-gray-900"><?php echo esc_html($delivery->destination_country); ?></td>
-                                </tr>
-                                <tr>
-                                    <th class="text-left py-2 pr-4 text-gray-600 font-medium">Dispatch Date</th>
-                                    <td class="py-2 text-gray-900">
-                                        <?php echo esc_html(date('Y-m-d', strtotime($delivery->dispatch_date))); ?></td>
-                                </tr>
-                                <tr>
-                                    <th class="text-left py-2 pr-4 text-gray-600 font-medium">Truck Number</th>
-                                    <td class="py-2 text-gray-900"><?php echo esc_html($delivery->truck_number); ?></td>
-                                </tr>
-                                <tr>
-                                    <th class="text-left py-2 pr-4 text-gray-600 font-medium">Status</th>
-                                    <td class="py-2">
-                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
+                    <div class="md:col-span-2">
+                        <div class=" bg-white rounded-lg shadow p-6 space-y-6">
+                            <h2 class="text-xl font-semibold text-gray-700">Truck Details</h2>
+                            <hr>
+                            <?php
+                            if (isset($_GET['edit_delivery']) && $_GET['edit_delivery'] == 1) {
+                                echo self::deliveryForm($delivery_id);
+                            } else {
+                            ?>
+                                <table class="min-w-full divide-y divide-gray-200">
+                                    <tbody class="bg-white divide-y divide-gray-100">
+                                        <tr>
+                                            <th class="text-left py-2 pr-4 text-black font-medium">Reference Number</th>
+                                            <td class="py-2 text-gray-900"><?php echo esc_html($delivery->delivery_reference); ?></td>
+                                        </tr>
+                                        <tr>
+                                            <th class="text-left py-2 pr-4 text-black font-medium">Origin Country</th>
+                                            <td class="py-2 text-gray-900"><?php echo esc_html($delivery->origin_country); ?></td>
+                                        </tr>
+                                        <tr>
+                                            <th class="text-left py-2 pr-4 text-black font-medium">Destination Country</th>
+                                            <td class="py-2 text-gray-900"><?php echo esc_html($delivery->destination_country); ?></td>
+                                        </tr>
+                                        <tr>
+                                            <th class="text-left py-2 pr-4 text-black font-medium">Dispatch Date</th>
+                                            <td class="py-2 text-gray-900">
+                                                <?php echo esc_html(date('Y-m-d', strtotime($delivery->dispatch_date))); ?></td>
+                                        </tr>
+                                        <tr>
+                                            <th class="text-left py-2 pr-4 text-black font-medium">Truck Number</th>
+                                            <td class="py-2 text-gray-900"><?php echo esc_html($delivery->truck_number); ?></td>
+                                        </tr>
+                                        <tr>
+                                            <th class="text-left py-2 pr-4 text-black font-medium">Status</th>
+                                            <td class="py-2">
+                                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
                                     <?php
                                     echo $delivery->status === 'delivered'
                                         ? 'bg-green-100 text-green-800'
@@ -427,22 +526,29 @@ class KIT_Deliveries
                                             ? 'bg-yellow-100 text-yellow-800'
                                             : 'bg-blue-100 text-blue-800');
                                     ?>">
-                                            <?php echo esc_html(ucfirst(str_replace('_', ' ', $delivery->status))); ?>
-                                        </span>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <th class="text-left py-2 pr-4 text-gray-600 font-medium">Created By</th>
-                                    <td class="py-2 text-gray-900">
-                                        <?php echo esc_html(self::get_customer_name($delivery->created_by)); ?></td>
-                                </tr>
-                            </tbody>
-                        </table>
+                                                    <?php echo esc_html(ucfirst(str_replace('_', ' ', $delivery->status))); ?>
+                                                </span>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <th class="text-left py-2 pr-4 text-black font-medium">Created By</th>
+                                            <td class="py-2 text-gray-900">
+                                                <?php echo esc_html(self::get_customer_name($delivery->created_by)); ?></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                                <!-- Edit delivery button kitButton -->
+                                <?php echo KIT_Commons::kitButton([
+                                    'color' => 'blue',
+                                    'href' => admin_url('admin.php?page=view-deliveries&delivery_id=' . $delivery_id . '&edit_delivery=1')
+                                ], 'Edit Delivery'); ?>
+                            <?php
+                            } ?>
+                        </div>
                     </div>
-                    </div>
-                    <div class="md:col-span-5 bg-white rounded-lg shadow p-6">
+                    <div class="md:col-span-6 bg-white rounded-lg shadow p-6">
                         <div class="flex justify-between items-center mb-4">
-                            <h2 class="text-xl font-semibold text-gray-700">Waybills</h2>
+                            <h2 class="text-xl font-semibold text-gray-700">Waybills on Truck</h2>
                             <?php if (isset($delivery_id)) :
                                 $customers   = KIT_Customers::tholaMaCustomer();
                                 $form_action = admin_url('admin-post.php?action=add_waybill_action');
@@ -475,8 +581,53 @@ class KIT_Deliveries
                         <?php if (!empty($waybills)): ?>
                             <div class="overflow-x-auto">
                                 <?php
-                                $waybillsandItems = KIT_Waybills::waybillLists($delivery->id);
-                                KIT_Waybills::render_waybills_with_items($waybillsandItems);
+                                $waybillsandItems = KIT_Waybills::truckWaybills($delivery->id);
+
+                                $options = [
+                                    'itemsPerPage' => 5,
+                                    'currentPage' => $_GET['paged'] ?? 1,
+                                    'tableClass' => 'min-w-full text-left text-xs text-gray-700',
+                                    'emptyMessage' => 'No customers records found',
+                                    'id' => 'customerTable',
+                                    'role' => 'waybills'
+                                ];
+
+                                $columns = [
+                                    'waybill_no' => ['label' => 'Waybill #', 'align' => 'text-left'],
+                                    'customer_name' => ['label' => 'Name', 'align' => 'text-left'],
+                                    'approval' => ['label' => 'Approval', 'align' => 'text-left'],
+                                    'total' => ['label' => 'Total', 'align' => 'text-right'],
+                                    'actions' => ['label' => 'Actions', 'align' => 'text-center'],
+                                ];
+
+                                $waybill_actions = function ($key, $row) {
+                                    if ($key === 'waybill_no') {
+
+                                        return '<a target="_blank" href="?page=08600-Waybill-view&waybill_id=' . $row->waybill_id . '&waybill_atts=view_waybill" class="text-blue-600 hover:underline">' . $row->waybill_no . '</a>';
+                                    }
+                                    if ($key === 'customer_name') {
+
+                                        return $row->customer_name . ' ' . $row->customer_surname;
+                                    }
+                                    if ($key === 'total') {
+                                        return KIT_Commons::currency() . ' ' . ((int) $row->product_invoice_amount + (int) $row->miscellaneous);
+                                    }
+                                    if ($key === 'approval') {
+
+                                        return KIT_Commons::waybillApprovalStatus($row->waybill_no, $row->waybill_id, $row->approval, 'select');
+                                    }
+                                    if ($key === 'actions') {
+                                        $html = '<a target="_blank" href="?page=08600-Waybill-view&waybill_id=' . $row->waybill_id . '&waybill_atts=view_waybill" class="text-blue-600 hover:underline">View</a>';
+                                        $html .= ' | <a href="?page=08600-Waybill-view&waybill_id=' . $row->waybill_id . '&edit=true" class="text-blue-600 hover:underline">Edit</a> ';
+                                        $html .= ' | <a href="?page=waybill-dashboard&delete_waybill=' . $row->waybill_no . '" class="text-red-600 hover:underline" onclick="return confirm(\'Are you sure you want to delete this waybill?\');">Delete</a>';
+                                        return $html;
+                                    }
+                                    return htmlspecialchars(($row->$key ?? '') ?: '');
+                                };
+
+
+                                echo KIT_Commons::render_versatile_table($waybillsandItems, $columns, $waybill_actions, $options);
+
                                 ?>
                             </div>
                         <?php else: ?>
@@ -487,6 +638,12 @@ class KIT_Deliveries
             </div>
         </div>
         <?php
+    }
+    public static function getAllCountries()
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'kit_operating_countries';
+        return $wpdb->get_results("SELECT * FROM $table_name");
     }
     public static function getCountriesObject()
     {
@@ -499,8 +656,7 @@ class KIT_Deliveries
         global $wpdb;
         $table_name = $wpdb->prefix . 'kit_operating_cities';
         $query = $wpdb->prepare("SELECT * FROM $table_name WHERE country_id = %d", $country_id);
-        $wpdb->get_results($query);
-        exit(var_dump($wpdb->last_query));
+        return $wpdb->get_results($query);
     }
     public static function CountrySelect($name = '', $id = '', $delivery_id = null, $required = true)
     {
@@ -536,6 +692,173 @@ class KIT_Deliveries
         return ob_get_clean();
     }
 
+    public static function deliveryForm($delivery_id = null)
+    {
+        $delivery_id = $_POST['delivery_id'] ?? null;
+        if ($delivery_id) {
+            $delivery = self::get_delivery($delivery_id);
+        }
+
+
+
+    ?>
+        <form id="delivery-form" class="space-y-4 max-w-3xl" method="post" action="<?php echo admin_url('admin-post.php'); ?>">
+            <input type="hidden" name="action" value="kit_deliveries_crud">
+            <input type="hidden" name="delivery_id" id="delivery_id" value="0">
+            <?php wp_nonce_field('kit_deliveries_nonce', 'nonce'); ?>
+
+            <div class="space-y-2">
+                <label for="delivery_reference" class="block text-xs font-medium text-gray-700">Reference
+                    Number</label>
+                <input type="text" name="delivery_reference" id="delivery_reference" readonly value="<?= KIT_Deliveries::generateDeliveryRef() ?>"
+                    class="text-xs w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+            </div>
+
+            <div class="grid grid-cols-1 gap-2">
+                <label for="origin_country" class="block text-xs font-medium text-gray-700">Origin</label>
+                <div class="sm:grid sm:grid-cols-1 gap-2">
+                    <div class="">
+                        <?php echo KIT_Deliveries::selectAllCountries('origin_country', 'origin_country_select', 1, $required = "required", 'origin'); ?>
+                    </div>
+                    <div class="">
+                        <?php echo KIT_Deliveries::selectAllCitiesByCountry('origin_city', 'origin_city_select', 1, 1, $required = 'required', ''); ?>
+                    </div>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 gap-2">
+                <label for="destination_country" class="block text-xs font-medium text-gray-700">Destination</label>
+                <div class="sm:grid sm:grid-cols-1 gap-2">
+                    <div class="">
+                        <?php echo KIT_Deliveries::selectAllCountries('destination_country', 'destination_country_select', 2, $required = "required", 'destination'); ?>
+                    </div>
+                    <div class="">
+                        <?php echo KIT_Deliveries::selectAllCitiesByCountry('destination_city', 'destination_city_select', 2, 6); ?>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-4">
+                <div class="space-y-2">
+                    <?= KIT_Commons::Linput([
+                        'label' => 'Dispatc12h Date',
+                        'name'  => 'dispatch_date',
+                        'id'  => 'dispatch_date',
+                        'type'  => 'date',
+                        'value' => '',
+                        'class' => 'additional-class'
+                    ]); ?>
+                    <script>
+                        document.addEventListener('DOMContentLoaded', function() {
+                            const dispatchDateInput = document.getElementById('dispatch_date');
+                            const today = new Date().toISOString().split('T')[0];
+                            // Set min date attribute
+                            dispatchDateInput.min = today;
+                            // Additional validation on form submission
+                            document.querySelector('form').addEventListener('submit', function(e) {
+                                const selectedDate = dispatchDateInput.value;
+                                if (selectedDate < today) {
+                                    e.preventDefault();
+                                    dispatchDateInput.focus();
+                                }
+                            });
+                        });
+                    </script>
+                </div>
+
+                <div class="space-y-2">
+                    <label for="truck_number" class="block text-xs font-medium text-gray-700">Truck Number</label>
+                    <input type="text" name="truck_number" id="truck_number"
+                        class="text-xs w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                </div>
+            </div>
+
+            <div class="space-y-2">
+                <?php
+                $deliveries_status = [
+                    'scheduled' => 'Scheduled',
+                    'in_transit' => 'In Transit',
+                    'delivered' => 'Delivered'
+                ];
+                echo KIT_Commons::simpleSelect(
+                    'Delivery Status',
+                    'status',
+                    'status',
+                    $deliveries_status,
+                    null
+                );
+                ?>
+            </div>
+
+            <div class="flex space-x-3">
+                <button type="submit"
+                    class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                    Save Delivery
+                </button>
+                <button type="button" id="cancel-edit"
+                    class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 hidden">
+                    Cancel
+                </button>
+            </div>
+        </form>
+    <?php
+    }
+
+    /**
+     * Get country_id, country_name, and country_code from a direction_id.
+     *
+     * @param int $direction_id
+     * @param string $type 'origin' or 'destination'
+     * @return array|null
+     */
+    public static function getWaybillTransitStats($direction_id, $type = 'origin')
+    {
+        global $wpdb;
+
+        // Validate $type
+        $type = strtolower($type);
+        if (!in_array($type, ['origin', 'destination'])) {
+            $type = 'origin';
+        }
+
+        // Set column names based on type
+        $country_id_col = $type === 'origin' ? 'origin_country_id' : 'destination_country_id';
+        $country_table_alias = $type === 'origin' ? 'oc1' : 'oc2';
+
+        // Get the country_id from the direction
+        $direction = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT sd.{$country_id_col} as country_id
+                 FROM {$wpdb->prefix}kit_shipping_directions sd
+                 WHERE sd.id = %d
+                 LIMIT 1",
+                $direction_id
+            ),
+            ARRAY_A
+        );
+
+        if (!$direction || empty($direction['country_id'])) {
+            return null;
+        }
+
+        $country_id = intval($direction['country_id']);
+
+        // Get the country details
+        $country = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT id as country_id, country_name, country_code
+                 FROM {$wpdb->prefix}kit_operating_countries
+                 WHERE id = %d
+                 LIMIT 1",
+                $country_id
+            ),
+            ARRAY_A
+        );
+
+        return $country ?: null;
+    }
+
+
+
     public static function render_admin_page()
     {
     ?>
@@ -546,151 +869,56 @@ class KIT_Deliveries
             ?>
             <div class="">
                 <div class="grid grid-cols-12 gap-4">
-                    <div class="col-span-3 bg-white rounded-lg shadow-md p-6 mb-8">
+                    <div class="col-span-3 bg-white rounded-lg shadow-md sm:px-3 sm:py-6 md:p-6 mb-8">
                         <h2 class="text-xl font-semibold text-gray-700 mb-4">Add New Delivery</h2>
-                        <form id="delivery-form" class="space-y-4 max-w-3xl">
-                            <input type="hidden" name="action" value="kit_deliveries_crud">
-                            <input type="hidden" name="delivery_id" id="delivery_id" value="0">
-                            <?php wp_nonce_field('kit_deliveries_nonce', 'nonce'); ?>
-
-                            <div class="space-y-2">
-                                <label for="delivery_reference" class="block text-xs font-medium text-gray-700">Reference
-                                    Number</label>
-                                <input type="text" name="delivery_reference" id="delivery_reference" readonly value="<?= KIT_Deliveries::generateDeliveryRef() ?>"
-                                    class="text-xs w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                            </div>
-
-                            <div class="grid grid-cols-1 gap-4">
-                                <div class="space-y-2">
-                                    <?php
-                                    /* echo KIT_Deliveries::CountrySelect('origin_country', 'origin_country');  */
-                                    $shippingDirections = KIT_Deliveries::shippingDirections();
-                                    echo KIT_Commons::SelectInput('Direction', 'direction_id', 'direction_id', $shippingDirections);
-                                    ?>
-                                </div>
-                            </div>
-
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div class="space-y-2">
-                                    <?= KIT_Commons::Linput([
-                                        'label' => 'Dispatc12h Date',
-                                        'name'  => 'dispatch_date',
-                                        'id'  => 'dispatch_date',
-                                        'type'  => 'date',
-                                        'value' => '',
-                                        'class' => 'additional-class'
-                                    ]); ?>
-                                    <script>
-                                        document.addEventListener('DOMContentLoaded', function() {
-                                            const dispatchDateInput = document.getElementById('dispatch_date');
-                                            const today = new Date().toISOString().split('T')[0];
-                                            // Set min date attribute
-                                            dispatchDateInput.min = today;
-                                            // Additional validation on form submission
-                                            document.querySelector('form').addEventListener('submit', function(e) {
-                                                const selectedDate = dispatchDateInput.value;
-                                                if (selectedDate < today) {
-                                                    e.preventDefault();
-                                                    dispatchDateInput.focus();
-                                                }
-                                            });
-                                        });
-                                    </script>
-                                </div>
-
-                                <div class="space-y-2">
-                                    <label for="truck_number" class="block text-xs font-medium text-gray-700">Truck Number</label>
-                                    <input type="text" name="truck_number" id="truck_number"
-                                        class="text-xs w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                                </div>
-                            </div>
-
-                            <div class="space-y-2">
-                                <?php
-                                $deliveries_status = [
-                                    'scheduled' => 'Scheduled',
-                                    'in_transit' => 'In Transit',
-                                    'delivered' => 'Delivered'
-                                ];
-                                echo KIT_Commons::simpleSelect(
-                                    'Delivery Status',
-                                    'status',
-                                    'status',
-                                    $deliveries_status
-                                );
-                                ?>
-                            </div>
-
-                            <div class="flex space-x-3">
-                                <button type="submit"
-                                    class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
-                                    Save Delivery
-                                </button>
-                                <button type="button" id="cancel-edit"
-                                    class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 hidden">
-                                    Cancel
-                                </button>
-                            </div>
-                        </form>
+                        <?= self::deliveryForm(); ?>
                     </div>
 
                     <!-- Deliveries List Table -->
                     <div class="col-span-9 bg-white rounded-lg shadow-md p-6">
                         <h2 class="text-xl font-semibold text-gray-700 mb-4">Deliveries List</h2>
                         <div class="overflow-x-auto">
-                            <table id="deliveries-table" class="min-w-full divide-y divide-gray-200">
-                                <thead class="bg-gray-50">
-                                    <tr>
-                                        <th scope="col"
-                                            class="<?= KIT_Commons::thClasses() ?>">
-                                            Reference</th>
-                                        <th scope="col"
-                                            class="<?= KIT_Commons::thClasses() ?>">
-                                            Origin</th>
-                                        <th scope="col"
-                                            class="<?= KIT_Commons::thClasses() ?>">
-                                            Dispatch 321Date</th>
-                                        <th scope="col"
-                                            class="<?= KIT_Commons::thClasses() ?>">
-                                            Status</th>
-                                        <th scope="col"
-                                            class="<?= KIT_Commons::thClasses() ?>">
-                                            Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="bg-white divide-y divide-gray-200">
-                                    <?php foreach (self::get_all_deliveries() as $delivery): ?>
-                                        <tr data-id="<?php echo $delivery->id; ?>" class="hover:bg-gray-50">
-                                            <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-900"><?php echo $delivery->delivery_reference; ?></td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-900"><?php echo $delivery->origin_country_name; ?></td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-900"><?php echo date('Y-m-d', strtotime($delivery->dispatch_date)); ?></td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-900">
-                                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo $delivery->status === 'delivered' ? 'bg-green-100 text-green-800' : ($delivery->status === 'in_transit' ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-blue-800'); ?>">
-                                                    <?php echo ucfirst(str_replace('_', ' ', $delivery->status)); ?>
-                                                </span>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-xs font-medium">
-                                                <?php if ($delivery->status === 'scheduled'): ?>
-                                                    <button class="change-delivery-status mr-2 text-blue-600 hover:text-blue-900"
-                                                        data-id="<?php echo $delivery->id; ?>">Ready to Leave</button>
-                                                <?php endif; ?>
-                                                <?php //Else if equal to in_transit
-                                                if ($delivery->status === 'in_transit'): ?>
-                                                    <button class="change-delivery-arrived mr-2 text-blue-600 hover:text-blue-900"
-                                                        data-id="<?php echo $delivery->id; ?>">Arrived</button>
-                                                <?php endif; ?>
-                                                <!-- If the status is equal to in_transit this show this -->
+                            <?php
+                            $deliveries = self::get_all_deliveries();
 
-                                                <a href="?page=view-deliveries&delivery_id=<?php echo $delivery->id; ?>"
-                                                    class="mr-2 text-blue-600 hover:text-blue-900"
-                                                    data-id="<?php echo $delivery->id; ?>">View</a>
-                                                <button class="delete-delivery text-red-600 hover:text-red-900"
-                                                    data-id="<?php echo $delivery->id; ?>">Del23ete</button>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
+                            $options = [
+                                'itemsPerPage' => 5,
+                                'currentPage' => $_GET['paged'] ?? 1,
+                                'tableClass' => 'min-w-full text-left text-xs text-gray-700',
+                                'emptyMessage' => 'No customers records found',
+                                'id' => 'deliveriesTable',
+                            ];
+
+
+                            $columns = [
+                                'delivery_reference' => ['label' => 'Reference', 'align' => 'text-left'],
+                                'origin_country_name' => ['label' => 'From', 'align' => 'text-left'],
+                                'destination_country_name' => ['label' => 'To', 'align' => 'text-left'],
+                                'status' => ['label' => 'Status', 'align' => 'text-right'],
+                                'actions' => ['label' => 'Actions', 'align' => 'text-center'],
+                            ];
+
+                            $delivery_actions = function ($key, $row) {
+                                if ($key === 'delivery_reference') {
+                                    $last_three = substr($row->delivery_reference, -3);
+                                    $html = '<a href="?page=view-deliveries&delivery_id=' . $row->id . '" target="_blank" class="text-blue-600 hover:underline">' . $last_three . '</a>';
+                                    $html .= '<br>';
+                                    $html .= '<span class="text-xs text-gray-500">' . date('Y-m-d', strtotime($row->dispatch_date)) . '</span>';
+                                    return $html;
+                                }
+                                if ($key === 'status') {
+                                    $html = KIT_Commons::statusBadge($row->status);
+                                }
+                                if ($key === 'actions') {
+                                    $html = '<a href="?page=view-deliveries&delivery_id=' . $row->id . '" class="text-blue-600 hover:underline">View</a> ';
+                                    $html .= '<a href="?page=deliveries-dashboard&delete_delivery=' . $row->id . '" class="text-red-600 hover:underline" onclick="return confirm(\'Are you sure you want to delete this delivery?\');">Delete</a>';
+                                    return $html;
+                                }
+                                return htmlspecialchars(($row->$key ?? '') ?: '');
+                            };
+                            echo KIT_Commons::render_versatile_table($deliveries, $columns, $delivery_actions, $options);
+                            ?>
+
                         </div>
                     </div>
                 </div>
@@ -699,7 +927,7 @@ class KIT_Deliveries
         <script>
             jQuery(document).ready(function($) {
                 // Handle form submission
-                $('#delivery-form').on('submit', function(e) {
+                $('#delivery-form324343434344343434pew9kwwsdkfpdsfodskpfosdkpfosdkfposdkfsdpofksdpofkdsapofk').on('submit', function(e) {
                     e.preventDefault();
                     // Get form data
                     const formData = $(this).serializeArray();
@@ -724,128 +952,26 @@ class KIT_Deliveries
                     });
                 });
 
-                // Edit delivery
-                $('.edit-delivery').on('click', function() {
-                    const id = $(this).data('id');
 
-                    $.ajax({
-                        url: ajaxurl,
-                        type: 'POST',
-                        data: {
-                            action: 'kit_deliveries_crud',
-                            nonce: $('#nonce').val(),
-                            task: 'get_delivery',
-                            id: id
-                        },
-                        success: function(response) {
-                            if (response.success) {
-                                const delivery = response.data;
-                                $('#delivery_id').val(delivery.id);
-                                $('#delivery_reference').val(delivery.delivery_reference);
-                                $('#origin_country').val(delivery.origin_country);
-                                $('#destination_country').val(delivery.destination_country);
-                                $('#destination_city').val(delivery.destination_city);
-                                $('#dispatch_date').val(delivery.dispatch_date);
-                                $('#truck_number').val(delivery.truck_number);
-                                $('#status').val(delivery.status);
-
-                                $('#cancel-edit').show();
-                            } else {
-                                console.log("78yh" + response.data);
-                            }
-                        }
-                    });
-                });
-
-                //Change delivery status from scheduled to In-transit, action: 'delivery_changeTo_Intransit',
-                $('.change-delivery-status').on('click', function() {
-                    const id = $(this).data('id');
-
-                    $.ajax({
-                        url: ajaxurl,
-                        type: 'POST',
-                        data: {
-                            action: 'delivery_changeTo_Intransit',
-                            nonce: $('#nonce').val(),
-                            id: id
-                        },
-                        success: function(response) {
-                            if (response.success) {
-                                location.reload();
-                            } else {
-                                console.log("io" + response.data);
-                            }
-                        }
-                    });
-                });
-
-                //Change delivery status from in_transit to delivered
-                $('.change-delivery-arrived').on('click', function() {
-                    const id = $(this).data('id');
-
-                    $.ajax({
-                        url: ajaxurl,
-                        type: 'POST',
-                        data: {
-                            action: 'delivery_changeTo_Delivered',
-                            nonce: $('#nonce').val(),
-                            id: id
-                        },
-                        success: function(response) {
-                            if (response.success) {
-                                location.reload();
-                            } else {
-                                console.log("oji" + response.data);
-                            }
-                        }
-                    });
-                });
-
-                // Delete delivery
-                $('.delete-delivery').on('click', function() {
-                    if (confirm('Are you sure you want to delete this delivery?')) {
-                        const id = $(this).data('id');
-
-                        $.ajax({
-                            url: ajaxurl,
-                            type: 'POST',
-                            data: {
-                                action: 'kit_deliveries_crud',
-                                nonce: $('#nonce').val(),
-                                task: 'delete_delivery',
-                                id: id
-                            },
-                            success: function(response) {
-                                if (response.success) {
-                                    location.reload();
-                                } else {
-                                    console.log("78g8" + response.data);
-                                }
-                            }
-                        });
-                    }
-                });
-
-                // Cancel edit
-                $('#cancel-edit').on('click', function() {
-                    $('#delivery-form')[0].reset();
-                    $('#delivery_id').val(0);
-                    $(this).hide();
-                });
             });
         </script>
-<?php
+    <?php
     }
 
     public static function handle_ajax()
     {
+
+
+
         check_ajax_referer('kit_deliveries_nonce', 'nonce');
+
 
         if (!current_user_can('edit_pages')) {
             wp_send_json_error('Unauthorized');
         }
 
-        $task = $_POST['task'] ?? '';
+
+        $task = $_POST['task'] ?? 'create_delivery';
         $data = $_POST;
 
         if (empty($task)) {
@@ -878,12 +1004,28 @@ class KIT_Deliveries
                 wp_send_json_error('Invalid action');
         }
 
-        if ($result === false) {
-            wp_send_json_error('Operation failed');
+        // Handle both AJAX and POST requests
+        if (defined('DOING_AJAX') && DOING_AJAX) {
+            if ($result === false) {
+                wp_send_json_error('Operation failed');
+            } else {
+                wp_send_json_success($result);
+            }
         } else {
-            wp_send_json_success($result);
+            // For POST (admin-post.php) requests
+            if ($result === false) {
+                wp_redirect(wp_get_referer() ?: admin_url());
+                exit;
+            } else {
+                // Optionally, you can add a success notice or redirect to a specific page
+                wp_redirect(wp_get_referer() ?: admin_url());
+                exit;
+            }
         }
     }
+
+
+
     //Change delivery status from schediled to intransit
     public static function delivery_changeTo_Intransit()
     {
@@ -976,6 +1118,7 @@ class KIT_Deliveries
             LEFT JOIN {$directions_table} sd ON d.direction_id = sd.id
             LEFT JOIN {$countries_table} oc1 ON sd.origin_country_id = oc1.id
             LEFT JOIN {$countries_table} oc2 ON sd.destination_country_id = oc2.id
+            WHERE d.delivery_reference != 'warehoused'
             ORDER BY d.created_at DESC
         ";
         return $wpdb->get_results($query);
@@ -991,7 +1134,7 @@ class KIT_Deliveries
         $query = "
         SELECT 
             d.*, 
-            sd.description AS direction_description,
+            sd.*,
 
             -- Origin
             oc1.country_name AS origin_country, 
@@ -1012,14 +1155,40 @@ class KIT_Deliveries
 
         return $wpdb->get_row($wpdb->prepare($query, $id));
     }
+
+    public static function get_direction_id($origin_country_id, $destination_country_id)
+    {
+        global $wpdb;
+        $table = $wpdb->prefix . 'kit_shipping_directions';
+        return $wpdb->get_var($wpdb->prepare("SELECT id FROM $table WHERE origin_country_id = %d AND destination_country_id = %d", $origin_country_id, $destination_country_id));
+    }
+
+    public static function create_direction($origin_country_id, $destination_country_id)
+    {
+        global $wpdb;
+        $table = $wpdb->prefix . 'kit_shipping_directions';
+        $origin_country_name = KIT_Routes::get_country_name_by_id($origin_country_id);
+        $destination_country_name = KIT_Routes::get_country_name_by_id($destination_country_id);
+        $wpdb->insert($table, ['origin_country_id' => $origin_country_id, 'destination_country_id' => $destination_country_id, 'description' => $origin_country_name . ' to ' . $destination_country_name]);
+        return $wpdb->insert_id;
+    }
+
     public static function save_delivery($data)
     {
         global $wpdb;
         $table = $wpdb->prefix . 'kit_deliveries';
+        $chargeGroups_table = $wpdb->prefix . 'kit_charge_groups';
+
+        // Get or create shipping direction
+        $direction_id = self::get_direction_id($data['origin_country'], $data['destination_country']);
+        if (!$direction_id) {
+            $direction_id = self::create_direction($data['origin_country'], $data['destination_country']);
+        }
 
         $delivery_data = [
             'delivery_reference' => sanitize_text_field($data['delivery_reference']),
-            'direction_id' => sanitize_text_field($data['direction_id']),
+            'direction_id' => (int) $direction_id,
+            'destination_city_id' => sanitize_text_field($data['destination_city']),
             'dispatch_date' => sanitize_text_field($data['dispatch_date']),
             'truck_number' => sanitize_text_field($data['truck_number']),
             'status' => in_array($data['status'], ['scheduled', 'in_transit', 'delivered'])
@@ -1030,6 +1199,7 @@ class KIT_Deliveries
 
         if (isset($data['delivery_id']) && $data['delivery_id'] > 0) {
             // Update existing delivery
+
             $wpdb->update(
                 $table,
                 $delivery_data,
@@ -1037,8 +1207,10 @@ class KIT_Deliveries
             );
             return $data['delivery_id'];
         } else {
-            // Create new delivery
+
             $wpdb->insert($table, $delivery_data);
+
+            // The delivery has been created successfully, return the id of the new delivery
             return $wpdb->insert_id;
         }
     }
@@ -1048,11 +1220,60 @@ class KIT_Deliveries
         $table = $wpdb->prefix . 'kit_deliveries';
         return $wpdb->delete($table, ['id' => intval($id)]);
     }
+
+    public static function selectAllCountries($name, $id, $country_id, $required = true, $type = 'origin')
+    {
+        $countries = self::getAllCountries();
+        ob_start();
+
+    ?>
+        <select class="<?= KIT_Commons::selectClass() ?>" name="<?php echo esc_attr($name); ?>" id="<?php echo esc_attr($id); ?>" <?php echo $required; ?> " onchange=" gaybitch(this.value, '<?php echo $type; ?>' )">
+            <option value="">Select Country</option>
+            <?php foreach ($countries as $country): ?>
+                <option value=" <?php echo esc_attr($country->id); ?>" <?php echo ($country_id == $country->id) ? 'selected' : ''; ?>>
+                    <?php echo esc_html($country->country_name); ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+    <?php
+        return ob_get_clean();
+    }
+
+    public static function selectAllCitiesByCountry($name, $id, $country_id, $city_id, $required = true)
+    {
+
+        ob_start();
+        $cities = KIT_Deliveries::get_Cities_forCountry($country_id);
+    ?>
+        <select class="<?= KIT_Commons::selectClass() ?>" name="<?php echo esc_attr($name); ?>" id="<?php echo esc_attr($id); ?>" <?php echo $required; ?>>
+            <option value="">Select City</option>
+            <?php foreach ($cities as $city): ?>
+                <option value="<?php echo esc_attr($city->id); ?>" <?php echo ($city_id == $city->id) ? 'selected' : ''; ?>>
+                    <?php echo esc_html($city->city_name); ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+<?php
+        return ob_get_clean();
+    }
+
+    function handle_get_cities_for_country_callback()
+    {
+        check_ajax_referer('kit_deliveries_nonce', 'nonce');
+
+        $country_id = intval($_POST['country_id']);
+        $cities = KIT_Deliveries::get_Cities_forCountry($country_id); // You need to implement this
+
+        $cities_dropdown = KIT_Deliveries::selectAllCitiesByCountry('origin_city', 'origin_city_select', $cities, null, true);
+
+        wp_send_json_success($cities_dropdown);
+    }
 }
 
 KIT_Deliveries::init();
 
-function render_waybills_with_items($waybillsandItems) {
+function render_waybills_with_items($waybillsandItems)
+{
     // Define the columns you want to show
     $columns = ['waybill_no', 'customer', 'dispatch_date', 'actions'];
 

@@ -67,6 +67,14 @@ function plugin_add_menu()
         '08600-Waybill-create', // Submenu slug
         'waybill_page' // Callback function
     );
+    add_submenu_page(
+        '08600-Waybill', // Parent slug
+        'Test Waybills', // Page title
+        'Test Waybills', // Menu title
+        'edit_pages', // Capability
+        '08600-Waybill-test', // Submenu slug
+        ['KIT_Waybills','waybill_test_page'] // Callback function
+    );
     // Add view submenu (hidden from main menu)
     add_submenu_page(
         '08600-Waybill', // Parent slug matches main menu
