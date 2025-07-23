@@ -587,9 +587,6 @@ class KIT_Waybills
     {
 
         // Ensure all inputs are floats
-        $mass_charge = floatval($mass_charge);
-        $volume_charge = floatval($volume_charge);
-        $misc_total = floatval($misc_total);
         $include_sad500 = floatval(($misc_arr['others']['include_sad500']) ?? 0);
         $include_waybill_fee = floatval(($misc_arr['others']['include_waybill_fee']) ?? 0);
         $vat_option = floatval(($misc_arr['others']['vat_option']) ?? 0);
@@ -610,6 +607,15 @@ class KIT_Waybills
         // Calculate total
         $total = $better_charge + $additionalCharges;
 
+/*         echo '<pre>';
+        echo "additionalCharges" .'='. 'misc_total' .'+'. 'include_sad500' .'+'. 'include_waybill_fee' .'+'. 'vat_option';
+        echo '<br>';
+        echo $additionalCharges .'='. $misc_total .'+'. $include_sad500 .'+'. $include_waybill_fee .'+'. $vat_option;
+        echo '<br>';
+        echo $total ."=". $better_charge .'+'. $additionalCharges;
+        echo '</pre>';
+        exit(); */
+        
         return number_format($total, 2, '.', '');
     }
 
@@ -823,7 +829,7 @@ class KIT_Waybills
         }
 
         // 💰 Charge Details
-        $mass_charge = 0;
+        $mass_charge = ($_POST['mass_charge'])??0;
 
         if (isset($_POST['enable_price_manipulator']) && isset($_POST['new_mass_rate']) && isset($_POST['new_mass_rate']) < 0) {
             $mass_charge = $_POST['mass_charge'] = $_POST['new_mass_rate'];
@@ -869,7 +875,6 @@ class KIT_Waybills
         }else {
             $misc_total = 0;
         }
-
         
         $waybillTotal = self::calculate_total($mass_charge, $volume_charge, $misc_total, $data, $charge_basis);
 
@@ -907,10 +912,6 @@ class KIT_Waybills
 
         $waybill_id = $wpdb->insert_id;
 
-
-        if (isset($_POST['misc'])) {
-            self::miscItemsUpdateWaybill($data['misc'], $waybill_id, $waybill_no, $misc);
-        }
 
         // Save items if provided
         if (!empty($data['custom_items'])) {

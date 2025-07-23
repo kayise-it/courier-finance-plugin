@@ -1,3 +1,12 @@
+<?php
+// Determine which charge is greater
+$mass_charge = floatval($waybill['mass_charge'] ?? 0);
+$volume_charge = floatval($waybill['volume_charge'] ?? 0);
+
+$is_mass_greater = $mass_charge > $volume_charge;
+$is_volume_greater = $volume_charge > $mass_charge;
+$is_equal = $mass_charge === $volume_charge;
+?>
 <div class="max-w-6xl mx-auto p-6 md:space-y-6 bg-white rounded-lg shadow-md">
     <div class="flex flex-col space-y-6 justify-between items-start border-b pb-4">
         <div>
@@ -5,7 +14,6 @@
             </h1>
             <div class="flex items-center mt-2">
                 <?php
-
                 $pdfVerifier = KIT_Waybills::pdfVerifier($waybill['waybill_no'], $waybill_id = null);
                 if ($pdfVerifier['soWhat']) {
                     echo KIT_Commons::statusBadge('approved');
@@ -61,7 +69,7 @@
             <?php endif; ?>
         </div>
         <div class="ps">
-        <?= KIT_Commons::h2tag(['title' => 'Waybill Description', 'class' => '']) ?>
+            <?= KIT_Commons::h2tag(['title' => 'Waybill Description', 'class' => '']) ?>
             <p class="text xs"><?= $waybill['miscellaneous']['others']['waybill_description'] ?></p>
         </div>
     </div>
@@ -90,6 +98,17 @@
                         <?php
                         echo number_format($waybill['product_invoice_amount'], 2); ?>
                     </span>
+                    <p class="" style="font-size: 9px">
+                        <span class="font-medium"><?= KIT_Commons::currency() ?>
+                            <?php
+                            if ($prefferedCharge == 'mass') {
+                                echo number_format($mass_charge, 2);
+                            } else {
+                                echo number_format($volume_charge, 2);
+                            }
+                            ?>
+                        </span>
+                    </p>
                 </div>
             </div>
         </div>
@@ -120,15 +139,7 @@
         <!-- Shipment Details -->
         <div class="bg-gray-50 p-4 rounded-lg">
             <h2 class="text-lg font-semibold text-gray-700 mb-3 border-b pb-2">Cost Details</h2>
-            <?php
-            // Determine which charge is greater
-            $mass_charge = floatval($waybill['mass_charge'] ?? 0);
-            $volume_charge = floatval($waybill['volume_charge'] ?? 0);
 
-            $is_mass_greater = $mass_charge > $volume_charge;
-            $is_volume_greater = $volume_charge > $mass_charge;
-            $is_equal = $mass_charge === $volume_charge;
-            ?>
             <div class="space-y-3">
                 <div class="flex flex-col">
                     <div><span class="text-gray-600 font-bold">Total Mass32:</span></div>
@@ -203,7 +214,7 @@
                 </div>
 
                 <div class="flex items-center">
-                <?php 
+                    <?php
                     $optionChoice = 3;
                     require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/additionCharges.php'); ?>
                 </div>
@@ -368,7 +379,6 @@
         </button>
     </div>
 </div>
-
 <?php
 // Ensure WordPress functions are available
 if (!function_exists('admin_url')) {
