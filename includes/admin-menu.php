@@ -120,5 +120,13 @@ function plugin_add_menu()
         'all-customer-waybills', // Submenu slug
         'view_customer_waybills'// Callback function
     );
+    add_submenu_page(
+        'Customers',       // Parent slug
+        '',// Page title
+        'invoice Customers',// Menu title
+        'invoice_customers_pages',// Capability
+        'invoice-customer-waybills', // Submenu slug
+        'invoice_customer_waybills'// Callback function
+    );
 }
 add_action('admin_menu', 'plugin_add_menu');

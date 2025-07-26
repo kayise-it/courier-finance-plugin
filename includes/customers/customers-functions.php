@@ -43,7 +43,7 @@ class KIT_Customers
             return $existing_customer->cust_id;
         }
 
-      
+
         // Sanitize inputs
         $cust_data = [
             'cust_id'  => rand(1000, 9999),
@@ -61,9 +61,11 @@ class KIT_Customers
         // Insert into DB
         $inserted = $wpdb->insert($table_name, $cust_data);
 
+
         if ($inserted === false) {
             return false; // Insert failed
         }
+
 
         return $cust_data['cust_id']; // Return the new customer ID
     }
@@ -612,9 +614,9 @@ function theForm($customer = null)
                 'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500',
                 'special' => ''
             ]); ?>
-            
+
         </div>
-        
+
     </div>
 <?php
 }
@@ -879,7 +881,6 @@ function customer_waybills($customer_id)
         b.mass_charge,
         b.volume_charge,
         b.charge_basis,
-        b.vat_number,
         b.warehouse,
         b.miscellaneous,
         b.include_sad500,
@@ -901,8 +902,7 @@ function customer_waybills($customer_id)
         LEFT JOIN $directions_table dir ON b.direction_id = dir.id
         LEFT JOIN $countries_table origin ON dir.origin_country_id = origin.id
         LEFT JOIN $countries_table dest ON dir.destination_country_id = dest.id
-        WHERE b.customer_id = %d
-        LIMIT 1", $customer_id);
+        WHERE b.customer_id = %d", $customer_id);
 
 
     $waybill = $wpdb->get_results($waybill_sql);
@@ -914,7 +914,6 @@ function customer_waybills($customer_id)
 
 function view_customer_waybills()
 {
-    echo '<div class="wrap">';
     if (isset($_GET['cust_id'])) {
 
         $customer_id = intval($_GET['cust_id']);
@@ -937,10 +936,19 @@ function view_customer_waybills()
             error_log("Modal.php not found at: " . $modal_path);
             // Optional: Show a safe error or fallback content
         }
+
+        if (isset($_GET['selected_ids'])) {
+
+            $selected_ids_string = $_GET['selected_ids']; // "4000,4003,4004"
+            $selected_ids_array = explode(',', $selected_ids_string);
+
+            if (!empty($selected_ids_array)) {
+                // Generate PDF and return it as download
+                include plugin_dir_path(__FILE__) . 'pdf-bulkinvoicing.php';
+                exit;
+            }
+        }
     ?>
-
-
-
         <div class="<?= KIT_Commons::container() ?> flex gap-4 min-h-screen bg-gray-100">
             <!-- Left Sidebar - Customer Details -->
             <div class="w-1/3">
@@ -1109,7 +1117,6 @@ function view_customer_waybills()
     } else {
         return '<div class="p-6 text-red-500">No customer selected.</div>';
     }
-    echo '</div>';
 }
 
 // Fallback for sanitize_text_field if not in WordPress

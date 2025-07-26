@@ -43,6 +43,18 @@
             </div>
         </div>
 
+        <div class="ps">
+            <?php
+            echo KIT_Commons::TextAreaField([
+                'label' => 'Waybill Description',
+                'name'  => 'waybill_description',
+                'id'    => 'waybill_description',
+                'type'  => 'textarea',
+                'value' => $waybill['miscellaneous']['others']['waybill_description'],
+            ]);
+            ?>
+        </div>
+
         <!-- Waybill Information Grid -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <!-- Customer Details -->
@@ -50,23 +62,23 @@
                 <h2 class="text-lg font-semibold text-gray-700 mb-3 border-b pb-2">Customer Details</h2>
                 <div class="space-y-3">
                     <div class="flex flex-col">
-                        <span class="text-gray-600 font-bold">Customer Name:</span>
+                        <label class="<?= KIT_Commons::labelClass() ?>">Customer Name:</label>
                         <span class="font-medium"><?= $waybill['customer_name'] ?></span>
                     </div>
                     <div class="flex flex-col">
-                        <span class="text-gray-600 font-bold">Customer Surname:</span>
+                        <label class="<?= KIT_Commons::labelClass() ?>">Customer Surname:</label>
                         <span class="font-medium"><?= $waybill['customer_surname'] ?></span>
                     </div>
                     <div class="flex flex-col">
-                        <span class="text-gray-600 font-bold">Address:</span>
+                        <label class="<?= KIT_Commons::labelClass() ?>">Address:</label>
                         <span class="font-medium"><?= htmlspecialchars($waybill['address']) ?></span>
                     </div>
                     <div class="flex flex-col">
-                        <span class="text-gray-600 font-bold">Contact:</span>
+                        <label class="<?= KIT_Commons::labelClass() ?>">Contact:</label>
                         <span class="font-medium"><?= htmlspecialchars($waybill['cell']) ?></span>
                     </div>
                     <div class="flex flex-col">
-                        <span class="text-gray-600 font-bold">Email:</span>
+                        <label class="<?= KIT_Commons::labelClass() ?>">Email:</label>
                         <span class="font-medium"><?= $waybill['email_address'] ?></span>
                     </div>
 
@@ -77,24 +89,24 @@
                 <h2 class="text-lg font-semibold text-gray-700 mb-3 border-b pb-2">Cost Details</h2>
                 <div class="space-y-3">
                     <div class="flex flex-col">
-                        <span class="text-gray-600 font-bold">Waybill Number:</span>
+                        <label class="<?= KIT_Commons::labelClass() ?>">Waybill Number:</label>
                         <span class="font-medium"><?= htmlspecialchars($waybill['waybill_no']) ?></span>
                     </div>
                     <div class="flex flex-col">
-                        <span class="text-gray-600 font-bold">Tracking Number:</span>
+                        <label class="<?= KIT_Commons::labelClass() ?>">Tracking Number:</label>
                         <span class="font-medium"><?= htmlspecialchars($waybill['tracking_number']) ?></span>
                     </div>
                     <div class="flex flex-col">
-                        <span class="text-gray-600 font-bold">Invoice Number:</span>
+                        <label class="<?= KIT_Commons::labelClass() ?>">Invoice Number:</label>
                         <span class="font-medium"><?= htmlspecialchars($waybill['product_invoice_number']) ?></span>
                     </div>
                     <div class="flex flex-col">
-                        <span class="text-gray-600 font-bold">Invoice Amount:</span>
+                        <label class="<?= KIT_Commons::labelClass() ?>">Invoice Amount:</label>
                         <span class="font-medium"><?= KIT_Commons::currency() ?>
                             <span class="waybilltotalMockup"><?= number_format($waybill['product_invoice_amount'], 2) ?></span></span>
                     </div>
                     <div class="flex items-center">
-                        <span class="text-gray-600 font-bold"></span>
+                        <label class="<?= KIT_Commons::labelClass() ?>"></label>
                         <span class="text-xs text-gray-500 italic">
                             Waybill Amount + Misc Total
                         </span>
@@ -106,7 +118,7 @@
                     </div>
                     <div class="flex flex-col">
 
-                        <span class="text-gray-600 font-bold">Dispatch Date:</span>
+                        <label class="<?= KIT_Commons::labelClass() ?>">Dispatch Date:</label>
                         <?php
                         //if dispatch_date is empty
                         if (empty($waybill['dispatch_date']) || $waybill['dispatch_date'] == '0000-00-00' || $waybill['dispatch_date'] == null) {
@@ -117,7 +129,7 @@
                         <?php } ?>
                     </div>
                     <div class="flex flex-col">
-                        <span class="text-gray-600 font-bold">Truck Number:</span>
+                        <label class="<?= KIT_Commons::labelClass() ?>">Truck Number:</label>
                         <?php
                         //if dispatch_date is empty
                         if (empty($waybill['dispatch_date']) || $waybill['dispatch_date'] == '0000-00-00' || $waybill['dispatch_date'] == null) {
@@ -136,23 +148,12 @@
             <div class="bg-gray-50 p-4 rounded-lg">
                 <h2 class="text-lg font-semibold text-gray-700 mb-3 border-b pb-2">Route Information</h2>
                 <div class="space-y-3">
-
-
-
                     <?php require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/selectsOrigin.php'); ?>
                     <?php require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/selectsDestination.php'); ?>
-
-                    <div class="items-center">
-
-
-                    </div>
-                    saodfnasdf
-
-
                     <div class="items-center">
                         <?php
                         $charge_basis = [
-                            'weight' => 'Weight',
+                            'mass' => 'Mass',
                             'volume' => 'Volume',
                             'value' => 'Value'
                         ];

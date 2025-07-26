@@ -54,16 +54,16 @@ $is_equal = $mass_charge === $volume_charge;
             }
             ?>
             <div class="flex flex-col">
-                <span class="text-gray-600 font-bold">Invoice Status:</span>
+                <label class="<?= KIT_Commons::labelClass() ?>">Invoice Status:</label>
                 <?= KIT_Commons::waybillQuoteStatus($waybill['waybill_no'], $waybill['id'], 'quoted', $waybill['approval'], 'select'); ?>
             </div>
             <div class="flex flex-col">
-                <span class="text-gray-600 font-bold">Approval Status:</span>
+                <label class="<?= KIT_Commons::labelClass() ?>">Approval Status:</label>
                 <?= KIT_Commons::waybillApprovalStatus($waybill['waybill_no'], $waybill['id'], 'quoted', $waybill['approval'], 'select'); ?>
             </div>
             <?php if ($waybill['warehouse']): ?>
                 <div class="flex flex-col">
-                    <span class="text-gray-600 font-bold">Warehoused:</span>
+                    <label class="<?= KIT_Commons::labelClass() ?>">Warehoused:</label>
                     <?= KIT_Commons::statusBadge($waybill['status']); ?>
                 </div>
             <?php endif; ?>
@@ -81,19 +81,19 @@ $is_equal = $mass_charge === $volume_charge;
             <h2 class="text-lg font-semibold text-gray-700 mb-3 border-b pb-2">Waybill Details</h2>
             <div class="space-y-3">
                 <div class="flex flex-col">
-                    <span class="text-gray-600 font-bold">Waybill Number:</span>
+                    <label class="<?= KIT_Commons::labelClass() ?>">Waybill Number:</label>
                     <span class="font-medium"><?= htmlspecialchars($waybill['waybill_no']) ?></span>
                 </div>
                 <div class="flex flex-col">
-                    <span class="text-gray-600 font-bold">Tracking Number:</span>
+                    <label class="<?= KIT_Commons::labelClass() ?>">Tracking Number:</label>
                     <span class="font-medium"><?= htmlspecialchars($waybill['tracking_number']) ?></span>
                 </div>
                 <div class="flex flex-col">
-                    <span class="text-gray-600 font-bold">Invoice Number:</span>
+                    <label class="<?= KIT_Commons::labelClass() ?>">Invoice Number:</label>
                     <span class="font-medium"><?= htmlspecialchars($waybill['product_invoice_number']) ?></span>
                 </div>
                 <div class="flex flex-col">
-                    <span class="text-gray-600 font-bold">Waybill Amoundst:</span>
+                    <label class="<?= KIT_Commons::labelClass() ?>">Waybill Amoundst:</label>
                     <span class="font-medium"><?= KIT_Commons::currency() ?>
                         <?php
                         echo number_format($waybill['product_invoice_amount'], 2); ?>
@@ -118,19 +118,19 @@ $is_equal = $mass_charge === $volume_charge;
             <h2 class="text-lg font-semibold text-gray-700 mb-3 border-b pb-2">Customer Details</h2>
             <div class="space-y-3">
                 <div class="flex flex-col">
-                    <span class="text-gray-600 font-bold">Customer Name:</span>
+                    <label class="<?= KIT_Commons::labelClass() ?>">Customer Name:</label>
                     <span class="font-medium"><?= $waybill['customer_name'] ?></span>
                 </div>
                 <div class="flex flex-col">
-                    <span class="text-gray-600 font-bold">Customer Surname:</span>
+                    <label class="<?= KIT_Commons::labelClass() ?>">Customer Surname:</label>
                     <span class="font-medium"><?= $waybill['customer_surname'] ?></span>
                 </div>
                 <div class="flex flex-col">
-                    <span class="text-gray-600 font-bold">Contact:</span>
+                    <label class="<?= KIT_Commons::labelClass() ?>">Contact:</label>
                     <span class="font-medium"><?= htmlspecialchars($waybill['cell']) ?></span>
                 </div>
                 <div class="flex flex-col">
-                    <span class="text-gray-600 font-bold">Email:</span>
+                    <label class="<?= KIT_Commons::labelClass() ?>">Email:</label>
                     <span class="font-medium"><?= $waybill['email_address'] ?></span>
                 </div>
 
@@ -142,7 +142,7 @@ $is_equal = $mass_charge === $volume_charge;
 
             <div class="space-y-3">
                 <div class="flex flex-col">
-                    <div><span class="text-gray-600 font-bold">Total Mass32:</span></div>
+                    <div><label class="<?= KIT_Commons::labelClass() ?>">Total Mass32:</label></div>
                     <div class="relative">
                         <span class="font-medium flex items-center">
                             <?= KIT_Commons::currency() . ($mass_rate ?? 0) ?> x
@@ -164,9 +164,9 @@ $is_equal = $mass_charge === $volume_charge;
                     </div>
                 </div>
                 <div class="flex flex-col">
-                    <span class="text-gray-600 font-bold">Total Volume:</span>
+                    <label class="<?= KIT_Commons::labelClass() ?>">Total Volume:</label>
                     <span class="font-medium flex items-center">
-                        <?= number_format($waybill['total_volume'] ?? 0, 2) ?> m³ (<?= KIT_Commons::currency() ?><?= number_format($volume_charge, 2) ?>)
+                        <?= number_format($waybill['miscellaneous']['others']['total_volume'], 2) ?> m³ (<?= KIT_Commons::currency() ?><?= number_format($volume_charge, 2) ?>)
                         <?php if ($is_volume_greater): ?>
                             <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-green-500 text-green-100">
                                 Highest
@@ -183,12 +183,12 @@ $is_equal = $mass_charge === $volume_charge;
                     </span>
                 </div>
                 <div class="flex flex-col">
-                    <span class="text-gray-600 font-bold">Charge Basis:</span>
+                    <label class="<?= KIT_Commons::labelClass() ?>">Charge Basis:</label>
                     <span class="font-medium"><?= ucfirst($waybill['charge_basis']) ?></span>
                 </div>
 
                 <div class="flex flex-col">
-                    <span class="text-gray-600 font-bold">Wayb3ill Amount:</span>
+                    <label class="<?= KIT_Commons::labelClass() ?>">Wayb3ill Amount:</label>
                     <span class="font-medium"><?= KIT_Commons::currency() ?>
                         <?php
                         if ($prefferedCharge == 'mass') {
@@ -200,12 +200,12 @@ $is_equal = $mass_charge === $volume_charge;
                     </span>
                 </div>
                 <div class="flex flex-col">
-                    <span class="text-gray-600 font-bold">Waybill misc total:</span>
+                    <label class="<?= KIT_Commons::labelClass() ?>">Waybill misc total:</label>
                     <span class="font-medium"><?= KIT_Commons::currency() ?>
                         <?= number_format(($waybill['miscellaneous']['misc_total']) ?? 0, 2) ?></span>
                 </div>
                 <div class="flex flex-col">
-                    <span class="text-gray-600 font-bold">Total:</span>
+                    <label class="<?= KIT_Commons::labelClass() ?>">Total:</label>
                     <?php
                     $total_amount = $waybill['product_invoice_amount'];
                     ?>
@@ -219,7 +219,7 @@ $is_equal = $mass_charge === $volume_charge;
                     require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/additionCharges.php'); ?>
                 </div>
                 <div class="flex items-center">
-                    <span class="text-gray-600 font-bold"></span>
+                    <label class="<?= KIT_Commons::labelClass() ?>"></label>
                     <span class="text-xs text-gray-500 italic">
                         Waybill Amount + Misc Total
                     </span>
@@ -231,17 +231,17 @@ $is_equal = $mass_charge === $volume_charge;
             <h2 class="text-lg font-semibold text-gray-700 mb-3 border-b pb-2">Route Information</h2>
             <div class="space-y-3">
                 <div class="flex flex-col">
-                    <span class="text-gray-600 font-bold">Origin:</span>
+                    <label class="<?= KIT_Commons::labelClass() ?>">Origin:</label>
                     <span class="font-medium"><?= htmlspecialchars($waybill['origin_country']) ?></span>
                 </div>
                 <div class="flex flex-col">
-                    <span class="text-gray-600 font-bold">Destination:</span>
+                    <label class="<?= KIT_Commons::labelClass() ?>">Destination:</label>
                     <span class="font-medium">
                         <?= htmlspecialchars($waybill['destination_country']) ?>
                     </span>
                 </div>
                 <div class="flex flex-col">
-                    <span class="text-gray-600 font-bold">Dimensions:</span>
+                    <label class="<?= KIT_Commons::labelClass() ?>">Dimensions:</label>
                     <span class="font-medium">
                         <?= htmlspecialchars($waybill['item_length']) ?> ×
                         <?= htmlspecialchars($waybill['item_width']) ?> ×
@@ -249,7 +249,7 @@ $is_equal = $mass_charge === $volume_charge;
                     </span>
                 </div>
                 <div class="flex flex-col">
-                    <span class="text-gray-600 font-bold">Total Mass:</span>
+                    <label class="<?= KIT_Commons::labelClass() ?>">Total Mass:</label>
                     <span class="font-medium"><?= htmlspecialchars($waybill['total_mass_kg']) ?> kg</span>
                 </div>
 

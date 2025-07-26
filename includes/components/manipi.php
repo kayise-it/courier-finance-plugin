@@ -52,8 +52,6 @@
         document.addEventListener("DOMContentLoaded", function() {
 
             let current_rate = 0;
-            const ogMass = jQuery('#total_mass_kg').val();
-            const ogRate = jQuery('#mass_rate').val();
 
             jQuery('#enable_price_manipulator').on('input', function() {
                 if (this.checked) {

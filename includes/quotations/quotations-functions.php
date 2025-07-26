@@ -100,14 +100,14 @@ class KIT_Quotations
         return intval($result);
     }
 
-    public static function convertToQuotation($waybill_id)
+    public static function convertToQuotation($waybillno)
     {
         global $wpdb;
 
         // Step 1: Get the waybill
         $waybill = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}kit_waybills WHERE id = %d",
-            $waybill_id
+            "SELECT * FROM {$wpdb->prefix}kit_waybills WHERE `waybill_no` = %d",
+            $waybillno
         ));
 
         if (!$waybill) {
@@ -118,7 +118,6 @@ class KIT_Quotations
         if ($waybill->approval === 'approved') {
             //return new WP_Error('already_quoted', 'This waybill has already been quoted');
         }
-
 
         // Step 3: Auto-approve pending waybills
         if ($waybill->approval === 'pending') {
@@ -137,116 +136,23 @@ class KIT_Quotations
             $waybill->approval = 'approved';
         }
 
-        // === bitch Step 4: Financial calculations ===
-
-        $rate_per_kg = 12.00;
-        $rate_per_cm3 = 0.002;
-
-        $totalPrice_mass = floatval($waybill->total_mass_kg) * $rate_per_kg;
-        $volume_cm3 = floatval($waybill->item_length) * floatval($waybill->item_width) * floatval($waybill->item_height);
-        $totalPrice_volume = $volume_cm3 * $rate_per_cm3;
-
-        $base_price = max($totalPrice_mass, $totalPrice_volume);
-
-        $misc = floatval($waybill->miscellaneous);
-        $sad500_fee = (!empty($waybill->include_sad500) && $waybill->include_sad500) ? 350 : 0;
-        $sadc_fee = (!empty($waybill->include_sadc) && $waybill->include_sadc) ? 1000 : 0;
-
-        $subtotal = $base_price + $misc + $sad500_fee + $sadc_fee;
-
-        $vat = 0;
-        if (!empty($waybill->vat_number)) {
-            $vat = $subtotal * 0.15;
-        }
-
-        $total = $subtotal + $vat;
-
-        // === Step 5: Save quotation ===
-
-        $quotation_data = [
-            'delivery_id'      => $waybill->delivery_id,
-            'waybill_id'       => $waybill->id,
-            'waybillno'      => $waybill->waybill_no,
-            'customer_id'      => $waybill->customer_id,
-            'subtotal'         => 0,
-            'vat_amount'       => 0,
-            'total'            => $waybill->product_invoice_amount || 0,
-            'quotation_notes'  => sprintf('Generated from waybill #%s', $waybill->waybill_no),
-            'status'           => 'pending',
-            'created_by'       => get_current_user_id(),
-            'created_at'       => current_time('mysql'),
-            'last_updated_by'  => get_current_user_id(),
-            'last_updated_at'  => current_time('mysql')
-        ];
-
-        $wpdb->query('START TRANSACTION');
-
-        try {
-            // Insert into quotations table
-            $quotation_inserted = $wpdb->insert(
-                "{$wpdb->prefix}kit_quotations",
-                $quotation_data,
+        // Update waybill status to quoted only id approval is approved
+        if ($waybill->approval === 'approved') {
+            $waybill_updated = $wpdb->update(
+                "{$wpdb->prefix}kit_waybills",
                 [
-                    '%d', //delivery_id
-                    '%d', //waybill_id
-                    '%d', //waybillno
-                    '%d', //customer_id
-                    '%d', //subtotal
-                    '%d', //vat_amount
-                    '%d', //total
-                    '%s', //quotation_notes
-                    '%s', //status
-                    '%d', //created_by
-                    '%s', //created_at
-                    '%d', //last_updated_by
-                    '%s', //last_updated_at
-                ]
+                    'status' => 'invoiced',
+                    'last_updated_by' => get_current_user_id(),
+                    'last_updated_at' => current_time('mysql')
+                ],
+                ['waybill_no' => $waybillno],
+                ['%s', '%d', '%s'],
+                ['%d']
             );
 
-            if (!$quotation_inserted) {
-                throw new Exception('Failed to create quotation: ' . $wpdb->last_error);
-            }
-
-            $quotation_id = $wpdb->insert_id;
-
-            // Update waybill status to quoted only id approval is approved
-            if ($waybill->approval === 'approved') {
-                $waybill_updated = $wpdb->update(
-                    "{$wpdb->prefix}kit_waybills",
-                    [
-                        'status' => 'quoted',
-                        'last_updated_by' => get_current_user_id(),
-                        'last_updated_at' => current_time('mysql')
-                    ],
-                    ['id' => $waybill_id],
-                    ['%s', '%d', '%s'],
-                    ['%d']
-                );
-            }
-
-            if ($waybill_updated === false) {
-                throw new Exception('Failed to update waybill status: ' . $wpdb->last_error);
-            }
-
-            // Optional: log activity
-            $wpdb->insert(
-                "{$wpdb->prefix}kit_activity_logs",
-                [
-                    'entity_type' => 'quotation',
-                    'entity_id'   => $quotation_id,
-                    'action'      => 'created',
-                    'description' => sprintf('Quotation created from waybill #%s', $waybill->waybill_no),
-                    'user_id'     => get_current_user_id(),
-                    'created_at'  => current_time('mysql')
-                ]
-            );
-
-            $wpdb->query('COMMIT');
-            return $quotation_id;
-        } catch (Exception $e) {
-            $wpdb->query('ROLLBACK');
-            return new WP_Error('quotation_error', $e->getMessage());
+            return $waybill_updated;
         }
+
     }
 
     public static function createQuotation_from_waybill_ajax()

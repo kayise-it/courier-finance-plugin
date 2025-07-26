@@ -1,8 +1,9 @@
 <input type="hidden" name="origin_country_id" value="2" id="countrydestination_id" />
+<input type="hidden" name="current_rate" id="current_rate" value="<?= isset($waybill['miscellaneous']['others']['mass_rate']) ?>">
 <div class="bg-slate-100 p-6 rounded">
     <?= KIT_Commons::h2tag(['title' => 'Mass', 'class' => '']) ?>
     <?php
-    $total_mass_kg = 0;
+    $total_mass_kg = null;
 
     if ($waybill !== null) {
         if (is_object($waybill) && isset($waybill->total_mass_kg)) {
@@ -37,9 +38,12 @@
                     'special' => 'readonly',
                 ]); ?>
             </div>
-            <div id="ttt" class="text-sm text-gray-700">
+            <div id="" class="text-sm text-gray-700">
                 = R<span id="mass_charge_display"><?= esc_html($waybill['mass_charge'] ?? '0.00'); ?></span> <span id="manipulated_mass_charge_display"></span>
             </div>
+        </div>
+
+        <div class="">
             <div>
                 <?= KIT_Commons::Linput([
                     'label' => 'Mass Total Cost (R)',
@@ -51,11 +55,7 @@
                     'special' => 'readonly',
                 ]); ?>
             </div>
-        </div>
-
-        <div class="ttttttt">
             <div>
-
                 <label for="enable_price_manipulator">
                     <div>
                         <span class="block text-xs font-medium text-gray-700 ">Custom Pricing</span>
@@ -93,7 +93,6 @@
                             <?php endif; ?>
                         }
                     });
-
                 </script>
             </div>
 

@@ -175,6 +175,9 @@ class KIT_Routes
             $route_status = 'active'; // or 1, depending on your logic
         }
 
+        echo '<pre>';
+        print_r($routeData);
+        echo '</pre>';
     ?>
         <table class="form-table">
             <tr>
@@ -279,6 +282,7 @@ class KIT_Routes
 
 
         //page=route-create&route_id=1&route_atts=edit_route
+        
     ?>
         <div class="wrap">
             <h1 class="wp-heading-inline"><?= ($is_page) ? 'Edit Route' : 'Create Route'; ?></h1>
@@ -308,41 +312,69 @@ class KIT_Routes
     public static function create_route()
     {
         global $wpdb;
-
+    
         // Sanitize/validate input
         $route_name = isset($_POST['route_name']) ? sanitize_text_field($_POST['route_name']) : '';
         $origin_country_id = isset($_POST['origin_country']) ? intval($_POST['origin_country']) : 0;
         $origin_city_id = isset($_POST['origin_city']) ? intval($_POST['origin_city']) : 0;
         $destination_country_id = isset($_POST['destination_country']) ? intval($_POST['destination_country']) : 0;
         $destination_city_id = isset($_POST['destination_city']) ? intval($_POST['destination_city']) : 0;
-
-        // Fetch country names from wp_kit_operating_countries using $origin_country_id and $destination_country_id
+    
+        // Tables
         $operating_countries_table = $wpdb->prefix . 'kit_operating_countries';
+        $shipping_directions_table = $wpdb->prefix . 'kit_shipping_directions';
+    
         $origin_country_name = '';
         $destination_country_name = '';
-
+    
+        // ✅ Fetch and patch country names and is_active = 1
         if ($origin_country_id && $destination_country_id) {
+            // Get origin country
             $origin_row = $wpdb->get_row(
                 $wpdb->prepare(
-                    "SELECT country_name FROM $operating_countries_table WHERE id = %d",
+                    "SELECT country_name, is_active FROM $operating_countries_table WHERE id = %d",
                     $origin_country_id
                 )
             );
+    
+            // Get destination country
             $destination_row = $wpdb->get_row(
                 $wpdb->prepare(
-                    "SELECT country_name FROM $operating_countries_table WHERE id = %d",
+                    "SELECT country_name, is_active FROM $operating_countries_table WHERE id = %d",
                     $destination_country_id
                 )
             );
+    
+            // Update is_active = 1 if needed
+            if ($origin_row && $origin_row->is_active == 0) {
+                $wpdb->update(
+                    $operating_countries_table,
+                    ['is_active' => 1],
+                    ['id' => $origin_country_id],
+                    ['%d'],
+                    ['%d']
+                );
+            }
+    
+            if ($destination_row && $destination_row->is_active == 0) {
+                $wpdb->update(
+                    $operating_countries_table,
+                    ['is_active' => 1],
+                    ['id' => $destination_country_id],
+                    ['%d'],
+                    ['%d']
+                );
+            }
+    
             $origin_country_name = $origin_row ? $origin_row->country_name : '';
             $destination_country_name = $destination_row ? $destination_row->country_name : '';
         }
-
+    
+        // Create route description
         $route_description = $origin_country_name . ' to ' . $destination_country_name;
-
+    
         $route_status = isset($_POST['route_status']) && $_POST['route_status'] === 'active' ? 1 : 0;
-
-        $table = $wpdb->prefix . 'kit_shipping_directions';
+    
         $data = [
             'origin_country_id'      => $origin_country_id,
             'destination_country_id' => $destination_country_id,
@@ -350,32 +382,19 @@ class KIT_Routes
             'is_active'              => $route_status,
             'created_at'             => function_exists('current_time') ? current_time('mysql') : date('Y-m-d H:i:s'),
         ];
-
+    
         $is_ajax = defined('DOING_AJAX') && DOING_AJAX;
-
-        $result = $wpdb->insert($table, $data);
-
+    
+        $result = $wpdb->insert($shipping_directions_table, $data);
+    
         if ($is_ajax) {
             if ($result) {
-                if (function_exists('wp_send_json_success')) {
-                    wp_send_json_success('Route created successfully');
-                } else {
-                    echo json_encode(['success' => true, 'data' => 'Route created successfully']);
-                    wp_die();
-                }
+                wp_send_json_success('Route created successfully');
             } else {
-                if (function_exists('wp_send_json_error')) {
-                    wp_send_json_error('Failed to create route');
-                } else {
-                    echo json_encode(['success' => false, 'data' => 'Failed to create route']);
-                    wp_die();
-                }
+                wp_send_json_error('Failed to create route');
             }
         } else {
-            // Normal PHP request (form POST)
             if ($result) {
-                // Redirect or show a message
-                // You can adjust this as needed for your UI
                 echo '<div class="notice notice-success"><p>Route created successfully.</p></div>';
                 wp_redirect(admin_url('admin.php?page=route-management'));
                 exit;

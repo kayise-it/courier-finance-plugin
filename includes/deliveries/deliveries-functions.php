@@ -1166,10 +1166,53 @@ class KIT_Deliveries
     public static function create_direction($origin_country_id, $destination_country_id)
     {
         global $wpdb;
+    
         $table = $wpdb->prefix . 'kit_shipping_directions';
+        $countries_table = $wpdb->prefix . 'kit_operating_countries';
+    
+        // Fetch country names
         $origin_country_name = KIT_Routes::get_country_name_by_id($origin_country_id);
         $destination_country_name = KIT_Routes::get_country_name_by_id($destination_country_id);
-        $wpdb->insert($table, ['origin_country_id' => $origin_country_id, 'destination_country_id' => $destination_country_id, 'description' => $origin_country_name . ' to ' . $destination_country_name]);
+    
+        // 🔁 Activate origin country if inactive
+        $origin_active = $wpdb->get_var($wpdb->prepare(
+            "SELECT is_active FROM $countries_table WHERE id = %d",
+            $origin_country_id
+        ));
+    
+        if ($origin_active !== null && intval($origin_active) === 0) {
+            $wpdb->update(
+                $countries_table,
+                ['is_active' => 1],
+                ['id' => $origin_country_id],
+                ['%d'],
+                ['%d']
+            );
+        }
+    
+        // 🔁 Activate destination country if inactive
+        $destination_active = $wpdb->get_var($wpdb->prepare(
+            "SELECT is_active FROM $countries_table WHERE id = %d",
+            $destination_country_id
+        ));
+    
+        if ($destination_active !== null && intval($destination_active) === 0) {
+            $wpdb->update(
+                $countries_table,
+                ['is_active' => 1],
+                ['id' => $destination_country_id],
+                ['%d'],
+                ['%d']
+            );
+        }
+    
+        // Insert route/direction
+        $wpdb->insert($table, [
+            'origin_country_id' => $origin_country_id,
+            'destination_country_id' => $destination_country_id,
+            'description' => $origin_country_name . ' to ' . $destination_country_name
+        ]);
+    
         return $wpdb->insert_id;
     }
 
@@ -1241,7 +1284,6 @@ class KIT_Deliveries
 
     public static function selectAllCitiesByCountry($name, $id, $country_id, $city_id, $required = true)
     {
-
         ob_start();
         $cities = KIT_Deliveries::get_Cities_forCountry($country_id);
     ?>

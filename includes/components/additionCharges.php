@@ -20,18 +20,18 @@ if (!isset($optionChoice)) : ?>
                 <div class="bg-slate-100 border-dotted col-span-2 border-2 border-gray-300 rounded-lg p-4 grid grid-cols-2 gap-2">
                     <!-- Checkbox for SADC Certificate -->
                     <div>
-                        <input type="checkbox" name="include_waybill_fee" id="sadc_certificate" class="optionz" value="1">
+                        <input type="checkbox" name="include_sadc" id="sadc_certificate" class="optionz" value="1">
                         <label for="sadc_certificate">SADC Certificate</label>
                     </div>
                     <div>
-                        <input type="checkbox" name="include_sad500" id="include_sad500" class="optionz" value="1">
+                        <input type="checkbox" name="include_sad500" id="include_sad500" class="" value="1">
                         <label for="include_sad500">SAD500</label>
                     </div>
-                </div>
-                <div class="bg-slate-100 border-dotted border-2 border-gray-300 rounded-lg p-4">
-                    <!-- The VAT option Checkbox -->
-                    <input type="checkbox" name="vat_option" id="vat_option" value="1">
-                    <label for="vat_option">VAT Included</label>
+                    <div>
+                        <!-- The VAT option Checkbox -->
+                        <input type="checkbox" name="vat_include" id="vat_include" value="1">
+                        <label for="vat_include">VAT Included</label>
+                    </div>
                 </div>
             </div>
         </div>
@@ -42,7 +42,7 @@ if (!isset($optionChoice)) : ?>
         <div class="bg-slate-100 border-dotted col-span-2 border-2 border-gray-300 rounded-lg p-2 gap-2">
             <!-- Checkbox for SADC Certificate -->
             <div>
-                <input type="checkbox" <?= (!empty($waybill['include_sadc'])) ? 'checked' : '' ?> name="include_waybill_fee" id="sadc_certificate" class="optionz" value="1">
+                <input type="checkbox" <?= (!empty($waybill['include_sadc'])) ? 'checked' : '' ?> name="include_sadc" id="sadc_certificate" class="optionz" value="1">
                 <label for="sadc_certificate">SADC Certificate</label>
             </div>
             <div>
@@ -52,8 +52,8 @@ if (!isset($optionChoice)) : ?>
         </div>
         <div class="bg-slate-100 border-dotted border-2 mt-2 border-gray-300 rounded-lg p-2">
             <!-- The VAT option Checkbox -->
-            <input type="checkbox" <?= (!empty($waybill['vat_include'])) ? 'checked' : '' ?> name="vat_option" id="vat_option" value="1">
-            <label for="vat_option">VAT Included</label>
+            <input type="checkbox" <?= (!empty($waybill['vat_include'])) ? 'checked' : '' ?> name="vat_include" id="vat_include" value="1">
+            <label for="vat_include">VAT Included</label>
         </div>
     </div>
 <?php elseif (isset($optionChoice) && $optionChoice == 3): ?>

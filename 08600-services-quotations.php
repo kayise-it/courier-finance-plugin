@@ -879,7 +879,7 @@ function quotation_form($type, $quotation = null)
 
             shippingMethods.forEach(method => {
                 method.addEventListener('change', function() {
-                    if (this.value === 'weight') {
+                    if (this.value === 'weight' || this.value === 'mass') {
                         weightInput.classList.remove('hidden');
                         volumeInput.classList.add('hidden');
                     } else {

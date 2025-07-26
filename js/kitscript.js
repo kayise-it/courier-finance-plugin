@@ -36,6 +36,7 @@ function fetchRatePerKg() {
                     jQuery('#mass_charge_display').text(rate);
                     jQuery('#mass_charge').val(rate * total_mass_kg);
                     jQuery('#mass_rate').val(rate);
+                    jQuery('#current_rate').val(rate);
                 } else {
                     console.warn(response.data.message);
                 }
@@ -77,7 +78,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // VAT checkbox functionality
-    const vatCheckbox = document.getElementById('vat_option');
+    const vatCheckbox = document.getElementById('vat_include');
     const optionz = document.querySelectorAll('.optionz');
 
     function toggleOptionzDisabled() {
@@ -183,9 +184,10 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     jQuery('#enable_price_manipulator').on('change', function () {
+        let current_rate = parseFloat(jQuery('#current_rate').val().replace(',', '.')) || 0;
         if (this.checked) {
             /* When mass_charge_manipulator is changed, then alert the value after 2 seconds */
-            jQuery('#mass_charge_manipulator').on('focusout', function () {
+            jQuery('#mass_charge_manipulator').on('input', function () {
                 const manipulatorVal = parseFloat(jQuery('#mass_charge_manipulator').val()) || 0;
                 const rateVal = parseFloat(current_rate) || 0;
                 const sum = rateVal + manipulatorVal;
@@ -212,7 +214,16 @@ document.addEventListener('DOMContentLoaded', function () {
 
             });
         } else {
-            jQuery('#mass_charge_display').text(rate);
+            
+
+            jQuery('#mass_charge_display').text(current_rate);
+            jQuery('#manipulated_mass_charge_display').text("");
+            jQuery('#mass_rate').val(current_rate);
+
+            // Optional: remove the hidden input if it exists
+            if (jQuery('#new_mass_rate').length > 0) {
+                jQuery('#new_mass_rate').remove();
+            }
         }
     });
 });

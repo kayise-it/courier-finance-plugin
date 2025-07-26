@@ -28,7 +28,7 @@ class KIT_Commons
     {
         global $wpdb;
         $waybill = $wpdb->get_var("SELECT `status` FROM {$wpdb->prefix}kit_waybills WHERE waybill_no = '{$waybillno}'");
-        $waybill = ($waybill)?? NULL;
+        $waybill = ($waybill) ?? NULL;
         return $waybill;
     }
 
@@ -355,10 +355,10 @@ class KIT_Commons
              *
              * Example usage:
              * KIT_Commons::ButtonBox([
-             *     'name' => 'include_waybill_fee',
+             *     'name' => 'include_sadc',
              *     'value' => '1',
              *     'min_desc' => 'R50',
-             *     'data_target' => 'include_waybill_fee',
+             *     'data_target' => 'include_sadc',
              *     'checked' => false,
              *     'type' => 'checkbox',
              *     'class' => 'fee-option',
@@ -472,8 +472,7 @@ class KIT_Commons
                 $labelClass = self::labelClass();
                 $inputClass = self::inputClass();
 
-                ob_start();
-    ?>
+                ob_start(); ?>
 
         <div class="<?php echo esc_attr($atts['class']); ?>">
             <?php if (!empty($atts['label'])): ?>
@@ -485,7 +484,7 @@ class KIT_Commons
                 name="<?php echo esc_attr($atts['name']); ?>"
                 id="<?php echo esc_attr($atts['id']); ?>"
                 class="<?php echo esc_attr(trim($inputClass . ' ' . $atts['class'])); ?>"
-                <?php echo $atts['special']; ?>></textarea>
+                <?php echo $atts['special']; ?>><?php echo esc_attr($atts['value']); ?></textarea>
         </div>
     <?php
                 return ob_get_clean();
@@ -515,7 +514,7 @@ class KIT_Commons
                 if (!$atts['is_dynamic']) {
                     return '<label for="' . esc_attr($atts['id']) . '" class="' . esc_attr($labelClass) . " " . esc_attr($atts['label_class']) . '">' .
                         esc_html($atts['label']) . '</label>' .
-                        '<input type="' . esc_attr($atts['type']) . '" name="' . esc_attr($atts['name']) .
+                        '<input step="0.01" type="' . esc_attr($atts['type']) . '" name="' . esc_attr($atts['name']) .
                         '" id="' . esc_attr($atts['id']) . '" value="' . esc_attr($atts['value']) .
                         '" class="' . esc_attr($inputClass) . ' ' . esc_attr($atts['class']) . '" ' . ($atts['onclick'] ? 'onclick="' . $atts['onclick'] . '" ' : '') .
                         esc_attr($atts['special']) . '/>';
@@ -690,9 +689,9 @@ class KIT_Commons
             </div>
             <div class="relative">
                 <span class="font-medium flex items-center">
-                    <?php if($atts['charge'] === "mass"): ?>
-                    <?= KIT_Commons::currency() . ($atts['theRate'] ?? 0) ?> x
-                    <?= number_format($atts['howMuch'] ?? 0, 2) ?> kg (<?= KIT_Commons::currency() ?><?= number_format($atts['kolot'], 2) ?>)
+                    <?php if ($atts['charge'] === "mass"): ?>
+                        <?= KIT_Commons::currency() . ($atts['theRate'] ?? 0) ?> x
+                        <?= number_format($atts['howMuch'] ?? 0, 2) ?> kg (<?= KIT_Commons::currency() ?><?= number_format($atts['kolot'], 2) ?>)
                     <?php else: ?>
                         <?= number_format($atts['howMuch'] ?? 0, 2) ?> m³ (<?= KIT_Commons::currency() ?><?= number_format($atts['kolot'], 2) ?>)
                     <?php endif; ?>
@@ -981,7 +980,7 @@ class KIT_Commons
             }
             public static function labelClass()
             {
-                return 'block text-xs font-medium text-gray-700';
+                return 'block font-bold text-gray-700 mb-1';
             }
 
             public static function tbodyClasses()
@@ -1270,7 +1269,7 @@ class KIT_Commons
                                 'label_class' => ($options['specialClass']) ?? '',
                             ]); ?>
                         </div>
-                       
+
 
                         <!-- Quantity -->
                         <div class="w-full md:w-1/6">
@@ -1295,9 +1294,9 @@ class KIT_Commons
                                 'label_class' => ($options['specialClass']) ?? '',
                             ]); ?>
                         </div>
-                             <!-- Delete Icon -->
+                        <!-- Delete Icon -->
                         <div class="flex items-end">
-                        <button type="button" class="remove-item <?php echo esc_attr($options['remove_btn_class']); ?>" title="Delete" style="background-color: #ef4444; color: white; padding: 8px; border-radius: 4px; border: none; cursor: pointer;">×</button>
+                            <button type="button" class="remove-item <?php echo esc_attr($options['remove_btn_class']); ?>" title="Delete" style="background-color: #ef4444; color: white; padding: 8px; border-radius: 4px; border: none; cursor: pointer;">×</button>
                         </div>
                     </div>
                 <?php endforeach; ?>
@@ -1466,6 +1465,18 @@ class KIT_Commons
                             }
 
                             exit();
+                        } elseif ($action === 'bulkInvoice') {
+                            $selectedRows = $_POST['selected_rows'];
+
+                            // Redirect to the PDF generation page with selected rows via GET or POST
+                            $url = admin_url('admin.php?page=all-customer-waybills&cust_id=' . $_GET['cust_id']);
+
+                            // Encode selected rows as comma-separated string
+                            $ids = implode(',', array_map('intval', $selectedRows)); // sanitize IDs
+
+                            // Use GET or POST (GET for now)
+                            wp_redirect(add_query_arg('selected_ids', $ids, $url));
+                            exit();
                         } elseif ($action === 'export') {
                             // Export or download logic here
                             echo '<pre>';
@@ -1474,6 +1485,7 @@ class KIT_Commons
                             exit();
                         }
                     }
+
 
                     $itemsPerPage = isset($_GET['per_page']) ? (int) $_GET['per_page'] : ($options['itemsPerPage'] ?? 10);
                     $itemsPerPage = in_array($itemsPerPage, [5, 10, 20, 50]) ? $itemsPerPage : 10;
@@ -1559,6 +1571,9 @@ class KIT_Commons
                     echo '<div class="bg-slate-100 rounded p-3 flex flex-wrap items-center justify-start gap-2 text-sm text-gray-100">';
                     echo '<select name="bulk_action" class="rounded-md border-gray-300 bg-white px-5 py-1 text-sm text-gray-800 shadow-sm">';
                     echo '<option value="">Bulk actions</option>';
+                    if ($invoicing = true) {
+                        echo '<option value="bulkInvoice">Bulk Invoice</option>';
+                    }
                     echo '<option value="delete">Delete</option>';
                     echo '<option value="export">Export</option>';
                     echo '</select>';
