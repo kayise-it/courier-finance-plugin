@@ -265,10 +265,6 @@ ob_start();
   </tr>
 </table>
 <?php
-echo '<pre>';
-print_r($_POST);
-echo '</pre>';
-exit();
 $html = ob_get_clean(); ?>
 <?php
 
