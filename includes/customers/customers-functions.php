@@ -6,8 +6,84 @@ class KIT_Customers
 {
     public static function init()
     {
-        add_action('admin_post_add_waybill_action', [self::class, 'process_form']);
         add_action('admin_post_update_customer', [self::class, 'handle_update_customer']);
+        add_action('wp_ajax_search_customers', [self::class, 'search_customers_ajax']);
+        add_action('wp_ajax_nopriv_search_customers', [self::class, 'search_customers_ajax']);
+        add_action('wp_ajax_get_all_customers', [self::class, 'get_all_customers_ajax']);
+        add_action('wp_ajax_nopriv_get_all_customers', [self::class, 'get_all_customers_ajax']);
+    }
+
+    public static function search_customers_ajax()
+    {
+        // Verify nonce
+        if (!wp_verify_nonce($_POST['nonce'], 'get_waybills_nonce')) {
+            wp_send_json_error(['message' => 'Invalid nonce']);
+            return;
+        }
+
+        $query = sanitize_text_field($_POST['query']);
+        
+        if (strlen($query) < 2) {
+            wp_send_json_error(['message' => 'Query too short']);
+            return;
+        }
+
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'kit_customers';
+        
+        // Search in name, surname, company_name, cell, and email_address
+        $search_query = $wpdb->prepare("
+            SELECT cust_id as id, name, surname, company_name, cell, email_address, address
+            FROM $table_name 
+            WHERE name LIKE %s 
+               OR surname LIKE %s 
+               OR company_name LIKE %s 
+               OR cell LIKE %s 
+               OR email_address LIKE %s
+            ORDER BY name ASC, surname ASC
+            LIMIT 10
+        ", 
+            '%' . $query . '%',
+            '%' . $query . '%', 
+            '%' . $query . '%',
+            '%' . $query . '%',
+            '%' . $query . '%'
+        );
+
+        $customers = $wpdb->get_results($search_query, ARRAY_A);
+        
+        if ($customers) {
+            wp_send_json_success($customers);
+        } else {
+            wp_send_json_success([]);
+        }
+    }
+
+    public static function get_all_customers_ajax()
+    {
+        // Verify nonce
+        if (!wp_verify_nonce($_POST['nonce'], 'get_waybills_nonce')) {
+            wp_send_json_error(['message' => 'Invalid nonce']);
+            return;
+        }
+
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'kit_customers';
+        
+        // Get all customers ordered by name
+        $customers_query = "
+            SELECT cust_id as id, name, surname, company_name, cell, email_address, address
+            FROM $table_name 
+            ORDER BY name ASC, surname ASC
+        ";
+
+        $customers = $wpdb->get_results($customers_query, ARRAY_A);
+        
+        if ($customers) {
+            wp_send_json_success($customers);
+        } else {
+            wp_send_json_success([]);
+        }
     }
     public static function gamaCustomer($id)
     {

@@ -127,15 +127,26 @@ $scheduled_deliveries = KIT_Deliveries::getScheduledDeliveries();
             // Customer selection handling
             const customerSelect = document.getElementById('customer-select');
             const custIdInput = document.getElementById('cust_id');
+            const companyInput = document.getElementById('company_name');
             const nameInput = document.getElementById('customer_name');
-            const surnameInput = document.getElementById('surname');
+            const surnameInput = document.getElementById('customer_surname');
             const cellInput = document.getElementById('cell');
             const addressInput = document.getElementById('address');
 
-            
+            function populateCustomerDetails(customerId) {
+                if (!customerSelect) return;
+                const option = customerSelect.querySelector(`option[value="${customerId}"]`);
+                if (!option) return;
+                if (companyInput) companyInput.value = option.getAttribute('data-company_name') || '';
+                if (nameInput) nameInput.value = option.getAttribute('data-name') || '';
+                if (surnameInput) surnameInput.value = option.getAttribute('data-surname') || '';
+                if (cellInput) cellInput.value = option.getAttribute('data-cell') || '';
+                if (addressInput) addressInput.value = option.getAttribute('data-address') || '';
+                if (custIdInput) custIdInput.value = customerId;
+            }
 
             // Handle dropdown changes
-            customerSelect.addEventListener('change', function() {
+            customerSelect?.addEventListener('change', function() {
                 const selectedOption = this.options[this.selectedIndex];
 
                 // Access data-* attributes
@@ -143,6 +154,7 @@ $scheduled_deliveries = KIT_Deliveries::getScheduledDeliveries();
                 const surname = selectedOption.getAttribute('data-surname');
                 const cell = selectedOption.getAttribute('data-cell');
                 const address = selectedOption.getAttribute('data-address');
+                const company = selectedOption.getAttribute('data-company_name');
 
                 console.log('Name:', name);
                 console.log('Surname:', surname);
@@ -151,23 +163,25 @@ $scheduled_deliveries = KIT_Deliveries::getScheduledDeliveries();
 
                 if (this.value === 'new') {
                     // Clear all fields for new customer
-                    nameInput.value = '';
-                    surnameInput.value = '';
-                    cellInput.value = '';
-                    addressInput.value = '';
-                    custIdInput.value = '0';
+                    if (companyInput) companyInput.value = '';
+                    if (nameInput) nameInput.value = '';
+                    if (surnameInput) surnameInput.value = '';
+                    if (cellInput) cellInput.value = '';
+                    if (addressInput) addressInput.value = '';
+                    if (custIdInput) custIdInput.value = '0';
                 } else if (this.value) {
                     // Populate fields with selected customer data
-                    jQuery("#customer_name").value = name ;
-                    jQuery("#customer_surname").value = surname;
-                    cellInput.value = cell ||'';
-                    addressInput.value = address ||'';
-                    custIdInput.value = '0';
+                    if (companyInput) companyInput.value = company || '';
+                    if (nameInput) nameInput.value = name || '';
+                    if (surnameInput) surnameInput.value = surname || '';
+                    if (cellInput) cellInput.value = cell || '';
+                    if (addressInput) addressInput.value = address || '';
+                    if (custIdInput) custIdInput.value = this.value;
                 }
             });
 
             // Check for initial customer ID on page load
-            const initialCustomerId = custIdInput.value;
+            const initialCustomerId = custIdInput?.value;
             if (initialCustomerId && initialCustomerId !== '0') {
                 populateCustomerDetails(initialCustomerId);
             }

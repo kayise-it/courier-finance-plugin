@@ -404,6 +404,7 @@ class KIT_Deliveries
 
         $query = "
                 SELECT 
+                    $table_name.id AS delivery_id,
                     $table_name.delivery_reference, 
                     $table_name.direction_id, 
                     $table_name.dispatch_date, 
@@ -416,15 +417,15 @@ class KIT_Deliveries
                     oc1.country_code AS origin_code,
                     oc2.country_name AS destination_country, 
                     oc2.country_code AS destination_code
-
+                
                 FROM $table_name 
-
+                
                 LEFT JOIN {$wpdb->prefix}kit_shipping_directions sd 
                     ON $table_name.direction_id = sd.id 
-
+                
                 LEFT JOIN {$wpdb->prefix}kit_operating_countries oc1 
                     ON sd.origin_country_id = oc1.id 
-
+                
                 LEFT JOIN {$wpdb->prefix}kit_operating_countries oc2 
                     ON sd.destination_country_id = oc2.id 
                 WHERE $table_name.status = 'scheduled'

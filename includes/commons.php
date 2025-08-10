@@ -88,7 +88,7 @@ class KIT_Commons
             <div class="relative inline-block text-left">
                 <div>
                     <button type="button"
-                        class="inline-flex  <?= $fontSize ?> justify-center w-full rounded-md border shadow-sm px-4 py-2 bg-white font-medium <?= $current_colors ?> hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                        class="inline-flex  <?= $fontSize ?> justify-center w-full rounded-md border  px-4 py-2 bg-white font-medium <?= $current_colors ?> hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                         id="quote-button-<?= esc_attr($waybillid) ?>"
                         onclick="toggleDropdownQuote('<?= esc_attr($waybillid) ?>')">
                         <span class="flex items-center  <?= $fontSize ?>">
@@ -100,7 +100,7 @@ class KIT_Commons
                     </button>
                 </div>
 
-                <div class="hidden <?= $fontSize ?> origin-top-left absolute left-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50"
+                <div class="hidden <?= $fontSize ?> origin-top-left absolute left-0 mt-2 w-56 rounded-md  bg-white ring-1 ring-black ring-opacity-5 z-50"
                     id="quote-dropdown-<?= esc_attr($waybillid) ?>">
                     <div class="py-1" role="menu" aria-orientation="vertical">
                         <?php foreach (
@@ -223,7 +223,7 @@ class KIT_Commons
             <div class="relative inline-block text-left">
                 <div>
                     <button type="button"
-                        class="inline-flex  <?= $fontSize ?> justify-center w-full rounded-md border shadow-sm px-4 py-2 bg-white font-medium <?= $current_colors ?> hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                        class="inline-flex  <?= $fontSize ?> justify-center w-full rounded-md border  px-4 py-2 bg-white font-medium <?= $current_colors ?> hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                         id="approval-button-<?= esc_attr($waybillid) ?>"
                         onclick="toggleDropdownApproval('<?= esc_attr($waybillid) ?>')">
                         <span class="flex items-center">
@@ -235,7 +235,7 @@ class KIT_Commons
                     </button>
                 </div>
 
-                <div class="hidden origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50"
+                <div class="hidden origin-top-right absolute right-0 mt-2 w-56 rounded-md  bg-white ring-1 ring-black ring-opacity-5 z-50"
                     id="approval-dropdown-<?= esc_attr($waybillid) ?>">
                     <div class="py-1" role="menu" aria-orientation="vertical">
                         <?php foreach ($statuses as $key => $label): ?>
@@ -318,6 +318,15 @@ class KIT_Commons
                 return ob_get_clean();
             }
 
+            public static function tick()
+            {
+    ?>
+        <span class="w-[13px] h-[13px] rounded-full bg-green-600 text-white flex items-center justify-center text-[10px]">
+            ✓
+        </span>
+
+    <?php
+            }
             public static function update_waybillApproval()
             {
                 global $wpdb;
@@ -373,47 +382,17 @@ class KIT_Commons
              *   </div>
              * </label>
              */
-            public static function ButtonBox($atts = [])
+            public static function buttonBox($label, $highlight = '')
             {
-                $atts = shortcode_atts([
-                    'name'        => '',
-                    'value'       => '1',
-                    'min_desc'    => '',
-                    'data_target' => '',
-                    'checked'     => false,
-                    'type'        => 'checkbox', // or 'radio'
-                    'class'       => 'fee-option',
-                    'id'          => '',
-                    'disabled'    => false,
-                ], $atts);
+                $base = 'rounded-md px-4 py-2 text-sm font-semibold border border-gray-300 transition hover:scale-105 hover:shadow-md hover:bg-blue-600 hover:text-white';
 
-                $input_id = $atts['id'] ? $atts['id'] : uniqid('btnbox_');
-                $checked = $atts['checked'] ? 'checked' : '';
-                $disabled = $atts['disabled'] ? 'disabled' : '';
-                $data_target = $atts['data_target'] ? 'data-target="' . esc_attr($atts['data_target']) . '"' : '';
+                if ($highlight === 'highlight') {
+                    $base .= ' bg-yellow-400 text-black';
+                } else {
+                    $base .= ' bg-white text-gray-800';
+                }
 
-                $boxClass = trim($atts['class'] . ' text-gray-700 flex items-center justify-center p-3 border border-gray-300 rounded-lg shadow-sm hover:shadow-md hover:border-blue-400 transition-all w-24 h-24 cursor-pointer select-none');
-
-                ob_start();
-    ?>
-        <label class="<?php echo esc_attr($boxClass); ?>" for="<?php echo esc_attr($input_id); ?>" <?php echo $data_target; ?>>
-            <input
-                type="<?php echo esc_attr($atts['type']); ?>"
-                name="<?php echo esc_attr($atts['name']); ?>"
-                value="<?php echo esc_attr($atts['value']); ?>"
-                id="<?php echo esc_attr($input_id); ?>"
-                class="sr-only"
-                <?php echo $checked; ?>
-                <?php echo $disabled; ?>>
-            <div class="flex flex-col items-center justify-center h-full w-full pointer-events-none text-center">
-                <span class="text-xs font-medium"><?php echo esc_html($atts['name']); ?></span>
-                <?php if (!empty($atts['min_desc'])): ?>
-                    <span class="text-xs text-gray-500 text-center"><?php echo esc_html($atts['min_desc']); ?></span>
-                <?php endif; ?>
-            </div>
-        </label>
-    <?php
-                return ob_get_clean();
+                return '<button class="' . $base . '">' . $label . '</button>';
             }
 
             public static function DestinationButtonBox($atts = [])
@@ -434,7 +413,7 @@ class KIT_Commons
 
                 ob_start();
     ?>
-        <label <?php echo $atts['onclick'] ? 'onclick="' . $atts['onclick'] . '"' : ''; ?> for="<?php echo esc_attr($input_id); ?>" class="<?= $atts['class'] ?>  bg-white w-[100px] h-[100px] rounded-[5px] border-2 border-gray-300 cursor-pointer relative flex items-center justify-center text-center text-[11px] font-medium leading-tight hover:shadow-md transition-all duration-200 peer-checked:border-blue-500 peer-checked:bg-blue-100 peer-checked:shadow-lg">
+        <label <?php echo $atts['onclick'] ? 'onclick="' . $atts['onclick'] . '"' : ''; ?> for="<?php echo esc_attr($input_id); ?>" class="<?= $atts['class'] ?>  bg-white w-[100px] h-[100px] rounded-[5px] border-2 border-gray-300 cursor-pointer relative flex items-center justify-center text-center text-[11px] font-medium leading-tight hover:shadow-md transition-all duration-200 peer-checked:border-blue-500 peer-checked:bg-blue-100 peer-checked:">
             <input
                 type="radio"
                 name="<?php echo esc_attr($atts['name']); ?>"
@@ -490,6 +469,41 @@ class KIT_Commons
                 return ob_get_clean();
             }
 
+            public static function compareCharges($mass_charge, $volume_charge)
+            {
+                $mass = floatval($mass_charge);
+                $volume = floatval($volume_charge);
+
+                if (abs($mass - $volume) < 0.0001) {
+                    return ['mass' => false, 'volume' => false, 'equal' => true];
+                }
+
+                return [
+                    'mass' => $mass > $volume,
+                    'volume' => $volume > $mass,
+                    'equal' => false,
+                ];
+            }
+
+            public static function LText($atts)
+            {
+                $atts = shortcode_atts([
+                    'label' => '',
+                    'value' => '',
+                    'classlabel' => '',
+                    'classP' => '',
+                    'onclick' => '',
+                    'is_dynamic' => false, // New parameter for dynamic fields
+                ], $atts);
+
+                $labelClass = self::labelClass();
+
+                // Standard input
+                return '<label class="' . esc_attr($labelClass) . ' ' . $atts['classlabel'] . ' ">' .
+                    esc_html($atts['label']) . '</label>' .
+                    '<p class="m-0 p-0 ' . esc_attr($atts['classP']) . '">' . $atts['value'] . '</p>';
+            }
+
             public static function Linput($atts)
             {
                 $atts = shortcode_atts([
@@ -501,6 +515,7 @@ class KIT_Commons
                     'class' => '',
                     'special' => '',
                     'onclick' => '',
+                    'tabindex' => '',
                     'is_dynamic' => false, // New parameter for dynamic fields
                     'dynamic_group' => '', // Group name for dynamic fields
                     'dynamic_type' => 'text', // Type for dynamic fields (when is_dynamic=true)
@@ -517,14 +532,14 @@ class KIT_Commons
                         '<input step="0.01" type="' . esc_attr($atts['type']) . '" name="' . esc_attr($atts['name']) .
                         '" id="' . esc_attr($atts['id']) . '" value="' . esc_attr($atts['value']) .
                         '" class="' . esc_attr($inputClass) . ' ' . esc_attr($atts['class']) . '" ' . ($atts['onclick'] ? 'onclick="' . $atts['onclick'] . '" ' : '') .
-                        esc_attr($atts['special']) . '/>';
+                        esc_attr($atts['special']) . ' tabindex="' . esc_attr($atts['tabindex']) . '"/>';
                 }
 
                 // Dynamic input field (part of a group)
                 return '<input type="' . esc_attr($atts['dynamic_type']) . '" name="' .
                     esc_attr($atts['dynamic_group']) . '[' . esc_attr($atts['name']) . '][]" ' .
                     'value="' . esc_attr($atts['value']) . '" class="' . esc_attr($inputClass) . ' ' .
-                    esc_attr($atts['class']) .  '" ' . esc_attr($atts['special']) . ' ' . ($atts['onclick'] ? 'onclick="' . $atts['onclick'] . '" ' : '') . '/>';
+                    esc_attr($atts['class']) .  '" ' . esc_attr($atts['special']) . ' ' . ($atts['onclick'] ? 'onclick="' . $atts['onclick'] . '" ' : '') . ' tabindex="' . esc_attr($atts['tabindex']) . '"/>';
             }
 
             public static function miscItemsControl($options = [])
@@ -664,7 +679,7 @@ class KIT_Commons
             {
 
                 echo '<pre>';
-                print_r($atts);
+                // print_r($atts); // Debug disabled
                 echo '</pre>';
                 exit();
 
@@ -793,7 +808,7 @@ class KIT_Commons
                     }
                 }
 
-                $html .= '<select id="items-per-page" name="items_per_page" class="text-xs rounded border-gray-300 focus:border-blue-500 focus:ring-blue-500 shadow-sm py-1 pl-2 pr-8" onchange="this.form.submit()">';
+                $html .= '<select id="items-per-page" name="items_per_page" class="text-xs rounded border-gray-300 focus:border-blue-500 focus:ring-blue-500  py-1 pl-2 pr-8" onchange="this.form.submit()">';
                 $per_page_options = [5, 10, 20, 50, 100];
                 foreach ($per_page_options as $option) {
                     $selected = $options['items_per_page'] == $option ? ' selected' : '';
@@ -957,6 +972,156 @@ class KIT_Commons
                 return $html;
             }
 
+            public static function render_versatile_table($data, $columns, $cell_callback = null, $options = [])
+            {
+                // Default options
+                $defaults = [
+                    'itemsPerPage' => 10,
+                    'currentPage' => isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1,
+                    'tableClass' => 'min-w-full divide-y divide-gray-200',
+                    'showPagination' => true,
+                    'id' => 'versatile-table'
+                ];
+                $options = array_merge($defaults, $options);
+
+                // Convert data to array if it's an object
+                if (is_object($data)) {
+                    $data = json_decode(json_encode($data), true);
+                }
+
+                // Ensure data is an array
+                if (!is_array($data)) {
+                    return '<div class="error">Invalid data format provided</div>';
+                }
+
+                // Calculate pagination values
+                $total_items = count($data);
+                $total_pages = ceil($total_items / $options['itemsPerPage']);
+                $options['currentPage'] = min($options['currentPage'], $total_pages);
+
+                // Get current page data
+                $offset = ($options['currentPage'] - 1) * $options['itemsPerPage'];
+                $paginated_data = array_slice($data, $offset, $options['itemsPerPage']);
+
+                // Start building HTML
+                $html = '';
+
+                // Top pagination controls
+                if ($options['showPagination'] && $total_pages > 1) {
+                    $html .= '<div class="tablenav top flex flex-wrap items-center justify-between gap-4 mb-4">';
+
+                    // Items per page dropdown - LEFT SIDE
+                    $html .= '<div class="flex items-center space-x-2">';
+                    $html .= '<label for="items-per-page" class="text-xs text-gray-600 whitespace-nowrap">Items per page:</label>';
+                    $html .= '<form method="get" id="items-per-page-form" style="display:inline;">';
+
+                    // Preserve other query params
+                    foreach ($_GET as $key => $val) {
+                        if ($key !== 'items_per_page' && $key !== 'paged') {
+                            $html .= '<input type="hidden" name="' . esc_attr($key) . '" value="' . esc_attr($val) . '">';
+                        }
+                    }
+
+                    $html .= '<select id="items-per-page" name="items_per_page" class="text-xs rounded border-gray-300 focus:border-blue-500 focus:ring-blue-500 py-1 pl-2 pr-8" onchange="this.form.submit()">';
+                    $per_page_options = [5, 10, 20, 50, 100];
+                    foreach ($per_page_options as $option) {
+                        $selected = $options['itemsPerPage'] == $option ? ' selected' : '';
+                        $html .= '<option value="' . $option . '"' . $selected . '>' . $option . '</option>';
+                    }
+                    $html .= '</select>';
+                    $html .= '</form>';
+
+                    // Item count
+                    $html .= '<span class="text-xs text-gray-600 whitespace-nowrap">';
+                    $html .= number_format($total_items) . ' item' . ($total_items !== 1 ? 's' : '');
+                    $html .= '</span>';
+                    $html .= '</div>'; // End left side
+
+                    // Pagination links - RIGHT SIDE
+                    $html .= '<div class="flex items-center space-x-1">';
+
+                    $pagination_args = [
+                        'base' => add_query_arg('paged', '%#%'),
+                        'format' => '',
+                        'current' => $options['currentPage'],
+                        'total' => $total_pages,
+                        'prev_next' => true,
+                        'prev_text' => '<span class="px-3 py-1 rounded border-gray-300 bg-white text-gray-700 hover:bg-gray-50">&laquo; Previous</span>',
+                        'next_text' => '<span class="px-3 py-1 rounded border-gray-300 bg-white text-gray-700 hover:bg-gray-50">Next &raquo;</span>',
+                        'add_args' => ['items_per_page' => $options['itemsPerPage']],
+                        'type' => 'array'
+                    ];
+
+                    $pagination_links = paginate_links($pagination_args);
+
+                    if ($pagination_links) {
+                        foreach ($pagination_links as $link) {
+                            // Add styling to current page
+                            if (strpos($link, 'current') !== false) {
+                                $link = str_replace('page-numbers current', 'page-numbers current px-3 py-1 rounded border bg-blue-50 border-blue-500 text-blue-600', $link);
+                            } else {
+                                $link = str_replace('page-numbers', 'page-numbers px-3 py-1 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50', $link);
+                            }
+                            $html .= $link;
+                        }
+                    }
+
+                    $html .= '</div>'; // End right side
+                    $html .= '</div>'; // End tablenav
+                }
+
+                // Table
+                $html .= '<table id="' . esc_attr($options['id']) . '" class="' . esc_attr($options['tableClass']) . '">';
+                $html .= '<thead class="bg-gray-50"><tr>';
+
+                // Headers
+                foreach ($columns as $key => $column) {
+                    $header_text = is_array($column) ? $column['label'] : $column;
+                    $header_class = is_array($column) && isset($column['class']) ? $column['class'] : 'px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider';
+                    $html .= '<th scope="col" class="' . esc_attr($header_class) . '">';
+                    $html .= esc_html($header_text);
+                    $html .= '</th>';
+                }
+
+                $html .= '</tr></thead>';
+                $html .= '<tbody class="bg-white divide-y divide-gray-200">';
+
+                // Table rows
+                foreach ($paginated_data as $row) {
+                    // Convert to object if it's an array
+                    if (is_array($row)) {
+                        $row = (object) $row;
+                    }
+
+                    $html .= '<tr class="hover:bg-gray-50">';
+
+                    foreach ($columns as $key => $column) {
+                        $cell_class = is_array($column) && isset($column['cell_class']) ? $column['cell_class'] : 'px-4 py-3 whitespace-nowrap text-sm text-gray-900';
+                        $html .= '<td class="' . esc_attr($cell_class) . '">';
+
+                        // Use callback function if provided
+                        if (is_callable($cell_callback)) {
+                            $html .= call_user_func($cell_callback, $key, $row);
+                        } else {
+                            // Default cell rendering
+                            if (property_exists($row, $key)) {
+                                $html .= esc_html($row->$key);
+                            } else {
+                                $html .= '';
+                            }
+                        }
+
+                        $html .= '</td>';
+                    }
+
+                    $html .= '</tr>';
+                }
+
+                $html .= '</tbody></table>';
+
+                return $html;
+            }
+
             public static function Ratebox()
             {
                 //return a input that that uses $atts['name'], $atts['type'], $atts['label']
@@ -968,15 +1133,15 @@ class KIT_Commons
 
             public static function selectClass()
             {
-                return 'text-xs w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 border border-gray-300 rounded px-3 py-2 bg-white';
+                return 'text-xs w-full px-3 py-2 border border-gray-300 rounded-md  focus:outline-none focus:ring-blue-500 focus:border-blue-500 border border-gray-300 rounded px-3 py-2 bg-white';
             }
             public static function inputClass()
             {
-                return 'text-xs w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 border border-gray-300 rounded px-3 py-2 bg-white';
+                return 'text-xs w-full px-3 py-2 border border-gray-300 rounded-md  focus:outline-none focus:ring-blue-500 focus:border-blue-500 border border-gray-300 rounded px-3 py-2 bg-white';
             }
             public static function buttonClass()
             {
-                return 'inline-flex items-center px-4 py-2 text-xs font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2';
+                return 'inline-flex items-center px-4 py-2 text-xs font-medium rounded-md  focus:outline-none focus:ring-2 focus:ring-offset-2';
             }
             public static function labelClass()
             {
@@ -1195,7 +1360,7 @@ class KIT_Commons
                 // Start output buffering
                 ob_start();
 
-                $common_classes = 'inline-flex items-center px-4 py-2 text-xs font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2';
+                $common_classes = 'inline-flex items-center px-4 py-2 text-xs font-medium rounded-md  focus:outline-none focus:ring-2 focus:ring-offset-2';
 
                 // Include icon SVG if provided
                 $icon = '';
@@ -1245,367 +1410,174 @@ class KIT_Commons
                     'input_class' => self::inputClass(),
                     'label_class' => 'block text-xs font-medium mb-1',
                     'remove_btn_class' => 'bg-red-500 text-white px-3 py-2 rounded hover:bg-red-600',
-                    'add_btn_class' => 'bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700'
+                    'add_btn_class' => 'bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700',
+                    'modern_style' => false
                 ];
                 $options = wp_parse_args($options, $defaults);
 
                 ob_start();
 
         ?>
-        <div class="form-step bg-gray-50 p-4 rounded-lg mb-8" id="step-waybill-items">
-            <h2 class="text-lg font-semibold text-gray-700 mb-3 border-b pb-2">Waybill Items</h2>
-
-            <div id="<?php echo esc_attr($options['container_id']); ?>" class="space-y-4">
+        <!-- Simple Waybill Items - No Overlap -->
+        <div class="space-y-4">
+            <!-- Header -->
+            <div class="text-sm font-semibold text-gray-900 border-b border-gray-200 pb-2">
+                📦 Waybill Items
+            </div>
+            
+            <!-- Items Container -->
+            <div id="<?php echo esc_attr($options['container_id']); ?>" class="space-y-3">
                 <?php foreach ($options['existing_items'] as $index => $item): ?>
-                    <div class="flex flex-row gap-2 waybill-item p-1 rounded-lg shadow-sm">
-                        <!-- Description -->
-                        <div class="w-full md:w-1/3">
-                            <?php echo self::Linput([
-                                'label' => 'Item',
-                                'name' => $options['group_name'] . '[' . $index . '][item_name]',
-                                'value' => $item['item_name'] ?? '',
-                                'class' => $options['input_class'],
-                                'special' => 'placeholder="e.g. Laptop, Router, etc"',
-                                'label_class' => ($options['specialClass']) ?? '',
-                            ]); ?>
-                        </div>
-
-
-                        <!-- Quantity -->
-                        <div class="w-full md:w-1/6">
-                            <?php echo self::Linput([
-                                'label' => 'Qty',
-                                'name' => $options['group_name'] . '[' . $index . '][quantity]',
-                                'type' => 'number',
-                                'value' => $item['quantity'] ?? 1,
-                                'class' => $options['input_class'],
-                                'label_class' => ($options['specialClass']) ?? '',
-                            ]); ?>
-                        </div>
-
-                        <!-- Unit Price -->
-                        <div class="w-full md:w-1/3">
-                            <?php echo self::Linput([
-                                'label' => 'Unit Price',
-                                'name' => $options['group_name'] . '[' . $index . '][unit_price]',
-                                'type' => 'number',
-                                'value' => $item['unit_price'] ?? 0,
-                                'class' => $options['input_class'],
-                                'label_class' => ($options['specialClass']) ?? '',
-                            ]); ?>
-                        </div>
-                        <!-- Delete Icon -->
-                        <div class="flex items-end">
-                            <button type="button" class="remove-item <?php echo esc_attr($options['remove_btn_class']); ?>" title="Delete" style="background-color: #ef4444; color: white; padding: 8px; border-radius: 4px; border: none; cursor: pointer;">×</button>
+                <div class="waybill-item flex gap-3 p-3 bg-gray-50 rounded border">
+                    <!-- Item Number -->
+                    <div class="flex-shrink-0 w-8 h-8 bg-blue-100 text-blue-800 text-xs font-bold rounded-full flex items-center justify-center">
+                        <?php echo $index + 1; ?>
+                    </div>
+                    
+                    <!-- Description -->
+                    <div class="flex-1">
+                        <input type="text" 
+                               name="<?php echo esc_attr($options['group_name'] . '[' . $index . '][item_name]'); ?>" 
+                               value="<?php echo esc_attr($item['item_name'] ?? ''); ?>"
+                               class="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                               placeholder="e.g. MacBook Pro, Documents...">
+                    </div>
+                    
+                    <!-- Quantity -->
+                    <div class="w-20">
+                        <input type="number" 
+                               name="<?php echo esc_attr($options['group_name'] . '[' . $index . '][quantity]'); ?>" 
+                               value="<?php echo esc_attr($item['quantity'] ?? 1); ?>"
+                               class="w-full px-2 py-2 text-sm border border-gray-300 rounded text-center focus:outline-none focus:border-blue-500"
+                               min="1">
+                    </div>
+                    
+                    <!-- Price -->
+                    <div class="w-24">
+                        <div class="relative">
+                            <span class="absolute left-2 top-1/2 transform -translate-y-1/2 text-xs text-gray-500">R</span>
+                            <input type="number" 
+                                   name="<?php echo esc_attr($options['group_name'] . '[' . $index . '][unit_price]'); ?>" 
+                                   value="<?php echo esc_attr($item['unit_price'] ?? 0); ?>"
+                                   class="w-full pl-6 pr-2 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                                   step="0.01" min="0" placeholder="0.00">
                         </div>
                     </div>
+                    
+                    <!-- Total -->
+                    <div class="w-20 text-sm font-medium text-gray-800 flex items-center">
+                        <span class="item-total">R 0.00</span>
+                    </div>
+                    
+                    <!-- Remove Button -->
+                    <div class="flex-shrink-0">
+                        <button type="button" class="remove-item w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded text-sm transition-colors" title="Remove">
+                            ×
+                        </button>
+                    </div>
+                </div>
                 <?php endforeach; ?>
             </div>
 
-            <div class="mt-4">
+            <!-- Add Button -->
+            <div class="text-center pt-3 border-t border-gray-200">
                 <button type="button" id="<?php echo esc_attr($options['button_id']); ?>"
-                    class="<?php echo esc_attr($options['add_btn_class']); ?>">
-                    + Add Another Item
+                    class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    Add Item
                 </button>
             </div>
         </div>
 
         <script>
             document.addEventListener('DOMContentLoaded', function() {
+                console.log('🔧 WaybillItemsControl: Script starting...');
+                
+                const containerId = '<?php echo esc_js($options['container_id']); ?>';
+                const buttonId = '<?php echo esc_js($options['button_id']); ?>';
+                const groupName = '<?php echo esc_js($options['group_name']); ?>';
                 let itemIndex = <?php echo count($options['existing_items']); ?>;
-                const container = document.getElementById('<?php echo esc_js($options['container_id']); ?>');
-                const addBtn = document.getElementById('<?php echo esc_js($options['button_id']); ?>');
 
-                addBtn.addEventListener('click', function() {
+                const container = document.getElementById(containerId);
+                const addBtn = document.getElementById(buttonId);
+                
+                console.log('WaybillItemsControl: Looking for elements:', {
+                    containerId: containerId,
+                    buttonId: buttonId,
+                    container: !!container,
+                    addBtn: !!addBtn
+                });
+                    
+                if (!container || !addBtn) {
+                    console.error('WaybillItemsControl: Required elements not found!', {
+                        container: !!container,
+                        addBtn: !!addBtn
+                    });
+                    return;
+                }
+
+                console.log('WaybillItemsControl: Event listener attached to button:', addBtn);
+                
+                addBtn.addEventListener('click', function(e) {
+                    console.log('🚀 WaybillItemsControl: Add button clicked!', {
+                        event: e,
+                        itemIndex: itemIndex,
+                        container: container,
+                        timestamp: new Date().toISOString()
+                    });
+                    
                     const newItem = document.createElement('div');
-                    newItem.className = 'flex flex-row gap-2 waybill-item rounded-lg shadow-sm';
-                    newItem.innerHTML = `
-                    <div class="w-full md:w-1/3">
-                        <label class="<?php echo esc_js($defaults['label_class']) . " " . $options['specialClass'] ?>">Item</label>
-                        <input type="text" name="<?php echo esc_js($options['group_name']); ?>[${itemIndex}][item_name]" 
-                               class="<?php echo esc_js($defaults['input_class']); ?>" 
-                               placeholder="e.g. Laptop, Router, etc">
-                    </div>
-                    <div class="w-full md:w-1/6">
-                        <label class="<?php echo esc_js($options['label_class']) . " " . $options['specialClass']; ?>">Qty</label>
-                        <input type="number" name="<?php echo esc_js($options['group_name']); ?>[${itemIndex}][quantity]" 
-                               class="<?php echo esc_js($defaults['input_class']); ?> w-full" value="1">
-                    </div>
-                    <div class="w-full md:w-1/3">
-                        <label class="<?php echo esc_js($options['label_class']) . " " . $options['specialClass']; ?>">Unit Price</label>
-                        <input type="number" name="<?php echo esc_js($options['group_name']); ?>[${itemIndex}][unit_price]" 
-                               class="<?php echo esc_js($defaults['input_class']); ?> w-full">
-                    </div>
-
-                    <div class="w-full md:w-auto flex items-end">
-                        
-                        <button type="button" class="remove-item <?php echo esc_attr($options['remove_btn_class']); ?>" title="Delete" style="background-color: #ef4444; color: white; padding: 8px; border-radius: 4px; border: none; cursor: pointer;">×</button>
-                    </div>
-                `;
+                    newItem.className = 'waybill-item flex gap-3 p-3 bg-gray-50 rounded border';
+                    newItem.innerHTML = 
+                        '<div class="flex-shrink-0 w-8 h-8 bg-blue-100 text-blue-800 text-xs font-bold rounded-full flex items-center justify-center">' +
+                            (itemIndex + 1) +
+                        '</div>' +
+                        '<div class="flex-1">' +
+                            '<input type="text" name="' + groupName + '[' + itemIndex + '][item_name]" class="w-full px-3 py-2 text-sm border border-gray-300 rounded" placeholder="e.g. MacBook Pro...">' +
+                        '</div>' +
+                        '<div class="w-20">' +
+                            '<input type="number" name="' + groupName + '[' + itemIndex + '][quantity]" value="1" class="w-full px-2 py-2 text-sm border border-gray-300 rounded text-center" min="1">' +
+                        '</div>' +
+                        '<div class="w-24">' +
+                            '<input type="number" name="' + groupName + '[' + itemIndex + '][unit_price]" class="w-full px-2 py-2 text-sm border border-gray-300 rounded" step="0.01" min="0" placeholder="0.00">' +
+                        '</div>' +
+                        '<div class="w-20 text-sm font-medium text-gray-800 flex items-center">' +
+                            '<span class="item-total">R 0.00</span>' +
+                        '</div>' +
+                        '<div class="flex-shrink-0">' +
+                            '<button type="button" class="remove-item w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded text-sm">×</button>' +
+                        '</div>';
                     container.appendChild(newItem);
                     itemIndex++;
+                    
+                    console.log('WaybillItemsControl: Item added successfully!', {
+                        newItemIndex: itemIndex,
+                        totalItems: container.children.length
+                    });
+                    
+                    // Setup remove button for the new item
+                    const removeBtn = newItem.querySelector('.remove-item');
+                    if (removeBtn) {
+                        removeBtn.addEventListener('click', function() {
+                            console.log('WaybillItemsControl: Removing item');
+                            newItem.remove();
+                        });
+                    }
                 });
-
-                // Event delegation for remove buttons
-                document.addEventListener('click', function(e) {
-                    if (e.target.classList.contains('remove-item') ||
-                        e.target.closest('.remove-item')) {
-                        const btn = e.target.classList.contains('remove-item') ?
-                            e.target : e.target.closest('.remove-item');
+                
+                // Setup remove buttons for existing items
+                document.querySelectorAll('.remove-item').forEach(function(btn) {
+                    btn.addEventListener('click', function() {
                         btn.closest('.waybill-item').remove();
-                    }
-                });
-            });
-        </script><?php
-                    return ob_get_clean();
-                }
-
-                public static function customerSelect($customers)
-                {
-                    $atts = shortcode_atts([
-                        'label' => 'Select Customer',
-                        'name' => 'customer_select',
-                        'id' => 'customer-select',
-                        'customer' => [],
-                        'existing_customer' => "", // New parameter to check if customer is existing
-                    ], $customers);
-                    $customer_id = 0;
-                    if ($customers["existing_customer"]) {
-                        $customer_id = $customers['existing_customer'];
-                    }
-
-                    $selectedCustomerId = (isset($customer_id) && $customer_id !== 0) ? $customer_id : 'new';
-
-
-                    $labelClass = self::labelClass();
-                    $selectClass = self::selectClass();
-                    $html = '<label for="' . esc_attr($atts['id']) . '" class="' . esc_attr($labelClass) . '">' . esc_html($atts['label']) . '</label>';
-                    $html .= '<select name="' . esc_attr($atts['name']) . '" id="' . esc_attr($atts['id']) . '" class="' . esc_attr($selectClass) . '">';
-                    $html .= '<option value="new"' . selected($selectedCustomerId, 'new', false) . '>Add New Customer</option>';
-                    if (!empty($atts['customer'])) {
-                        foreach ($atts['customer'] as $customer) {
-                            $html .= '<option value="' . esc_attr($customer->cust_id) . '"';
-                            $html .= selected($selectedCustomerId, $customer->cust_id, false);
-                            $html .= selected($atts['id'], $customer->cust_id, false); // Compare to cust_id and echo manually
-                            $html .= ' data-name="' . esc_attr($customer->name) . '"';
-                            $html .= ' data-surname="' . esc_attr($customer->surname) . '"';
-                            $html .= ' data-cell="' . esc_attr($customer->cell) . '"';
-                            $html .= ' data-address="' . esc_attr($customer->address) . '"';
-                            $html .= '>';
-                            $html .= esc_html($customer->name . ' ' . $customer->surname); // Optional: visible name
-                            $html .= '</option>';
-                        }
-                    }
-                    $html .= '</select>';
-                    return $html;
-                }
-
-                public static function download_pdf_button($waybillNo, $atts = [])
-                {
-                    if (isset($atts['buttonType']) && $atts['buttonType'] === 'icon-only') {
-                        return '<div class="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                        </svg>
-                                        </div>';
-                    } else {
-                        $downloadIcon = '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
-                                            stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                                        </svg>';
-                    }
-                    $atts = shortcode_atts([
-                        'icon' => $downloadIcon,
-                        'text' => '',
-                        'class' => 'bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2',
-                    ], $atts);
-
-                    return '<a href="' . admin_url('admin-ajax.php?action=generate_pdf&waybill_no=' . $waybillNo . '&pdf_nonce=' . wp_create_nonce("pdf_nonce")) . '"
-                                        class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2">
-                                        ' . $atts['icon'] . '
-                                        ' . $atts['text'] . '
-                                    </a>';
-                }
-
-                //selectAllCountries($name = '', $id = '', $country_id = null, $required = true, $type = 'origin')
-                public static function originCC($selectCountryName, $id, $country_id, $selectCityName, $idCity, $city_id)
-                {
-                    $html = '';
-                    $html .= '<div class="">';
-
-                    $html .= '<div class="">';
-                    $html .= KIT_Deliveries::selectAllCountries($selectCountryName, $id, $country_id, $required = "required", 'origin');
-                    $html .= '</div>';
-                    $html .= '<div class="">';
-                    $html .= KIT_Deliveries::selectAllCitiesByCountry('origin_city', 'origin_city_select', $country_id, $city_id);
-                    $html .= '</div>';
-
-                    $html .= '</div>';
-                    return $html;
-                }
-
-                public static function render_versatile_table($data, $columns, $cell_callback = null, $options = [])
-                {
-                    if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['bulk_action'])) {
-                        $selectedRows = $_POST['selected_rows'];
-                        $action = $_POST['bulk_action'];
-                        if ($action === 'delete') {
-
-                            // Perform deletion using $selectedRows
-                            foreach ($selectedRows as $row) {
-                                if ($options['role'] === 'delivery') {
-                                    KIT_Deliveries::delete_delivery($row);
-                                    wp_redirect(admin_url('admin.php?page=kit-deliveries&per_page=' . $_GET['per_page']));
-                                }
-                                if ($options['role'] === 'waybills') {
-                                    KIT_Waybills::delete_waybill($row);
-                                    wp_redirect(admin_url('admin.php?page=08600-Waybill&per_page=' . $_GET['per_page']));
-                                }
-                            }
-
-                            exit();
-                        } elseif ($action === 'bulkInvoice') {
-                            $selectedRows = $_POST['selected_rows'];
-
-                            // Redirect to the PDF generation page with selected rows via GET or POST
-                            $url = admin_url('admin.php?page=all-customer-waybills&cust_id=' . $_GET['cust_id']);
-
-                            // Encode selected rows as comma-separated string
-                            $ids = implode(',', array_map('intval', $selectedRows)); // sanitize IDs
-
-                            // Use GET or POST (GET for now)
-                            wp_redirect(add_query_arg('selected_ids', $ids, $url));
-                            exit();
-                        } elseif ($action === 'export') {
-                            // Export or download logic here
-                            echo '<pre>';
-                            print_r($selectedRows);
-                            echo '</pre>';
-                            exit();
-                        }
-                    }
-
-
-                    $itemsPerPage = isset($_GET['per_page']) ? (int) $_GET['per_page'] : ($options['itemsPerPage'] ?? 10);
-                    $itemsPerPage = in_array($itemsPerPage, [5, 10, 20, 50]) ? $itemsPerPage : 10;
-                    $currentPage = max(1, intval($_GET['paged'] ?? 1));
-
-                    $totalItems = count($data);
-                    $totalPages = ceil($totalItems / $itemsPerPage);
-
-                    $offset = ($currentPage - 1) * $itemsPerPage;
-                    $pagedData = array_slice($data, $offset, $itemsPerPage);
-
-                    if ($totalItems === 0) {
-                        echo '<div class="text-gray-500 py-4 text-center">No records found</div>';
-                        return;
-                    }
-
-                    echo KIT_Commons::paginationSelect($itemsPerPage, $totalPages, $currentPage);
-
-                    // ✅ Bulk Actions Form START (POST)
-                    echo '<form method="POST" action="' . esc_url($_SERVER['REQUEST_URI']) . '&bulk_action=delete" id="bulkActionForm">';
-
-                    // Table
-                    echo '<div class="rounded-xl border border-gray-200 shadow-sm">';
-                    echo '<table class="min-w-full divide-y divide-gray-200 text-sm bg-white">';
-                    echo '<thead class="bg-gray-50 text-xs text-gray-700 uppercase tracking-wide">';
-                    echo '<tr>';
-
-                    // Select All Checkbox Header
-                    echo '<th class="px-2 py-2 text-center w-5 ">';
-                    echo '<input type="checkbox" class="selectAllRows w-4 h-4">';
-                    echo '</th>';
-
-                    foreach ($columns as $key => $header) {
-
-                        $label = $header['label'];
-                        $align = $header['align'];
-                        echo '<th class="' . $align . '">' . htmlspecialchars($label) . '</th>';
-                    }
-
-                    echo '</tr>';
-                    echo '</thead>';
-                    echo '<tbody class="divide-y divide-gray-100 ">';
-
-                    foreach ($pagedData as $row) {
-
-
-                        if (isset($options['role']) && $options['role'] === 'customers') {
-                            $rowId = $row->cust_id;
-                        } elseif (isset($options['role']) && $options['role'] === 'deliveries') {
-                            $rowId = $row->delivery_id;
-                        } elseif (isset($options['role']) && $options['role'] === 'waybills') {
-                            $rowId = $row->waybill_no;
-                        } else {
-                            $rowId = htmlspecialchars($row->id ?? '');
-                        }
-
-                        echo '<tr class="hover:bg-gray-50 transition" data-row-id="' . $rowId . '">';
-
-                        // Checkbox with name and value for bulk actions
-                        echo '<td class="px-2 py-2 text-center">';
-                        echo '<input type="checkbox" name="selected_rows[]" value="' . $rowId . '" class="selectRow w-4 h-4">';
-                        echo '</td>';
-
-                        foreach ($columns as $key => $label) {
-                            $alignment = $label['align'];
-                            echo '<td class="' . $alignment . '">';
-                            if ($cell_callback && is_callable($cell_callback)) {
-                                echo $cell_callback($key, $row);
-                            } else {
-                                echo htmlspecialchars(($row->$key ?? '') ?: '');
-                            }
-                            echo '</td>';
-                        }
-
-                        echo '</tr>';
-                    }
-
-                    echo '</tbody>';
-                    echo '</table>';
-                    echo '</div>';
-
-                    // Bulk Actions Buttons (still inside the same form)
-                    echo '<div class="bg-slate-100 rounded p-3 flex flex-wrap items-center justify-start gap-2 text-sm text-gray-100">';
-                    echo '<select name="bulk_action" class="rounded-md border-gray-300 bg-white px-5 py-1 text-sm text-gray-800 shadow-sm">';
-                    echo '<option value="">Bulk actions</option>';
-                    if ($invoicing = true) {
-                        echo '<option value="bulkInvoice">Bulk Invoice</option>';
-                    }
-                    echo '<option value="delete">Delete</option>';
-                    echo '<option value="export">Export</option>';
-                    echo '</select>';
-                    echo '<button type="submit" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Apply</button>';
-                    echo '</div>';
-
-                    echo '</form>';  // ✅ Bulk Actions Form END
-
-
-                    // JavaScript for Select All
-                    ?>
-        <script>
-            document.addEventListener('DOMContentLoaded', function() {
-                const selectAll = document.querySelector('.selectAllRows');
-                const rowCheckboxes = document.querySelectorAll('.selectRow');
-
-                if (selectAll) {
-                    selectAll.addEventListener('change', function() {
-                        rowCheckboxes.forEach(cb => cb.checked = selectAll.checked);
-                    });
-                }
-
-                rowCheckboxes.forEach(cb => {
-                    cb.addEventListener('change', function() {
-                        const allChecked = Array.from(rowCheckboxes).every(checkbox => checkbox.checked);
-                        selectAll.checked = allChecked;
                     });
                 });
             });
-        </script><?php
-                }
-
+        </script>
+        <?php
+                return ob_get_clean();
+            }
                 public static function customer_cell_callback($key, $row)
                 {
                     if ($key === 'actions') {
@@ -1630,7 +1602,7 @@ class KIT_Commons
                         }
                     }
                     echo '<label for="per_page" class="text-black">Rows per page:</label>';
-                    echo '<select name="per_page" id="per_page" onchange="this.form.submit()" class="rounded-md border-gray-300 bg-white px-3 py-1 text-sm text-gray-800 shadow-sm">';
+                    echo '<select name="per_page" id="per_page" onchange="this.form.submit()" class="rounded-md border-gray-300 bg-white px-3 py-1 text-sm text-gray-800 ">';
                     foreach ([5, 10, 20, 50] as $option) {
                         $selected = ($option == $itemsPerPage) ? 'selected' : '';
                         echo '<option value="' . $option . '" ' . $selected . '>' . $option . '</option>';

@@ -113,7 +113,6 @@
                     </div>
                     <div class="addCharges">
                         <?php
-                        $optionChoice = 2;
                         require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/additionCharges.php'); ?>
                     </div>
                     <div class="flex flex-col">

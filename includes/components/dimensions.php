@@ -1,57 +1,61 @@
-<div class="">
-    <div class="grid grid-cols-3 gap-4 mb-4">
-        <?php
-        $dimensions = [
-            ['field' => 'item_length', 'label' => 'Length (cm)'],
-            ['field' => 'item_width',  'label' => 'Width (cm)'],
-            ['field' => 'item_height', 'label' => 'Height (cm)'],
-        ];
+<!-- Dimension Inputs -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+    <?php
+    $dimensions = [
+        ['field' => 'item_length', 'label' => 'Length (cm)', 'icon' => 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z'],
+        ['field' => 'item_width',  'label' => 'Width (cm)', 'icon' => 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z'],
+        ['field' => 'item_height', 'label' => 'Height (cm)', 'icon' => 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z'],
+    ];
 
-        foreach ($dimensions as $dim):
-            $field = $dim['field'];
-            $label = $dim['label'];
-        ?>
-            <div>
-                <?= KIT_Commons::Linput([
-                    'label' => $label,
-                    'name'  => esc_attr($field),
-                    'id'    => esc_attr($field),
-                    'type'  => 'number',
-                    'value' => esc_attr($waybill[$field] ?? null),
-                    'class' => 'dimension-input w-[50px]',
-                    'special' => '',
-                ]); ?>
-            </div>
-        <?php endforeach; ?>
-
-    </div>
-    <div class="grid grid-cols-2 gap-4">
+    foreach ($dimensions as $dim):
+        $field = $dim['field'];
+        $label = $dim['label'];
+    ?>
         <div>
             <?= KIT_Commons::Linput([
-                'label' => "Total Volume (m³)",
-                'name'  => 'total_volume',
-                'id'  => 'total_volume',
+                'label' => $label,
+                'name'  => esc_attr($field),
+                'id'    => esc_attr($field),
                 'type'  => 'number',
-                'value' => esc_attr($waybill['total_volume'] ?? null),
-                'class' => 'bg-green-50',
-                'special' => 'readonly',
-            ]); ?>
-            <!-- Auto-calculated Volume -->
-        </div>
-        <div>
-            <?= KIT_Commons::Linput([
-                'label' => 'Total Volume Charge (R)',
-                'name'  => 'volume_charge',
-                'id'  => 'volume_charge',
-                'type'  => 'text',
-                'value' => esc_attr($waybill->volume_charge ?? 0),
-                'class' => '',
-                'special' => 'readonly',
+                'value' => esc_attr($waybill[$field] ?? ''),
+                'class' => 'dimension-input w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm',
+                'special' => 'placeholder="0" step="0.01"',
             ]); ?>
         </div>
+    <?php endforeach; ?>
+</div>
+
+<!-- Volume Results -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+    <div>
+        <?= KIT_Commons::Linput([
+            'label' => "Total Volume (m³)",
+            'name'  => 'total_volume',
+            'id'  => 'total_volume',
+            'type'  => 'number',
+            'value' => esc_attr($waybill['total_volume'] ?? ''),
+            'class' => 'w-full px-4 py-3 border border-gray-300 rounded-lg bg-purple-50 text-purple-900 font-medium text-sm',
+            'special' => 'readonly placeholder="Auto-calculated"',
+        ]); ?>
     </div>
-    <div id="ttt" class="text-sm text-gray-700 col-span-2">
-        = R<span id="volume_charge_display"><?= esc_html($waybill->volume_charge ?? '0.00'); ?></span> per m3
+    <div>
+        <?= KIT_Commons::Linput([
+            'label' => 'Volume Charge (R)',
+            'name'  => 'volume_charge',
+            'id'  => 'volume_charge',
+            'type'  => 'text',
+            'value' => esc_attr($waybill->volume_charge ?? '0.00'),
+            'class' => 'w-full px-4 py-3 border border-gray-300 rounded-lg bg-purple-50 text-purple-900 font-medium text-sm',
+            'special' => 'readonly placeholder="Auto-calculated"',
+        ]); ?>
+    </div>
+</div>
+
+<!-- Rate Display -->
+<div class="p-3 bg-purple-50 border border-purple-200 rounded-lg">
+    <div class="flex items-center justify-between">
+        <span class="text-sm font-medium text-purple-900">Rate per m³:</span>
+        <span class="text-sm font-bold text-purple-900">R <span id="volume_charge_display"><?= esc_html($waybill->volume_charge ?? '0.00'); ?></span></span>
     </div>
 </div>
 

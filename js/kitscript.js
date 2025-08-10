@@ -78,23 +78,60 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // VAT checkbox functionality
+    const vatCheckbox2 = document.getElementById('vat_include2');
     const vatCheckbox = document.getElementById('vat_include');
+    const SADC = document.getElementById('sadc_certificate');
     const optionz = document.querySelectorAll('.optionz');
+    const nextStep3 = document.getElementById('next-step-3');
+    const addWaybillItemBtn = document.getElementById('add-waybill-item-btn');
 
-    function toggleOptionzDisabled() {
-        if (vatCheckbox && vatCheckbox.checked) {
-            optionz.forEach(function (opt) {
-                opt.disabled = true;
-            });
-        } else if (vatCheckbox) {
-            optionz.forEach(function (opt) {
-                opt.disabled = false;
-            });
+    function toggleVatDisabled() {
+        if (SADC && SADC.checked) {
+            vatCheckbox2.checked = false;
+            vatCheckbox2.disabled = true;
+        } else if (SADC) {
+            vatCheckbox2.checked = true;
+            vatCheckbox2.disabled = false;
         }
+    }
+    function toggleOptionzDisabled() {
+        if (vatCheckbox && vatCheckbox.checked || vatCheckbox2 && vatCheckbox2.checked) {
+            //bg-gray-300 text-gray-500 rounded-md hover:bg-gray-400
+            if (nextStep3) {
+                nextStep3.disabled = true;
+                nextStep3.classList.add('bg-gray-300', 'text-gray-500');
+                nextStep3.classList.remove('bg-blue-600', 'text-white');
+            }
+
+            SADC.disabled = true;
+            SADC.checked = 0;
+        } else {
+            
+            if (nextStep3) {
+            nextStep3.disabled = false;
+            nextStep3.classList.remove('bg-gray-300', 'text-gray-500');
+            nextStep3.classList.add('bg-blue-600', 'text-white');
+            }
+            SADC.disabled = false;
+        }
+    }
+
+    if (vatCheckbox2) {
+        vatCheckbox2.addEventListener('change', toggleOptionzDisabled);
+        //vatCheckbox2.addEventListener('change', deleteAllItems);
+        // Run on page load in case VAT is pre-checked
     }
 
     if (vatCheckbox) {
         vatCheckbox.addEventListener('change', toggleOptionzDisabled);
+        // Run on page load in case VAT is pre-checked
+        toggleOptionzDisabled();
+    }
+
+    
+
+    if (SADC) {
+        SADC.addEventListener('change', toggleVatDisabled);
         // Run on page load in case VAT is pre-checked
         toggleOptionzDisabled();
     }
@@ -151,6 +188,27 @@ document.addEventListener('DOMContentLoaded', function () {
         // Check if all rows are checked
         const allChecked = jQuery('.selectRow:checked').length === jQuery('.selectRow').length;
         jQuery('.selectAllRows').prop('checked', allChecked);
+    });
+    jQuery(document).on('click', '#add-waybill-item', function (e) {
+        // Don't prevent default - allow other handlers to work
+        // This handler only updates the next step button state
+        
+        const nextStep3 = document.getElementById('next-step-3');
+        if (nextStep3) {
+            nextStep3.disabled = false;
+            nextStep3.classList.remove('bg-gray-300', 'text-gray-500');
+            nextStep3.classList.add('bg-blue-600', 'text-white');
+        }
+        
+        // Also update sidebar if function exists
+        setTimeout(() => {
+            if (typeof window.updateWaybillItemsSummary === 'function') {
+                window.updateWaybillItemsSummary();
+            }
+            if (typeof window.updateSummaryTotals === 'function') {
+                window.updateSummaryTotals();
+            }
+        }, 100);
     });
 
     // Select all rows

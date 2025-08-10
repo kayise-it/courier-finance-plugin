@@ -8,8 +8,9 @@
         foreach ($delivery_going as $delivery):
             echo KIT_Commons::DestinationButtonBox([
                 'name'               => 'direction_id',
-                'delivery_reference' => 'delivery_id',
+                'delivery_reference' => $delivery->delivery_reference,
                 'direction_id'       => $delivery->direction_id,
+                'delivery_id'        => $delivery->delivery_id ?? $delivery->id,
                 'dispatch_date'       => $delivery->dispatch_date,
                 'truck_number'       => $delivery->truck_number,
                 'status'    => $delivery->status,
@@ -17,7 +18,7 @@
                 'destination_country_id'     => $delivery->destination_country_id,
                 'origin_country_id'        => $delivery->origin_country_id,
                 'class' => 'delivery-button',
-                'onclick' => 'handleDeliveryChange(' . $delivery->direction_id . ')',
+                'onclick' => 'handleDeliveryChange(' . ($delivery->delivery_id ?? $delivery->id) . ')',
             ]);
         endforeach; ?>
     </div>
