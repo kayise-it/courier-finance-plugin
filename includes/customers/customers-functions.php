@@ -6,8 +6,10 @@ class KIT_Customers
 {
     public static function init()
     {
-        add_action('admin_post_add_waybill_action', [self::class, 'process_form']);
         add_action('admin_post_update_customer', [self::class, 'handle_update_customer']);
+        add_action('wp_ajax_save_customer_ajax', [self::class, 'handle_save_customer_ajax']);
+        add_action('wp_ajax_nopriv_save_customer_ajax', [self::class, 'handle_save_customer_ajax']);
+        add_action('wp_ajax_test_customer_ajax', [self::class, 'test_customer_ajax']);
     }
     public static function gamaCustomer($id)
     {
@@ -148,6 +150,64 @@ class KIT_Customers
 
 
         exit;
+    }
+
+    public static function handle_save_customer_ajax()
+    {
+        // Debug: Log the request
+        error_log('Customer AJAX request received: ' . print_r($_POST, true));
+
+        // Verify nonce
+        if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'save_customer_nonce')) {
+            error_log('Customer AJAX nonce failed');
+            wp_send_json_error(['message' => 'Security check failed']);
+        }
+
+        // Check if required fields are present
+        if (empty($_POST['name']) || empty($_POST['surname']) || empty($_POST['cell'])) {
+            error_log('Customer AJAX missing required fields');
+            wp_send_json_error(['message' => 'Please fill in all required fields (Name, Surname, Cell)']);
+        }
+
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'kit_customers';
+
+        // Generate a unique customer ID
+        do {
+            $cust_id = rand(1000, 9999);
+            $exists = $wpdb->get_var($wpdb->prepare("SELECT cust_id FROM $table_name WHERE cust_id = %d", $cust_id));
+        } while ($exists);
+
+        // Sanitize inputs
+        $cust_data = [
+            'cust_id'  => $cust_id,
+            'name'     => sanitize_text_field($_POST['name'] ?? ''),
+            'surname'  => sanitize_text_field($_POST['surname'] ?? ''),
+            'cell'     => sanitize_text_field($_POST['cell'] ?? ''),
+            'address'  => sanitize_text_field($_POST['address'] ?? ''),
+            'email_address' => sanitize_text_field($_POST['email_address'] ?? ''),
+            'company_name' => sanitize_text_field($_POST['company_name'] ?? ''),
+            'country_id' => intval($_POST['country_id'] ?? 0),
+            'city_id' => intval($_POST['city_id'] ?? 0),
+        ];
+
+        // Insert into DB
+        $inserted = $wpdb->insert($table_name, $cust_data);
+
+        if ($inserted) {
+            wp_send_json_success(['message' => 'Customer saved successfully! 🎉', 'customer_id' => $cust_id]);
+        } else {
+            $error_message = 'Failed to save customer.';
+            if ($wpdb->last_error) {
+                $error_message .= ' Database Error: ' . $wpdb->last_error;
+            }
+            wp_send_json_error(['message' => $error_message]);
+        }
+    }
+
+    public static function test_customer_ajax()
+    {
+        wp_send_json_success(['message' => 'AJAX is working!', 'post_data' => $_POST]);
     }
 
     //After the new customer is saved, go back to the customer table and update the cust_id to the new customer id
@@ -416,93 +476,186 @@ KIT_Customers::init();
 
 function customer_dashboard()
 {
-
     if (isset($_GET['delete_customer'])) {
         delete_customer($_GET['delete_customer']);
     }
 
     $customers = tholaMaCustomer();
 
-
+    // Get customer statistics
+    $total_customers = count($customers);
+    $active_customers = array_filter($customers, function ($c) {
+        return !empty($c->company_name);
+    });
+    $active_customers_count = count($active_customers);
+    $inactive_customers = $total_customers - $active_customers_count;
 ?>
     <div class="wrap">
-        <?php
-        echo KIT_Commons::showingHeader([
-            'title' => 'Customer Dashboard',
-            'desc'  => '',
-            'content'  => '',
-        ]);
+        <h1 class="wp-heading-inline">Customer Dashboard</h1>
+        <hr class="wp-header-end">
 
-        $options = [
-            'itemsPerPage' => 5,
-            'currentPage' => $_GET['paged'] ?? 1,
-            'tableClass' => 'min-w-full text-left text-sm text-gray-700',
-            'emptyMessage' => 'No customers records found',
-            'id' => 'customerTable',
-            'role' => 'customers'
-        ];
-
-        $columns = [
-            'cust_id' => ['label' => 'ID', 'align' => 'text-left'],
-            'company_name' => ['label' => 'Company', 'align' => 'text-left'],
-            'customer_name' => ['label' => 'Name', 'align' => 'text-left'],
-            'country_name' => ['label' => 'Country', 'align' => 'text-left'],
-            'waybills' => ['label' => 'Waybills', 'align' => 'text-left'],
-            'actions' => ['label' => 'Actions', 'align' => 'text-left'],
-        ];
-
-        $cell_callback = function ($key, $row) {
-            if ($key === 'company_name') {
-                return $row->company_name;
-            }
-            if ($key === 'customer_name') {
-                return $row->customer_name . ' ' . $row->customer_surname;
-            }
-            if ($key === 'waybills') {
-                return '<a href="?page=all-customer-waybills&cust_id=' . $row->cust_id . '" class="text-blue-600 hover:underline">Waybills</a>';
-            }
-            if ($key === 'actions') {
-                $html = '<a href="?page=all-customer-waybills&cust_id=' . $row->cust_id . '" class="text-blue-600 hover:underline">View</a> ';
-                $html .= '<a href="?page=customers-dashboard&delete_customer=' . $row->cust_id . '" class="text-red-600 hover:underline" onclick="return confirm(\'Are you sure you want to delete this customer?\');">Delete</a>';
-                return $html;
-            }
-            return htmlspecialchars(($row->$key ?? '') ?: '');
-        };
-
-
-        if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['bulk_action'])) {
-
-            $selectedRows = $_POST['selected_rows'];
-            $action = $_POST['bulk_action'];
-            if ($action === 'delete') {
-
-                // Perform deletion using $selectedRows
-                foreach ($selectedRows as $row) {
-
-                    delete_customer($row, false);
-                }
-                wp_redirect(admin_url('admin.php?page=customers-dashboard'));
-                exit();
-            } elseif ($action === 'export') {
-                // Export or download logic here
-                echo '<pre>';
-                print_r($selectedRows);
-                echo '</pre>';
-                exit();
-            }
-        }
-        ?>
-        <div class="max-w-7xl mx-auto grid grid-cols-12 gap-4">
-            <div class="col-span-9">
-                <?php echo KIT_Commons::render_versatile_table($customers, $columns, $cell_callback, $options); ?>
+        <!-- Statistics Cards -->
+        <div class="dashboard-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px;">
+            <div class="stat-card" style="background: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #2563eb;">
+                <h3 style="margin: 0 0 10px 0; color: #2563eb;">Total Customers</h3>
+                <div style="font-size: 2em; font-weight: bold; color: #1e293b;"><?php echo number_format($total_customers); ?></div>
+                <p style="margin: 5px 0 0 0; color: #64748b;">All registered customers</p>
             </div>
-            <div class="col-span-3 overflow-hidden">
-                <div class="bg-white p-6">
-                    <?= KIT_Customers::render_upload_customers_form() ?>
+
+            <div class="stat-card" style="background: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #059669;">
+                <h3 style="margin: 0 0 10px 0; color: #059669;">Active Customers</h3>
+                <div style="font-size: 2em; font-weight: bold; color: #1e293b;"><?php echo number_format($active_customers_count); ?></div>
+                <p style="margin: 5px 0 0 0; color: #64748b;">With company details</p>
+            </div>
+
+            <div class="stat-card" style="background: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #dc2626;">
+                <h3 style="margin: 0 0 10px 0; color: #dc2626;">Inactive Customers</h3>
+                <div style="font-size: 2em; font-weight: bold; color: #1e293b;"><?php echo number_format($inactive_customers); ?></div>
+                <p style="margin: 5px 0 0 0; color: #64748b;">Without company details</p>
+            </div>
+
+            <div class="stat-card" style="background: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #7c3aed;">
+                <h3 style="margin: 0 0 10px 0; color: #7c3aed;">Quick Actions</h3>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button id="customerModalButton" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl shadow">
+                        + Add New Customer
+                    </button>
+                    <a href="?page=08600-waybill-create" class="button" style="text-decoration: none;">Create Waybill</a>
                 </div>
             </div>
         </div>
+
+        <!-- Customer Management Section -->
+        <div class="customer-management" style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+            <h2 style="margin: 0 0 20px 0;">Customer Management</h2>
+
+            <?php
+            $options = [
+                'itemsPerPage' => 10,
+                'currentPage' => $_GET['paged'] ?? 1,
+                'tableClass' => 'min-w-full text-left text-xs text-gray-700',
+                'emptyMessage' => 'No customers found. <a href="#" onclick="document.getElementById(\'createCustomerBtn\').click(); return false;">Add your first customer</a>',
+                'id' => 'customerTable',
+            ];
+
+            $columns = [
+                'cust_id' => ['label' => 'ID', 'align' => 'text-left'],
+                'company_name' => ['label' => 'Company', 'align' => 'text-left'],
+                'customer_name' => ['label' => 'Name', 'align' => 'text-left'],
+                'country_name' => ['label' => 'Country', 'align' => 'text-left'],
+                'waybills' => ['label' => 'Waybills', 'align' => 'text-left'],
+                'actions' => ['label' => 'Actions', 'align' => 'text-center'],
+            ];
+
+            $cell_callback = function ($key, $row) {
+                if ($key === 'company_name') {
+                    return $row->company_name;
+                }
+                if ($key === 'customer_name') {
+                    return $row->customer_name . ' ' . $row->customer_surname;
+                }
+                if ($key === 'waybills') {
+                    return '<a href="?page=all-customer-waybills&cust_id=' . $row->cust_id . '" class="text-blue-600 hover:underline">Waybills</a>';
+                }
+                if ($key === 'actions') {
+                    $html = '<a href="?page=all-customer-waybills&cust_id=' . $row->cust_id . '" class="text-blue-600 hover:underline">View</a> ';
+                    $html .= '<a href="?page=customers-dashboard&delete_customer=' . $row->cust_id . '" class="text-red-600 hover:underline" onclick="return confirm(\'Are you sure you want to delete this customer?\');">Delete</a>';
+                    return $html;
+                }
+                return htmlspecialchars(($row->$key ?? '') ?: '');
+            };
+
+            if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['bulk_action'])) {
+                $selectedRows = $_POST['selected_rows'];
+                $action = $_POST['bulk_action'];
+                if ($action === 'delete') {
+                    foreach ($selectedRows as $row) {
+                        delete_customer($row, false);
+                    }
+                    wp_redirect(admin_url('admin.php?page=customers-dashboard'));
+                    exit();
+                } elseif ($action === 'export') {
+                    echo '<pre>';
+                    print_r($selectedRows);
+                    echo '</pre>';
+                    exit();
+                }
+            }
+
+            echo KIT_Commons::render_versatile_table($customers, $columns, $cell_callback, $options);
+            ?>
+        </div>
+
+        <!-- Customer Modal -->
+        <?php echo customer_form(); ?>
+
+        <!-- Quick Links -->
+        <div class="quick-links" style="margin-top: 30px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+            <a href="#" onclick="document.getElementById('createCustomerBtn').click(); return false;" style="display: block; padding: 15px; background: #2563eb; color: white; text-decoration: none; border-radius: 6px; text-align: center;">
+                <strong>Add New Customer</strong>
+            </a>
+            <a href="?page=08600-waybill-create" style="display: block; padding: 15px; background: #059669; color: white; text-decoration: none; border-radius: 6px; text-align: center;">
+                <strong>Create Waybill</strong>
+            </a>
+            <a href="?page=route-management" style="display: block; padding: 15px; background: #dc2626; color: white; text-decoration: none; border-radius: 6px; text-align: center;">
+                <strong>Manage Routes</strong>
+            </a>
+            <a href="?page=kit-deliveries" style="display: block; padding: 15px; background: #7c3aed; color: white; text-decoration: none; border-radius: 6px; text-align: center;">
+                <strong>Manage Deliveries</strong>
+            </a>
+        </div>
+
     </div>
+
+        <!-- Customer Modal -->
+        <?php echo customer_form(); ?>
+    </div>
+
+    <style>
+        /* Hide WordPress admin footer text that's overlapping */
+        .wp-footer, 
+        .wp-admin .wp-footer,
+        .wp-admin .wp-footer a,
+        .wp-admin .wp-footer p {
+            display: none !important;
+        }
+        
+        /* Hide any overlapping WordPress notices */
+        .notice,
+        .updated,
+        .error,
+        .warning {
+            position: relative !important;
+            z-index: 1 !important;
+        }
+        
+        /* Ensure table has proper z-index */
+        .customer-management {
+            position: relative;
+            z-index: 10;
+        }
+        
+        /* Hide specific overlapping text */
+        .wp-admin .wrap:after,
+        .wp-admin .wrap:before {
+            display: none !important;
+        }
+        
+        /* Hide WordPress footer text specifically */
+        .wp-admin .wrap p:contains("Thank you for creating with WordPress"),
+        .wp-admin .wrap p:contains("Version"),
+        .wp-admin .wrap:contains("Thank you for creating with WordPress"),
+        .wp-admin .wrap:contains("Version 6.8.2") {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+        }
+        
+        /* Force hide any overlapping elements */
+        .wp-admin .wrap > *:last-child:not(.customer-management):not(.quick-links) {
+            display: none !important;
+        }
+    </style>
 <?php
 }
 
@@ -645,9 +798,7 @@ function customer_form()
 ?>
     <div class="customer-form-container">
         <!-- Trigger Button -->
-        <button id="customerModalButton" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl shadow">
-            + Add New Customer
-        </button>
+
 
         <!-- Modal -->
         <div id="customerModal" class="fixed hidden inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -659,7 +810,7 @@ function customer_form()
 
                 <h2 class="text-xl font-bold mb-4"><?= $is_edit ? 'Edit Customer' : 'Add Customer' ?></h2>
                 <div class="">
-                    <form method="post" class="space-y-4" id="customerForm">
+                    <form method="post" class="space-y-4" id="customerForm" action="">
                         <?php if ($is_edit): ?>
                             <input type="hidden" name="customer_id" value="<?= esc_attr($id) ?>">
                         <?php endif; ?>
@@ -668,8 +819,12 @@ function customer_form()
                             <?php echo theForm(null); ?>
                         </div>
 
-                        <div class="flex justify-end">
-                            <button type="submit" name="customer_submit"
+                        <div class="flex justify-end space-x-2">
+                            <button type="button" id="customerModalCloseBtn"
+                                class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded">
+                                Cancel
+                            </button>
+                            <button type="submit" name="customer_submit" id="customerSubmitBtn"
                                 class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">
                                 <?= $is_edit ? 'Update' : 'Save' ?>
                             </button>
@@ -680,6 +835,102 @@ function customer_form()
         </div>
 
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const modal = document.getElementById('customerModal');
+            const openBtn = document.getElementById('customerModalButton');
+            const closeBtn = document.getElementById('customerModalClose');
+            const closeBtn2 = document.getElementById('customerModalCloseBtn');
+            const form = document.getElementById('customerForm');
+            const submitBtn = document.getElementById('customerSubmitBtn');
+
+            // Open modal
+            if (openBtn) {
+                openBtn.addEventListener('click', function() {
+                    modal.classList.remove('hidden');
+                });
+            }
+
+            // Close modal functions
+            function closeModal() {
+                modal.classList.add('hidden');
+            }
+
+            if (closeBtn) closeBtn.addEventListener('click', closeModal);
+            if (closeBtn2) closeBtn2.addEventListener('click', closeModal);
+
+            // Close on outside click
+            modal.addEventListener('click', function(e) {
+                if (e.target === modal) {
+                    closeModal();
+                }
+            });
+
+            // Form submission
+            if (form) {
+                form.addEventListener('submit', function(e) {
+                    e.preventDefault();
+
+                    // Show loading state
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = 'Saving...';
+
+                    // Submit form via AJAX
+                    const formData = new FormData(form);
+                    formData.append('action', 'save_customer_ajax');
+                    formData.append('nonce', '<?php echo wp_create_nonce("save_customer_nonce"); ?>');
+
+                    // Debug: Log what we're sending
+                    console.log('Sending form data:');
+                    for (let [key, value] of formData.entries()) {
+                        console.log(key + ': ' + value);
+                    }
+
+                    fetch(ajaxurl || '/wp-admin/admin-ajax.php', {
+                            method: 'POST',
+                            body: formData
+                        })
+                        .then(response => {
+                            console.log('Response status:', response.status);
+                            console.log('Response headers:', response.headers);
+                            return response.json();
+                        })
+                        .then(data => {
+                            console.log('Response data:', data);
+                            if (data.success) {
+                                // Show success message
+                                const successDiv = document.createElement('div');
+                                successDiv.className = 'bg-green-100 text-green-800 p-4 rounded mb-4';
+                                successDiv.textContent = data.data.message;
+
+                                // Insert before form
+                                form.parentNode.insertBefore(successDiv, form);
+
+                                // Close modal after 2 seconds
+                                setTimeout(() => {
+                                    closeModal();
+                                    location.reload(); // Reload page to show new customer
+                                }, 2000);
+                            } else {
+                                throw new Error(data.data.message || 'Unknown error');
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error:', error);
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = '<?= $is_edit ? 'Update' : 'Save' ?>';
+
+                            // Show error message
+                            const errorDiv = document.createElement('div');
+                            errorDiv.className = 'bg-red-100 text-red-800 p-4 rounded mb-4';
+                            errorDiv.textContent = error.message || 'Failed to save customer. Please try again.';
+                            form.parentNode.insertBefore(errorDiv, form);
+                        });
+                });
+            }
+        });
+    </script>
 <?php
     return ob_get_clean();
 }
@@ -689,15 +940,24 @@ function save_customer()
     global $wpdb;
     $table_name = $wpdb->prefix . 'kit_customers';
 
+    // Generate a unique customer ID
+    do {
+        $cust_id = rand(1000, 9999);
+        $exists = $wpdb->get_var($wpdb->prepare("SELECT cust_id FROM $table_name WHERE cust_id = %d", $cust_id));
+    } while ($exists);
+
     // Sanitize inputs
     $cust_data = [
-        'cust_id'  => rand(1000, 9999),
+        'cust_id'  => $cust_id,
         'name'     => sanitize_text_field($_POST['name']),
         'surname'  => sanitize_text_field($_POST['surname']),
         'cell'     => sanitize_text_field($_POST['cell']),
         'address'  => sanitize_text_field($_POST['address']),
+        'email_address' => sanitize_text_field($_POST['email_address'] ?? ''),
+        'company_name' => sanitize_text_field($_POST['company_name'] ?? ''),
+        'country_id' => intval($_POST['country_id'] ?? 0),
+        'city_id' => intval($_POST['city_id'] ?? 0),
     ];
-
 
     // Insert into DB
     $inserted = $wpdb->insert($table_name, $cust_data);
@@ -708,6 +968,10 @@ function save_customer()
         exit;
     } else {
         echo '<div class="bg-red-100 text-red-800 p-4 rounded mb-4">Failed to save customer. 😢</div>';
+        // Debug information
+        if ($wpdb->last_error) {
+            echo '<div class="bg-red-100 text-red-800 p-4 rounded mb-4">Database Error: ' . esc_html($wpdb->last_error) . '</div>';
+        }
     }
 }
 
@@ -1074,8 +1338,12 @@ function view_customer_waybills()
                                 return '<a target="_blank" href="?page=08600-Waybill-view&waybill_id=' . $row->waybill_id . '&waybill_atts=view_waybill" class="text-blue-600 hover:underline">' . $row->waybill_no . '</a>';
                             }
                             if ($key === 'total') {
-                                //total is the sum of the product_invoice_amount and the miscellaneous
-                                return KIT_Commons::currency() . ' ' . ((int)$row->product_invoice_amount + ((int)$row->miscellaneous ?? 0));
+                                            //total is the sum of the product_invoice_amount and the miscellaneous
+            if (KIT_Commons::isAdmin()) {
+                return KIT_Commons::currency() . ' ' . ((int)$row->product_invoice_amount + ((int)$row->miscellaneous ?? 0));
+            } else {
+                return '***';
+            }
                             }
                             if ($key === 'approval') {
                                 return $row->approval;

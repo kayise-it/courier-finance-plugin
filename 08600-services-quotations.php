@@ -53,6 +53,7 @@ include_once(plugin_dir_path(__FILE__) . 'includes/services/services-functions.p
 include_once(plugin_dir_path(__FILE__) . 'includes/quotations/quotations-functions.php');
 require_once plugin_dir_path(__FILE__) . 'includes/waybill/waybill-functions.php';
 require_once plugin_dir_path(__FILE__) . 'includes/customers/customers-functions.php';
+require_once plugin_dir_path(__FILE__) . 'includes/user-roles.php';
 require_once plugin_dir_path(__FILE__) . 'includes/deliveries/deliveries-functions.php';
 require_once plugin_dir_path(__FILE__) . 'includes/waybillmultiform.php';
 require_once plugin_dir_path(__FILE__) . 'includes/countries/opc-functions.php';

@@ -318,6 +318,15 @@ class KIT_Commons
                 return ob_get_clean();
             }
 
+            public static function tick()
+            {
+    ?>
+        <span class="w-[13px] h-[13px] rounded-full bg-green-600 text-white flex items-center justify-center text-[10px]">
+            ✓
+        </span>
+
+    <?php
+            }
             public static function update_waybillApproval()
             {
                 global $wpdb;
@@ -373,47 +382,17 @@ class KIT_Commons
              *   </div>
              * </label>
              */
-            public static function ButtonBox($atts = [])
+            public static function buttonBox($label, $highlight = '')
             {
-                $atts = shortcode_atts([
-                    'name'        => '',
-                    'value'       => '1',
-                    'min_desc'    => '',
-                    'data_target' => '',
-                    'checked'     => false,
-                    'type'        => 'checkbox', // or 'radio'
-                    'class'       => 'fee-option',
-                    'id'          => '',
-                    'disabled'    => false,
-                ], $atts);
+                $base = 'rounded-md px-4 py-2 text-sm font-semibold border border-gray-300 transition hover:scale-105 hover:shadow-md hover:bg-blue-600 hover:text-white';
 
-                $input_id = $atts['id'] ? $atts['id'] : uniqid('btnbox_');
-                $checked = $atts['checked'] ? 'checked' : '';
-                $disabled = $atts['disabled'] ? 'disabled' : '';
-                $data_target = $atts['data_target'] ? 'data-target="' . esc_attr($atts['data_target']) . '"' : '';
+                if ($highlight === 'highlight') {
+                    $base .= ' bg-yellow-400 text-black';
+                } else {
+                    $base .= ' bg-white text-gray-800';
+                }
 
-                $boxClass = trim($atts['class'] . ' text-gray-700 flex items-center justify-center p-3 border border-gray-300 rounded-lg shadow-sm hover:shadow-md hover:border-blue-400 transition-all w-24 h-24 cursor-pointer select-none');
-
-                ob_start();
-    ?>
-        <label class="<?php echo esc_attr($boxClass); ?>" for="<?php echo esc_attr($input_id); ?>" <?php echo $data_target; ?>>
-            <input
-                type="<?php echo esc_attr($atts['type']); ?>"
-                name="<?php echo esc_attr($atts['name']); ?>"
-                value="<?php echo esc_attr($atts['value']); ?>"
-                id="<?php echo esc_attr($input_id); ?>"
-                class="sr-only"
-                <?php echo $checked; ?>
-                <?php echo $disabled; ?>>
-            <div class="flex flex-col items-center justify-center h-full w-full pointer-events-none text-center">
-                <span class="text-xs font-medium"><?php echo esc_html($atts['name']); ?></span>
-                <?php if (!empty($atts['min_desc'])): ?>
-                    <span class="text-xs text-gray-500 text-center"><?php echo esc_html($atts['min_desc']); ?></span>
-                <?php endif; ?>
-            </div>
-        </label>
-    <?php
-                return ob_get_clean();
+                return '<button class="' . $base . '">' . $label . '</button>';
             }
 
             public static function DestinationButtonBox($atts = [])
@@ -490,6 +469,41 @@ class KIT_Commons
                 return ob_get_clean();
             }
 
+            public static function compareCharges($mass_charge, $volume_charge)
+            {
+                $mass = floatval($mass_charge);
+                $volume = floatval($volume_charge);
+
+                if (abs($mass - $volume) < 0.0001) {
+                    return ['mass' => false, 'volume' => false, 'equal' => true];
+                }
+
+                return [
+                    'mass' => $mass > $volume,
+                    'volume' => $volume > $mass,
+                    'equal' => false,
+                ];
+            }
+
+            public static function LText($atts)
+            {
+                $atts = shortcode_atts([
+                    'label' => '',
+                    'value' => '',
+                    'classlabel' => '',
+                    'classP' => '',
+                    'onclick' => '',
+                    'is_dynamic' => false, // New parameter for dynamic fields
+                ], $atts);
+
+                $labelClass = self::labelClass();
+
+                // Standard input
+                return '<label class="' . esc_attr($labelClass) . ' ' . $atts['classlabel'] . ' ">' .
+                    esc_html($atts['label']) . '</label>' .
+                    '<p class="m-0 p-0 ' . esc_attr($atts['classP']) . '">' . $atts['value'] . '</p>';
+            }
+
             public static function Linput($atts)
             {
                 $atts = shortcode_atts([
@@ -501,6 +515,7 @@ class KIT_Commons
                     'class' => '',
                     'special' => '',
                     'onclick' => '',
+                    'tabindex' => '',
                     'is_dynamic' => false, // New parameter for dynamic fields
                     'dynamic_group' => '', // Group name for dynamic fields
                     'dynamic_type' => 'text', // Type for dynamic fields (when is_dynamic=true)
@@ -517,14 +532,14 @@ class KIT_Commons
                         '<input step="0.01" type="' . esc_attr($atts['type']) . '" name="' . esc_attr($atts['name']) .
                         '" id="' . esc_attr($atts['id']) . '" value="' . esc_attr($atts['value']) .
                         '" class="' . esc_attr($inputClass) . ' ' . esc_attr($atts['class']) . '" ' . ($atts['onclick'] ? 'onclick="' . $atts['onclick'] . '" ' : '') .
-                        esc_attr($atts['special']) . '/>';
+                        esc_attr($atts['special']) . ' tabindex="' . esc_attr($atts['tabindex']) . '"/>';
                 }
 
                 // Dynamic input field (part of a group)
                 return '<input type="' . esc_attr($atts['dynamic_type']) . '" name="' .
                     esc_attr($atts['dynamic_group']) . '[' . esc_attr($atts['name']) . '][]" ' .
                     'value="' . esc_attr($atts['value']) . '" class="' . esc_attr($inputClass) . ' ' .
-                    esc_attr($atts['class']) .  '" ' . esc_attr($atts['special']) . ' ' . ($atts['onclick'] ? 'onclick="' . $atts['onclick'] . '" ' : '') . '/>';
+                    esc_attr($atts['class']) .  '" ' . esc_attr($atts['special']) . ' ' . ($atts['onclick'] ? 'onclick="' . $atts['onclick'] . '" ' : '') . ' tabindex="' . esc_attr($atts['tabindex']) . '"/>';
             }
 
             public static function miscItemsControl($options = [])
@@ -1015,6 +1030,30 @@ class KIT_Commons
             {
                 return 'R'; // Rands
             }
+
+            /**
+             * Check if current user is an admin
+             * @return bool
+             */
+            public static function isAdmin()
+            {
+                return current_user_can('manage_options') || current_user_can('administrator');
+            }
+
+            /**
+             * Display waybill total with admin-only access
+             * @param float $amount
+             * @param string $fallback_text
+             * @return string
+             */
+            public static function displayWaybillTotal($amount, $fallback_text = '***')
+            {
+                if (self::isAdmin()) {
+                    return self::currency() . ' ' . number_format($amount, 2);
+                } else {
+                    return $fallback_text;
+                }
+            }
             public static function container()
             {
                 return 'max-w-7xl mx-auto';
@@ -1322,18 +1361,18 @@ class KIT_Commons
                     newItem.innerHTML = `
                     <div class="w-full md:w-1/3">
                         <label class="<?php echo esc_js($defaults['label_class']) . " " . $options['specialClass'] ?>">Item</label>
-                        <input type="text" name="<?php echo esc_js($options['group_name']); ?>[${itemIndex}][item_name]" 
+                        <input type="text" tabindex="1" name="<?php echo esc_js($options['group_name']); ?>[${itemIndex}][item_name]" 
                                class="<?php echo esc_js($defaults['input_class']); ?>" 
                                placeholder="e.g. Laptop, Router, etc">
                     </div>
                     <div class="w-full md:w-1/6">
                         <label class="<?php echo esc_js($options['label_class']) . " " . $options['specialClass']; ?>">Qty</label>
-                        <input type="number" name="<?php echo esc_js($options['group_name']); ?>[${itemIndex}][quantity]" 
+                        <input type="number" tabindex="2" name="<?php echo esc_js($options['group_name']); ?>[${itemIndex}][quantity]" 
                                class="<?php echo esc_js($defaults['input_class']); ?> w-full" value="1">
                     </div>
                     <div class="w-full md:w-1/3">
                         <label class="<?php echo esc_js($options['label_class']) . " " . $options['specialClass']; ?>">Unit Price</label>
-                        <input type="number" name="<?php echo esc_js($options['group_name']); ?>[${itemIndex}][unit_price]" 
+                        <input type="number" tabindex="3" name="<?php echo esc_js($options['group_name']); ?>[${itemIndex}][unit_price]" 
                                class="<?php echo esc_js($defaults['input_class']); ?> w-full">
                     </div>
 
@@ -1391,6 +1430,8 @@ class KIT_Commons
                             $html .= ' data-surname="' . esc_attr($customer->surname) . '"';
                             $html .= ' data-cell="' . esc_attr($customer->cell) . '"';
                             $html .= ' data-address="' . esc_attr($customer->address) . '"';
+                            $html .= ' data-email="' . esc_attr($customer->email_address) . '"';
+                            $html .= ' data-company-name="' . esc_attr($customer->company_name) . '"';
                             $html .= '>';
                             $html .= esc_html($customer->name . ' ' . $customer->surname); // Optional: visible name
                             $html .= '</option>';

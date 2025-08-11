@@ -97,6 +97,7 @@ class Database
         waybill_no INT UNSIGNED NOT NULL,
         product_invoice_number VARCHAR(50),
         product_invoice_amount DECIMAL(10,2),
+        waybill_items_total DECIMAL(10,2),
         item_length DECIMAL(10,2),
         item_width DECIMAL(10,2),
         item_height DECIMAL(10,2),

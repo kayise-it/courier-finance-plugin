@@ -51,6 +51,11 @@ function handleCountryChange(value) {
                         if (index === 0) option.selected = true;
                         citySelect.appendChild(option);
                     });
+                    
+                    // Trigger validation after populating cities
+                    if (typeof validateDestinationSelection === 'function') {
+                        validateDestinationSelection();
+                    }
                 }
             }
         },

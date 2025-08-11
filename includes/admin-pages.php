@@ -105,7 +105,11 @@ function plugin_Waybill_list_page()
                                 return $row->customer_name . ' ' . $row->customer_surname;
                             }
                             if ($key === 'total') {
-                                return KIT_Commons::currency() . ' ' . ((int) $row->product_invoice_amount + (int) $row->miscellaneous);
+                                if (KIT_Commons::isAdmin()) {
+                                    return KIT_Commons::currency() . ' ' . ((int) $row->product_invoice_amount + (int) $row->miscellaneous);
+                                } else {
+                                    return '***';
+                                }
                             }
 
                             if ($key === 'actions') {
@@ -154,7 +158,11 @@ function plugin_Waybill_list_page()
                             return KIT_Commons::statusBadge($row->status, "bg-orange-400");
                         }
                         if ($key === 'total') {
-                            return KIT_Commons::currency() . ' ' . ((int) $row->product_invoice_amount + (int) $row->miscellaneous);
+                            if (KIT_Commons::isAdmin()) {
+                                return KIT_Commons::currency() . ' ' . ((int) $row->product_invoice_amount + (int) $row->miscellaneous);
+                            } else {
+                                return '***';
+                            }
                         }
 
                         if ($key === 'actions') {

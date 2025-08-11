@@ -663,7 +663,11 @@ function kit_get_all_quotations_table()
                         return $row->customer_name . ' ' . $row->customer_surname;
                     }
                     if ($key === 'total') {
-                        return KIT_Commons::currency() . ' ' . ((int) $row->product_invoice_amount + (int) $row->miscellaneous);
+                        if (KIT_Commons::isAdmin()) {
+                    return KIT_Commons::currency() . ' ' . ((int) $row->product_invoice_amount + (int) $row->miscellaneous);
+                } else {
+                    return '***';
+                }
                     }
                     if ($key === 'approval') {
                         return KIT_Commons::statusBadge($row->approval);
@@ -720,7 +724,11 @@ function kit_get_all_quotations_table()
                     }
 
                     if ($key === 'total') {
-                        return KIT_Commons::currency() . ' ' . ((int) $row['product_invoice_amount'] + (int) ($row['miscellaneous'] ?? 0));
+                        if (KIT_Commons::isAdmin()) {
+                return KIT_Commons::currency() . ' ' . ((int) $row['product_invoice_amount'] + (int) ($row['miscellaneous'] ?? 0));
+            } else {
+                return '***';
+            }
                     }
                     if ($key === 'actions') {
                         //$html download PDF button

@@ -57,20 +57,7 @@ class KIT_Waybills
         return $origin_country;
     }
 
-    public static function waybill_test_page()
-    {
-        $_POST = [
-            'action' => 'handle_get_price_per_kg',
-            'total_mass_kg' => '5000',
-            'origin_country_id' => '1',
-            'nonce' => 'aa6e2658c6'
-        ];
 
-        $charge_group = self::chargeGroup($_POST['origin_country_id']);
-
-
-        echo KIT_Deliveries::handle_get_price_per_kg($charge_group);
-    }
     public static function waybillQuoteStatus_update()
     {
         global $wpdb;
@@ -580,45 +567,41 @@ class KIT_Waybills
     }
 
     // Calculate total:
-    // Check which amount is better: mass_charge and volume_charge
-    // If both are set, use the one with the higher value
-    // Then add the miscellaneous charges to the total
-    // return the total amount
-    public static function calculate_total($mass_charge, $volume_charge, $misc_total, $misc_arr, $charge_basis)
+    // $mass_charge, $volume_charge, $misc_total may not be empty
+    // $waybillItemsTotal is conidtional, its not a must to include it, if its set, then we can include it, get the 10% value of the total $waybillItemsTotal
+    // 
+    public static function calculate_total($mass_charge, $volume_charge, $misc_total, $waybillItemsTotal, $charge_basis = null, $ttt = null)
     {
+        $itemsTotal = 0;
+        $include_sad500 = 0;
+        $include_sadc = 0;
 
         // Ensure all inputs are floats
-        $include_sad500 = floatval(($misc_arr['others']['include_sad500']) ?? 0);
-        $include_sadc = floatval(($misc_arr['others']['include_sadc']) ?? 0);
-        $vat_include = floatval(($misc_arr['others']['vat_include']) ?? 0);
+        $include_sad500 = (isset($_POST['include_sad500']) && $_POST['include_sad500'] == 1 || (isset($ttt['include_sad500']) && $ttt['include_sad500'])) ? self::sadc_certificate() : 0;
+        $include_sadc = (isset($_POST['include_sadc']) && $_POST['include_sadc'] == 1 || (isset($ttt['include_sadc']) && $ttt['include_sadc'])) ? self::sad() : 0;
 
-        $vat_include = $vat_include + ($vat_include * 10 / 100);
-
-        $additionalCharges = $misc_total + $include_sad500 + $include_sadc + $vat_include;
+        // Calculate VAT only if VAT is included AND there are waybill items
+        $vatCharge = 0;
+        if (isset($_POST['vat_include']) && $_POST['vat_include'] == 1 && $waybillItemsTotal > 0) {
+            $vatCharge = self::vatCharge($waybillItemsTotal);
+        } elseif (isset($_POST['vat_include']) && $_POST['vat_include'] == 1 && $waybillItemsTotal == 0) {
+            // VAT is checked but no items - this will be handled by warning in the calling function
+            $vatCharge = 0;
+        }
         $better_charge = 0;
+
         // Determine the better charge
-        if ($charge_basis != null) {
+        if ($charge_basis == null) {
             $better_charge = max($mass_charge, $volume_charge);
-        } else {
-            if ($charge_basis == 'mass' || $charge_basis == 'weight') {
-                $better_charge = $mass_charge;
-            } else if ($charge_basis == 'volume') {
-                $better_charge = $volume_charge;
-            }
+        } elseif ($charge_basis == 'mass' || $charge_basis == 'weight') {
+            $better_charge = $mass_charge;
+        } else if ($charge_basis == 'volume') {
+            $better_charge = $volume_charge;
         }
 
+        $additionalCharges = $misc_total + $include_sad500 + $include_sadc + $vatCharge;
         // Calculate total
         $total = $better_charge + $additionalCharges;
-
-        /*         echo '<pre>';
-        echo "additionalCharges" .'='. 'misc_total' .'+'. 'include_sad500' .'+'. 'include_sadc' .'+'. 'vat_include';
-        echo '<br>';
-        echo $additionalCharges .'='. $misc_total .'+'. $include_sad500 .'+'. $include_sadc .'+'. $vat_include;
-        echo '<br>';
-        echo $total ."=". $better_charge .'+'. $additionalCharges;
-        echo '</pre>';
-        exit(); */
-
         return number_format($total, 2, '.', '');
     }
 
@@ -738,18 +721,31 @@ class KIT_Waybills
     }
 
     //others
-    public static function vatCharge($vat, $itemsTotal)
+    public static function vatRate()
     {
-        $vatCharge = ($itemsTotal * (10 / 100)) / 100;
+        $vat_rate = 10;
+        return $vat_rate / 100;
+    }
+    public static function vatCharge($itemsTotal)
+    {
+        $vatCharge = ($itemsTotal * self::vatRate());
         return $vatCharge;
+    }
+    
+    /**
+     * Check if VAT warning should be shown (VAT checked but no items)
+     */
+    public static function shouldShowVatWarning($vat_checked, $waybillItemsTotal)
+    {
+        return $vat_checked && $waybillItemsTotal == 0;
     }
     public static function sad()
     {
-        return 500;
+        return 1000;
     }
-    public static function incFee()
+    public static function sadc_certificate()
     {
-        return 2500;
+        return 500;
     }
     public static function prepareMiscCharges($data)
     {
@@ -775,28 +771,48 @@ class KIT_Waybills
             'manny_volume_rate' => $manny_volume_rate,
         ];
 
+        /*  
+       echo '<pre>';
+        echo '<br>';
+        print_r($_POST);
+        echo '<br>';
+        print_r($has_sad500);
+        print_r($has_waybill_fee);
+        echo '<br>';
+        print_r($manny);
+        echo '<br>';
+        print_r($manny_mass_rate);
+        echo '<br>';
+        print_r($manny_volume_rate);
+        echo '</pre>';
+        exit(); 
+        */
+
         // Remove/add keys based on rules
+        if (isset($data['misc']) && is_array($data['misc'])) {
+            $misc_result = self::getMiscCharges($data['misc'], []);
+            $misc_combined = $misc_result->misc_items;
+            $misc_total = floatval($misc_result->misc_total);
+        }
+
         if ($has_vat) {
+            $waybillItemsTotal = (!empty($_POST['custom_items']) && is_array($_POST['custom_items'])) ? self::updateWaybillItems($_POST['custom_items'], null) : 0;
+
             // Only VAT, remove SAD500 and waybill fee if present
             unset($data['include_sad500'], $data['include_sadc']);
             $others = array_filter($others, function ($k) {
                 return !in_array($k, ['include_sad500', 'include_sadc']);
             }, ARRAY_FILTER_USE_KEY);
-            $others['vat'] = 1000;
+            $others['vat_total'] = self::vatCharge($waybillItemsTotal);
         } elseif ($has_sad500 || $has_waybill_fee) {
             // Only SAD500/waybill fee, remove VAT if present
             $others = array_filter($others, function ($k) {
                 return $k !== 'vat';
             }, ARRAY_FILTER_USE_KEY);
             if ($has_sad500) $others['include_sad500'] = self::sad();
-            if ($has_waybill_fee) $others['include_sadc'] = self::incFee();
+            if ($has_waybill_fee) $others['include_sadc'] = self::sadc_certificate();
         }
 
-        if (isset($data['misc']) && is_array($data['misc'])) {
-            $misc_result = self::getMiscCharges($data['misc'], []);
-            $misc_combined = $misc_result->misc_items;
-            $misc_total = floatval($misc_result->misc_total);
-        }
         return [
             'misc_items' => $misc_combined,
             'misc_total' => $misc_total,
@@ -808,10 +824,9 @@ class KIT_Waybills
     {
         global $wpdb;
 
-
         $waybills_table = $wpdb->prefix . 'kit_waybills';
 
-        if (isset($data['warehoused']) && $data['warehoused'] == 1) {
+        if (isset($_POST['warehoused']) && $_POST['warehoused'] == 1) {
             // Override delivery_id using delivery_reference = 'warehoused'
             $warehoused_delivery_id = $wpdb->get_var(
                 "SELECT id FROM {$wpdb->prefix}kit_deliveries WHERE delivery_reference = 'warehoused' LIMIT 1"
@@ -828,26 +843,49 @@ class KIT_Waybills
             }
             // Override status
             $_POST['status'] = 'warehoused';
+            
+            // Don't add departure date for warehoused items
+            $_POST['dispatch_date'] = null;
         }
 
         // 👥 Customer 1 Details
-        $cust_id = isset($data['cust_id']) ? $data['cust_id'] : null;
-        $customer_select = isset($data['customer_select']) ? $data['customer_select'] : null;
-        $customer_name = isset($data['customer_name']) ? $data['customer_name'] : null;
-        $customer_surname = isset($data['customer_surname']) ? $data['customer_surname'] : null;
-        $company_name = isset($data['company_name']) ? $data['company_name'] : null;
-        $email_address = isset($data['email_address']) ? $data['email_address'] : null;
-        $cell = isset($data['cell']) ? $data['cell'] : null;
-        $address = isset($data['address']) ? $data['address'] : null;
-        $destination_city = isset($data['destination_city']) ? $data['destination_city'] : null;
+        $cust_id = isset($_POST['cust_id']) ? $_POST['cust_id'] : null;
+        $customer_select = isset($_POST['customer_select']) ? $_POST['customer_select'] : null;
+        $customer_name = isset($_POST['customer_name']) ? $_POST['customer_name'] : null;
+        $customer_surname = isset($_POST['customer_surname']) ? $_POST['customer_surname'] : null;
+        $company_name = isset($_POST['company_name']) ? $_POST['company_name'] : null;
+        $email_address = isset($_POST['email_address']) ? $_POST['email_address'] : null;
+        $cell = isset($_POST['cell']) ? $_POST['cell'] : null;
+        $address = isset($_POST['address']) ? $_POST['address'] : null;
+        $destination_city = isset($_POST['destination_city']) ? $_POST['destination_city'] : null;
+        
+        // Validate required fields for waybill creation
+        if (isset($_POST['warehoused']) && $_POST['warehoused'] == 1) {
+            // For warehoused items, we don't need destination city/country
+            if (empty($cust_id) && empty($customer_name)) {
+                return new WP_Error('validation_error', 'Customer information is required even for warehoused items.');
+            }
+        } else {
+            // For non-warehoused items, destination country and city are required
+            $destination_country = isset($_POST['destination_country']) ? $_POST['destination_country'] : null;
+            
+            if (empty($destination_country)) {
+                return new WP_Error('validation_error', 'Destination country is required for non-warehoused items.');
+            }
+            if (empty($destination_city)) {
+                return new WP_Error('validation_error', 'Destination city is required for non-warehoused items.');
+            }
+            if (empty($cust_id) && empty($customer_name)) {
+                return new WP_Error('validation_error', 'Customer information is required.');
+            }
+        }
         $SADC_charge = self::sad();
-        $vat = isset($data['vat_include']) ? $data['vat_include'] : 0;
-        $country_id = isset($data['origin_country']) ? $data['origin_country'] : 1;
-        $city_id =  isset($data['origin_city']) ? $data['origin_city'] : 1;
-        $waybill_description =  isset($data['waybill_description']) ? $data['waybill_description'] : 1;
+        $vat = isset($_POST['vat_include']) ? $_POST['vat_include'] : 0;
+        $country_id = isset($_POST['origin_country']) ? $_POST['origin_country'] : 1;
+        $city_id =  isset($_POST['origin_city']) ? $_POST['origin_city'] : 1;
+        $waybill_description =  isset($_POST['waybill_description']) ? $_POST['waybill_description'] : 1;
 
-
-        $own_certificate = isset($data['own_certificate']) ? $data['own_certificate'] : 0;
+        $own_certificate = isset($_POST['own_certificate']) ? $_POST['own_certificate'] : 0;
 
         if ($own_certificate == 1) {
             $SADC_charge = $SADC_charge - 500;
@@ -856,15 +894,16 @@ class KIT_Waybills
         // 💰 Charge Details
         $mass_charge = isset($_POST['mass_charge']) ? floatval(str_replace(',', '.', $_POST['mass_charge'])) : 0;
 
-        if (isset($_POST['enable_price_manipulator']) && isset($_POST['new_mass_rate']) && isset($_POST['new_mass_rate']) < 0) {
-            $mass_charge = $_POST['mass_charge'] = $_POST['new_mass_rate'];
+        if (isset($_POST['enable_price_manipulator'], $_POST['new_mass_rate']) && floatval($_POST['new_mass_rate']) > 0) {
+            $mass_charge = floatval($_POST['new_mass_rate']);
         }
 
-        $volume_charge = isset($data['volume_charge']) ? $data['volume_charge'] : null;
+        $volume_charge = isset($_POST['volume_charge']) ? $_POST['volume_charge'] : null;
 
-        $charge_basis = '';
-        if (isset($data['mass_charge']) && isset($data['volume_charge'])) {
-            if ($data['mass_charge'] > $data['volume_charge']) {
+        // Use posted charge_basis if available, otherwise determine automatically
+        $charge_basis = $_POST['charge_basis'] ?? '';
+        if (empty($charge_basis) && isset($_POST['mass_charge']) && isset($_POST['volume_charge'])) {
+            if ($_POST['mass_charge'] > $_POST['volume_charge']) {
                 $charge_basis = 'mass';
             } else {
                 $charge_basis = 'volume';
@@ -872,9 +911,9 @@ class KIT_Waybills
         }
 
         // 🧾 Custom Items
-        $customer_id = isset($data['cust_id']) ? intval($data['cust_id']) : 0;
+        $customer_id = isset($_POST['cust_id']) ? intval($_POST['cust_id']) : 0;
         // 🧮 Misc Charges
-        $final_misc_data = self::prepareMiscCharges($data);
+        $final_misc_data = self::prepareMiscCharges($_POST);
         $misc_serialized = serialize($final_misc_data);
 
         //if $cust_id = 0, meaning no customer is selected, then create a new customer
@@ -893,6 +932,7 @@ class KIT_Waybills
             ]);
         }
 
+
         if (isset($_POST['misc'])) {
             $misc = self::manageMiscItems($_POST['misc']);
 
@@ -900,11 +940,30 @@ class KIT_Waybills
         } else {
             $misc_total = 0;
         }
-
-        $waybillTotal = self::calculate_total($mass_charge, $volume_charge, $misc_total, $data, $charge_basis);
-
         // Generate waybill number if not provided
-        $waybill_no = !empty($data['waybill_no']) ? $data['waybill_no'] : self::generate_waybill_number();
+        $waybill_no = self::generate_waybill_number();
+
+        $waybillItemsTotal = (!empty($_POST['custom_items']) && is_array($_POST['custom_items'])) ? self::updateWaybillItems($_POST['custom_items'], null) : 0;
+        $waybillTotal = self::calculate_total($mass_charge, $volume_charge, $misc_total, $waybillItemsTotal, $charge_basis);
+
+        $include_sad500 = isset($_POST['include_sad500']) ? 1 : 0;
+        $include_sadc = isset($_POST['include_sadc']) ? 1 : 0;
+        $vat = isset($_POST['vat_include']) ? 1 : 0;
+
+
+        /* echo '<pre>';
+        print_r($mass_charge);
+        echo '<br>';
+        print_r($volume_charge);
+        echo '<br>';
+        print_r($misc_total);
+        echo '<br>';
+        print_r($waybillItemsTotal);
+        echo '<br>';
+        print_r($charge_basis);
+        echo '</br>';
+        print_r($waybillTotal); */
+
 
         // Prepare waybill data
         $waybill_data = [
@@ -914,7 +973,8 @@ class KIT_Waybills
             'city_id' => $destination_city,
             'waybill_no' => $waybill_no,
             'product_invoice_number' => 'INV-' . date('Ymd-His'),
-            'product_invoice_amount' => $waybillTotal,
+            'product_invoice_amount' => (float)$waybillTotal,
+            'waybill_items_total' => (float)$waybillItemsTotal,
             'item_length' => (float)($data['item_length'] ?? 0),
             'item_width' => (float)($data['item_width'] ?? 0),
             'item_height' => (float)($data['item_height'] ?? 0),
@@ -924,7 +984,9 @@ class KIT_Waybills
             'volume_charge' => (float)($data['volume_charge'] ?? 0),
             'charge_basis' => $charge_basis,
             'miscellaneous' => !empty($misc_serialized) ? $misc_serialized : '',
-            'include_sad500' => isset($data['include_sad500']) ? 1 : 0,
+            'include_sad500' => $include_sad500,
+            'include_sadc' => $include_sadc,
+            'vat_include' => $vat,
             'tracking_number' => 'TRK-' . strtoupper(wp_generate_password(8, false)),
             'created_by' => get_current_user_id(),
             'last_updated_by' => get_current_user_id(),
@@ -933,6 +995,7 @@ class KIT_Waybills
 
         // Insert waybill
         $inserted = $wpdb->insert($waybills_table, $waybill_data);
+
 
         if (!$inserted) return new WP_Error('db_error', __('Could not save waybill', 'kit'));
 
@@ -945,10 +1008,17 @@ class KIT_Waybills
 
 
         if ($waybill_id && $waybill_no && $waybillTotal) {
+            // Check for VAT warning
+            $vat_warning = '';
+            if (self::shouldShowVatWarning($vat, $waybillItemsTotal)) {
+                $vat_warning = 'VAT was checked but no waybill items were found. No VAT was added to the total.';
+            }
+            
             return [
                 'id' => $waybill_id,
                 'waybill_no' => $waybill_no,
-                'amount' => $waybillTotal
+                'amount' => $waybillTotal,
+                'vat_warning' => $vat_warning
             ];
         } else {
             //return back
@@ -1138,6 +1208,16 @@ class KIT_Waybills
 
         // If no waybills exist, start from 4000, otherwise increment from the highest
         $next_waybill_no = $max_waybill_no ? max(4000, intval($max_waybill_no) + 1) : 4000;
+
+        // Check if the generated number already exists, if so, increment until unique
+        do {
+            $exists = $wpdb->get_var(
+                $wpdb->prepare("SELECT COUNT(*) FROM $table_name WHERE waybill_no = %d", $next_waybill_no)
+            );
+            if ($exists) {
+                $next_waybill_no++;
+            }
+        } while ($exists);
 
         return $next_waybill_no;
     }
@@ -1713,6 +1793,12 @@ class KIT_Waybills
         if (!$waybill_data) {
             return null; // Waybill not found
         }
+        
+        // Ensure all string fields have default values to prevent null deprecation warnings
+        $waybill_data = array_map(function($value) {
+            return $value === null ? '' : $value;
+        }, $waybill_data);
+        
         $waybill_no = $waybill_data['waybill_no'];
         // 2. Get the waybill items
         $waybill_items = $wpdb->get_results(
@@ -1723,7 +1809,14 @@ class KIT_Waybills
                         ", $waybill_no),
             ARRAY_A
         );
-        // Attach items to the result
+        // Attach items to the result and ensure no null values
+        if ($waybill_items) {
+            $waybill_items = array_map(function($item) {
+                return array_map(function($value) {
+                    return $value === null ? '' : $value;
+                }, $item);
+            }, $waybill_items);
+        }
         $waybill_data['items'] = $waybill_items;
 
         // Unserialize miscellaneous items before returning
@@ -1748,34 +1841,41 @@ class KIT_Waybills
         $waybill_id = isset($_GET['waybill_id']) ? intval($_GET['waybill_id']) : 0;
         $waybill = KIT_Waybills::bonaWaybill($waybill_id);
 
-        // bitch1
-
-        $waybillFromStats = KIT_Deliveries::getWaybillTransitStats($waybill['direction_id']);
-
-        $waybillToStats = KIT_Deliveries::getWaybillTransitStats($waybill['direction_id'], 'destination');
-
+        // Initialize variables with safe defaults
+        $waybillFromStats = [];
+        $waybillToStats = [];
         $mass_rate = '';
         $checkManny = '';
-
-
         $prefferedCharge = '';
-        if (isset($waybill['mass_charge']) && isset($waybill['volume_charge'])) {
-            if ($waybill['mass_charge'] > $waybill['volume_charge']) {
-                $prefferedCharge = 'mass';
-            } else {
-                $prefferedCharge = 'volume';
-            }
-        }
 
-        if (isset($waybill['miscellaneous']['others'])) {
-            $mass_rate = ($waybill['miscellaneous']['others']['mass_rate'] ?? 1);
-            $checkManny = ($waybill['miscellaneous']['others']['manny']) ? 'checked' : '';
+        // Only process waybill data if it exists
+        if ($waybill && is_array($waybill)) {
+            // Get transit stats only if direction_id exists
+            if (isset($waybill['direction_id']) && !empty($waybill['direction_id'])) {
+                $waybillFromStats = KIT_Deliveries::getWaybillTransitStats($waybill['direction_id']);
+                $waybillToStats = KIT_Deliveries::getWaybillTransitStats($waybill['direction_id'], 'destination');
+            }
+
+            // Determine preferred charge
+            if (isset($waybill['mass_charge']) && isset($waybill['volume_charge'])) {
+                if ($waybill['mass_charge'] > $waybill['volume_charge']) {
+                    $prefferedCharge = 'mass';
+                } else {
+                    $prefferedCharge = 'volume';
+                }
+            }
+
+            // Process miscellaneous data safely
+            if (isset($waybill['miscellaneous']) && is_array($waybill['miscellaneous']) && isset($waybill['miscellaneous']['others'])) {
+                $mass_rate = ($waybill['miscellaneous']['others']['mass_rate'] ?? 1);
+                $checkManny = (isset($waybill['miscellaneous']['others']['manny']) && $waybill['miscellaneous']['others']['manny']) ? 'checked' : '';
+            }
         }
 
         $is_editing = isset($_GET['edit']) && $_GET['edit'] === 'true'; ?>
         <div class="wrap">
             <?php
-            if ($waybill) {
+            if ($waybill && is_array($waybill)) {
                 if (!$is_editing) { ?>
                     <?php require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/viewWaybill.php'); ?>
                 <?php
@@ -1785,7 +1885,7 @@ class KIT_Waybills
             <?php
                 }
             } else {
-                echo 'Waybileel not found.';
+                echo '<div class="notice notice-error"><p>Waybill not found or invalid data.</p></div>';
             }
             ?>
         </div>
@@ -2072,6 +2172,7 @@ class KIT_Waybills
                 b.waybill_no,
                 b.product_invoice_number,
                 b.product_invoice_amount,
+                b.waybill_items_total,
                 b.item_length,
                 b.item_width,
                 b.item_height,
@@ -2171,6 +2272,50 @@ class KIT_Waybills
         return $validate;
     }
 
+    public static function deleteWaybillItems($waybill_no)
+    {
+        global $wpdb;
+        $items_table = $wpdb->prefix . 'kit_waybill_items';
+        if ($waybill_no != null) {
+            // ✅ Delete previous waybill items
+            $deleted = $wpdb->delete($items_table, ['waybillno' => $waybill_no]);
+
+            if($deleted){
+                return $deleted;
+            }
+        }
+    }
+    public static function updateWaybillItems($waybill_items, $waybill_no = null)
+    {
+        global $wpdb;
+        $items_table = $wpdb->prefix . 'kit_waybill_items';
+        $total = 0;
+
+        if ($waybill_no != null) {
+            // ✅ Delete previous waybill items
+            $wpdb->delete($items_table, ['waybillno' => $waybill_no]);
+        }
+
+        foreach ($waybill_items as $item) {
+            $subtotal = $item['quantity'] * $item['unit_price'];
+            //echo "subtotal = " . $item['quantity'] ."*". $item['unit_price']."=".$item['quantity'] * $item['unit_price'] . "<br>";
+            $total += $subtotal;
+            if (!empty($item['item_name'])) {
+                $wpdb->insert($items_table, [
+                    'waybillno'   => $waybill_no,
+                    'item_name'   => sanitize_text_field($item['item_name']),
+                    'quantity'    => intval($item['quantity']),
+                    'unit_price'  => floatval($item['unit_price']),
+                    'unit_mass'   => floatval($item['unit_mass'] ?? 0),
+                    'unit_volume' => floatval($item['unit_volume'] ?? 0),
+                    'total_price' => floatval($item['quantity'] * $item['unit_price'] ?? 0),
+                    'created_at'  => current_time('mysql'),
+                ]);
+            }
+        }
+        return $total;
+    }
+
     public static function update_waybill_action()
     {
 
@@ -2185,8 +2330,6 @@ class KIT_Waybills
         global $wpdb;
 
         $waybills_table = $wpdb->prefix . 'kit_waybills';
-        $items_table    = $wpdb->prefix . 'kit_waybill_items';
-
         $waybill_no     = intval($_POST['waybill_no']);
 
         // 🔄 Load current waybill (ensures waybill_id is correct from the DB)
@@ -2204,6 +2347,10 @@ class KIT_Waybills
 
         $addOptions = self::vatValidate(isset($_POST['vat_include']), isset($_POST['include_sadc']), isset($_POST['include_sad500']));
 
+        if(empty($_POST['vat_include'])){
+            //Do not add 10% to the t
+        }
+        
         // Use null coalescing for consistent pattern
         $direction_id = $_POST['direction_id'] ?? $existing->waybill['direction_id'];
         $delivery_id = $_POST['delivery_id'] ?? $existing->waybill['delivery_id'];
@@ -2220,8 +2367,8 @@ class KIT_Waybills
         $charge_basis = $_POST['charge_basis'] ?? $existing->waybill['charge_basis'];
         $vat_include = $addOptions['vat'] ?? $existing->waybill['vat_include'];
         $warehouse = $_POST['warehouse'] ?? $existing->waybill['warehouse'];
-        $include_sad500 = $addOptions['sad500'] ?? $existing->waybill['include_sad500'];
-        $include_sadc = $addOptions['sad'] ?? $existing->waybill['include_sadc'];
+        $include_sad500 = $_POST['include_sad500'] ?? 0;
+        $include_sadc = $_POST['include_sadc'] ?? 0;
 
         //Not waybill
         $dispatch_date = $_POST['dispatch_date'] ?? $existing->waybill['dispatch_date'];
@@ -2233,13 +2380,26 @@ class KIT_Waybills
             $misc_total = self::get_waybill_items_total($_POST['misc']);
         }
 
-        $waybillTotal = self::calculate_total($mass_charge, $volume_charge, $misc_total, $final_misc_data, $charge_basis);
+        $waybillItemsTotal = (!empty($_POST['custom_items']) && is_array($_POST['custom_items'])) ? self::updateWaybillItems($_POST['custom_items'], $waybill_no) : 0;
+
+        //if $_POST['custom_items'] empty, this means delete all the $_POST['custom_items']
+        if(empty($_POST['custom_items'])){
+            //Search the waybillItems Table and delete by waybill_no
+            self::deleteWaybillItems($waybill_no);
+        }
+
+        $vat_include = $_POST['vat_include'] ?? 0;
+
+        $waybillTotal = self::calculate_total($mass_charge, $volume_charge, $misc_total, $waybillItemsTotal, $charge_basis);
+
+        //$_POST['vat_include']
         $waybill_data = [
             'direction_id' => $direction_id,
             'delivery_id' => $delivery_id,
             'approval' => $approval,
             'approval_userid' => $approval_userid,
             'product_invoice_amount' => $waybillTotal,
+            'waybill_items_total' => $waybillItemsTotal,
             'item_length' => $item_length,
             'item_width' => $item_width,
             'item_height' => $item_height,
@@ -2265,77 +2425,31 @@ class KIT_Waybills
             ['%d']
         );
 
-
-
         // Check if update was successful
         if ($update_result === false) {
             wp_die('Failed to update waybill. Database error: ' . $wpdb->last_error);
         }
 
-        // ✅ Insert new items (loop through submitted POST array)
-        if (!empty($_POST['custom_items']) && is_array($_POST['custom_items'])) {
-            // ✅ Delete previous waybill items
-            $wpdb->delete($items_table, ['waybillno' => $waybill_no]);
-            foreach ($_POST['custom_items'] as $item) {
-
-                if (!empty($item['item_name'])) {
-                    $wpdb->insert($items_table, [
-                        'waybillno'   => $waybill_no,
-                        'item_name'   => sanitize_text_field($item['item_name']),
-                        'quantity'    => intval($item['quantity']),
-                        'unit_price'  => floatval($item['unit_price']),
-                        'unit_mass'   => floatval($item['unit_mass'] ?? 0),
-                        'unit_volume' => floatval($item['unit_volume'] ?? 0),
-                        'total_price' => floatval($item['total_price'] ?? 0),
-                        'created_at'  => current_time('mysql'),
-                    ]);
-                }
-            }
-        }
 
         /*         if (isset($_POST['misc'])) {
             self::miscItemsUpdateWaybill($_POST['misc'], $waybill_id, $waybill_no, $final_misc_data);
         } */
 
+        // Check for VAT warning and add to redirect URL
+        $redirect_url = admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . $waybill_id . '&updated=1');
+        if (self::shouldShowVatWarning($vat_include, $waybillItemsTotal)) {
+            $redirect_url = add_query_arg('vat_warning', '1', $redirect_url);
+        }
+
         // ✅ Redirect to success page
-        wp_redirect(admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . $waybill_id . '&updated=1'));
+        wp_redirect($redirect_url);
         exit;
     }
 
     // Save waybill items uusing custom_items
     public static function save_waybill_items($items, $waybill_no, $waybill_id, $vatOption)
     {
-        global $wpdb;
-
-        $table = $wpdb->prefix . 'kit_waybill_items';
-
-        // Delete existing items for this waybill
-        $wpdb->delete($table, ['waybillno' => $waybill_no]);
-
-        // Insert new items
-        foreach ($items as $item) {
-            if (!empty($item['item_name'])) {
-                $wpdb->insert($table, [
-                    'waybillno'   => $waybill_no,
-                    'item_name'   => sanitize_text_field($item['item_name']),
-                    'quantity'    => intval($item['quantity']),
-                    'unit_price'  => floatval($item['unit_price']),
-                    'unit_mass'   => floatval($item['unit_mass'] ?? 0),
-                    'unit_volume' => floatval($item['unit_volume'] ?? 0),
-                    'total_price' => floatval($item['total_price'] ?? 0),
-                    'created_at'  => current_time('mysql'),
-                ]);
-            }
-        }
-        //Get the total price of the waybill items
-        $total_price = $wpdb->get_var($wpdb->prepare("SELECT SUM(total_price) FROM $table WHERE waybillno = %d", $waybill_no));
-        //calculate the VAT of the waybill items
-        if ($vatOption == 1) {
-            $vat = $total_price * 0.1;
-            $total_price_with_vat = $total_price + $vat;
-
-            return $total_price_with_vat;
-        }
+        return (!empty($items) && is_array($items)) ? self::updateWaybillItems($items, $waybill_no) : 0;
     }
 
     public static function get_total_cost_of_waybill($waybill_no)

@@ -87,6 +87,19 @@ function kit_render_waybill_multiform($atts)
                     if (surnameInput) surnameInput.value = option.getAttribute('data-surname') || '';
                     if (cellInput) cellInput.value = option.getAttribute('data-cell') || '';
                     if (addressInput) addressInput.value = option.getAttribute('data-address') || '';
+                    
+                    // Populate email field
+                    const emailInput = getCustomerInput('email_address');
+                    if (emailInput) {
+                        emailInput.value = option.getAttribute('data-email') || '';
+                    }
+                    
+                    // Populate company name field
+                    const companyNameInput = getCustomerInput('company_name');
+                    if (companyNameInput) {
+                        companyNameInput.value = option.getAttribute('data-company-name') || '';
+                    }
+                    
                     if (custIdInput) custIdInput.value = customerId;
                 }
             }
@@ -98,6 +111,19 @@ function kit_render_waybill_multiform($atts)
                         if (surnameInput) surnameInput.value = '';
                         if (cellInput) cellInput.value = '';
                         if (addressInput) addressInput.value = '';
+                        
+                        // Clear email field
+                        const emailInput = getCustomerInput('email_address');
+                        if (emailInput) {
+                            emailInput.value = '';
+                        }
+                        
+                        // Clear company name field
+                        const companyNameInput = getCustomerInput('company_name');
+                        if (companyNameInput) {
+                            companyNameInput.value = '';
+                        }
+                        
                         if (custIdInput) custIdInput.value = '0';
                     } else if (this.value) {
                         populateCustomerDetails(this.value);

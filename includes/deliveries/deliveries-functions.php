@@ -207,6 +207,10 @@ class KIT_Deliveries
     }
     public static function add_admin_menu()
     {
+        // Menu registration moved to unified 08600 Waybills menu
+        // Individual menu registration commented out to avoid conflicts
+        
+        /*
         add_menu_page(
             'Deliveries Management',
             'Deliveries',
@@ -224,6 +228,7 @@ class KIT_Deliveries
             'view-deliveries',         // Menu slug
             [__CLASS__, 'view_deliveries_page']           // Callback function to display the page
         );
+        */
 
         //Create a packing list for the deliver. So it must show waybills for the current delivery truck and then show the destinations
         //Group the packing list based on the destination, infuture this will allow us to create a route for delivery
@@ -357,10 +362,15 @@ class KIT_Deliveries
 
             <div id="delivery-status-dropdown-<?php echo $delivery_id; ?>" class="hidden absolute right-0 mt-2 w-56 bg-white shadow-lg rounded-md z-10">
                 <div class="py-1">
-                    <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Scheduled</a>
-                    <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">In Transit</a>
-                    <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Delivered</a>
-                    <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Cancelled</a>
+                    <?php if ($status !== 'scheduled'): ?>
+                        <a href="#" onclick="changeDeliveryStatus(<?php echo $delivery_id; ?>, 'scheduled')" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Scheduled</a>
+                    <?php endif; ?>
+                    <?php if ($status !== 'in_transit'): ?>
+                        <a href="#" onclick="changeDeliveryStatus(<?php echo $delivery_id; ?>, 'in_transit')" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">In Transit</a>
+                    <?php endif; ?>
+                    <?php if ($status !== 'delivered'): ?>
+                        <a href="#" onclick="changeDeliveryStatus(<?php echo $delivery_id; ?>, 'delivered')" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Delivered</a>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -610,7 +620,11 @@ class KIT_Deliveries
                                         return $row->customer_name . ' ' . $row->customer_surname;
                                     }
                                     if ($key === 'total') {
-                                        return KIT_Commons::currency() . ' ' . ((int) $row->product_invoice_amount + (int) $row->miscellaneous);
+                                        if (KIT_Commons::isAdmin()) {
+                                            return KIT_Commons::currency() . ' ' . ((int) $row->product_invoice_amount + (int) $row->miscellaneous);
+                                        } else {
+                                            return '***';
+                                        }
                                     }
                                     if ($key === 'approval') {
 
@@ -861,67 +875,422 @@ class KIT_Deliveries
 
     public static function render_admin_page()
     {
+        $deliveries = self::get_all_deliveries();
+        
+        // Get delivery statistics
+        $total_deliveries = count($deliveries);
+        $scheduled_deliveries = array_filter($deliveries, function($d) { return $d->status === 'scheduled'; });
+        $scheduled_count = count($scheduled_deliveries);
+        $in_transit_deliveries = array_filter($deliveries, function($d) { return $d->status === 'in_transit'; });
+        $in_transit_count = count($in_transit_deliveries);
+        $delivered_countries = array_unique(array_column($deliveries, 'destination_country_name'));
+        $countries_count = count($delivered_countries);
+        
+        // Get recent deliveries for overview
+        $recent_deliveries = array_slice($deliveries, 0, 5);
     ?>
 
         <div class="wrap">
-            <?php
-            echo do_shortcode('[showheader title="Deliveries Management" desc="Manage all deliveries here."]');
-            ?>
-            <div class="">
-                <div class="grid grid-cols-12 gap-4">
-                    <div class="col-span-3 bg-white rounded-lg shadow-md sm:px-3 sm:py-6 md:p-6 mb-8">
-                        <h2 class="text-xl font-semibold text-gray-700 mb-4">Add New Delivery</h2>
-                        <?= self::deliveryForm(); ?>
+            <h1 class="wp-heading-inline">Deliveries Management</h1>
+            <hr class="wp-header-end">
+
+            <!-- Tab Navigation -->
+            <div class="delivery-tabs" style="margin-bottom: 30px;">
+                <div style="display: flex; background: #f3f4f6; padding: 4px; border-radius: 8px; width: fit-content;">
+                    <button id="overview-tab" class="tab-btn active" style="padding: 12px 24px; border-radius: 6px; font-weight: 500; font-size: 14px; transition: all 0.2s ease; background: white; color: #374151; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: none; cursor: pointer;">
+                        Overview
+                    </button>
+                    <button id="create-tab" class="tab-btn" style="padding: 12px 24px; border-radius: 6px; font-weight: 500; font-size: 14px; transition: all 0.2s ease; background: transparent; color: #6b7280; border: none; cursor: pointer;">
+                        Create Delivery
+                    </button>
+                    <button id="manage-tab" class="tab-btn" style="padding: 12px 24px; border-radius: 6px; font-weight: 500; font-size: 14px; transition: all 0.2s ease; background: transparent; color: #6b7280; border: none; cursor: pointer;">
+                        Manage Deliveries
+                    </button>
+                </div>
+            </div>
+
+            <!-- Overview Tab -->
+            <div id="overview-content" class="tab-content">
+                <!-- Statistics Cards -->
+                <div class="dashboard-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px;">
+                    <div class="stat-card" style="background: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #2563eb;">
+                        <h3 style="margin: 0 0 10px 0; color: #2563eb;">Total Deliveries</h3>
+                        <div style="font-size: 2em; font-weight: bold; color: #1e293b;"><?php echo number_format($total_deliveries); ?></div>
+                        <p style="margin: 5px 0 0 0; color: #64748b;">All deliveries created</p>
                     </div>
 
-                    <!-- Deliveries List Table -->
-                    <div class="col-span-9 bg-white rounded-lg shadow-md p-6">
-                        <h2 class="text-xl font-semibold text-gray-700 mb-4">Deliveries List</h2>
-                        <div class="overflow-x-auto">
-                            <?php
-                            $deliveries = self::get_all_deliveries();
+                    <div class="stat-card" style="background: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #059669;">
+                        <h3 style="margin: 0 0 10px 0; color: #059669;">Scheduled</h3>
+                        <div style="font-size: 2em; font-weight: bold; color: #1e293b;"><?php echo number_format($scheduled_count); ?></div>
+                        <p style="margin: 5px 0 0 0; color: #64748b;">Ready for pickup</p>
+                    </div>
 
-                            $options = [
-                                'itemsPerPage' => 5,
-                                'currentPage' => $_GET['paged'] ?? 1,
-                                'tableClass' => 'min-w-full text-left text-xs text-gray-700',
-                                'emptyMessage' => 'No customers records found',
-                                'id' => 'deliveriesTable',
-                            ];
+                    <div class="stat-card" style="background: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #dc2626;">
+                        <h3 style="margin: 0 0 10px 0; color: #dc2626;">In Transit</h3>
+                        <div style="font-size: 2em; font-weight: bold; color: #1e293b;"><?php echo number_format($in_transit_count); ?></div>
+                        <p style="margin: 5px 0 0 0; color: #64748b;">Currently shipping</p>
+                    </div>
 
+                    <div class="stat-card" style="background: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #7c3aed;">
+                        <h3 style="margin: 0 0 10px 0; color: #7c3aed;">Countries</h3>
+                        <div style="font-size: 2em; font-weight: bold; color: #1e293b;"><?php echo number_format($countries_count); ?></div>
+                        <p style="margin: 5px 0 0 0; color: #64748b;">Destinations served</p>
+                    </div>
+                </div>
 
-                            $columns = [
-                                'delivery_reference' => ['label' => 'Reference', 'align' => 'text-left'],
-                                'origin_country_name' => ['label' => 'From', 'align' => 'text-left'],
-                                'destination_country_name' => ['label' => 'To', 'align' => 'text-left'],
-                                'status' => ['label' => 'Status', 'align' => 'text-right'],
-                                'actions' => ['label' => 'Actions', 'align' => 'text-center'],
-                            ];
+                <!-- Recent Deliveries & Quick Actions -->
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
+                    <!-- Recent Deliveries -->
+                    <div style="background: white; padding: 24px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                        <h2 style="margin: 0 0 20px 0; font-size: 1.25rem; font-weight: 600; color: #1f2937;">Recent Deliveries</h2>
+                        <?php if (!empty($recent_deliveries)): ?>
+                            <div style="display: flex; flex-direction: column; gap: 12px;">
+                                <?php foreach ($recent_deliveries as $delivery): ?>
+                                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #f9fafb; border-radius: 8px; border-left: 4px solid #2563eb;">
+                                        <div>
+                                            <div style="font-weight: 600; color: #1f2937;"><?php echo esc_html($delivery->delivery_reference); ?></div>
+                                            <div style="font-size: 14px; color: #6b7280;"><?php echo esc_html($delivery->origin_country_name); ?> → <?php echo esc_html($delivery->destination_country_name); ?></div>
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 12px;">
+                                            <?php echo KIT_Commons::statusBadge($delivery->status); ?>
+                                            <?php echo self::deliveryStatus(['delivery_id' => $delivery->id, 'status' => $delivery->status, 'insideForm' => 'true']); ?>
+                                            <a href="?page=view-deliveries&delivery_id=<?php echo $delivery->id; ?>" style="color: #2563eb; font-size: 14px; text-decoration: none;">View</a>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php else: ?>
+                            <div style="text-align: center; padding: 40px; color: #6b7280;">
+                                <p>No deliveries yet. Create your first delivery to get started.</p>
+                            </div>
+                        <?php endif; ?>
+                    </div>
 
-                            $delivery_actions = function ($key, $row) {
-                                if ($key === 'delivery_reference') {
-                                    $last_three = substr($row->delivery_reference, -3);
-                                    $html = '<a href="?page=view-deliveries&delivery_id=' . $row->id . '" target="_blank" class="text-blue-600 hover:underline">' . $last_three . '</a>';
-                                    $html .= '<br>';
-                                    $html .= '<span class="text-xs text-gray-500">' . date('Y-m-d', strtotime($row->dispatch_date)) . '</span>';
-                                    return $html;
-                                }
-                                if ($key === 'status') {
-                                    $html = KIT_Commons::statusBadge($row->status);
-                                }
-                                if ($key === 'actions') {
-                                    $html = '<a href="?page=view-deliveries&delivery_id=' . $row->id . '" class="text-blue-600 hover:underline">View</a> ';
-                                    $html .= '<a href="?page=deliveries-dashboard&delete_delivery=' . $row->id . '" class="text-red-600 hover:underline" onclick="return confirm(\'Are you sure you want to delete this delivery?\');">Delete</a>';
-                                    return $html;
-                                }
-                                return htmlspecialchars(($row->$key ?? '') ?: '');
-                            };
-                            echo KIT_Commons::render_versatile_table($deliveries, $columns, $delivery_actions, $options);
-                            ?>
-
+                    <!-- Quick Actions -->
+                    <div style="background: white; padding: 24px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                        <h2 style="margin: 0 0 20px 0; font-size: 1.25rem; font-weight: 600; color: #1f2937;">Quick Actions</h2>
+                        <div style="display: flex; flex-direction: column; gap: 12px;">
+                            <button onclick="switchTab('create')" style="background: #2563eb; color: white; padding: 12px 16px; border: none; border-radius: 8px; font-weight: 500; cursor: pointer; transition: all 0.2s ease;">
+                                Create New Delivery
+                            </button>
+                            <button onclick="switchTab('manage')" style="background: #059669; color: white; padding: 12px 16px; border: none; border-radius: 8px; font-weight: 500; cursor: pointer; transition: all 0.2s ease;">
+                                View All Deliveries
+                            </button>
+                            <a href="?page=warehouse-waybills" style="background: #7c3aed; color: white; padding: 12px 16px; border: none; border-radius: 8px; font-weight: 500; cursor: pointer; transition: all 0.2s ease; text-decoration: none; text-align: center;">
+                                Assign Waybills
+                            </a>
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <!-- Create Delivery Tab -->
+            <div id="create-content" class="tab-content" style="display: none;">
+                <div style="background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                    <h2 style="margin: 0 0 24px 0; font-size: 1.5rem; font-weight: 600; color: #1f2937;">Create New Delivery</h2>
+                    <?= self::deliveryForm(); ?>
+                </div>
+            </div>
+
+            <!-- Manage Deliveries Tab -->
+            <div id="manage-content" class="tab-content" style="display: none;">
+                <div style="background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                    <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 24px;">
+                        <h2 style="margin: 0; font-size: 1.5rem; font-weight: 600; color: #1f2937;">Manage Deliveries</h2>
+                        <div style="display: flex; gap: 12px;">
+                            <input type="text" id="delivery-search" placeholder="Search deliveries..." style="padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px;">
+                            <select id="status-filter" style="padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px;">
+                                <option value="">All Status</option>
+                                <option value="scheduled">Scheduled</option>
+                                <option value="in_transit">In Transit</option>
+                                <option value="delivered">Delivered</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="overflow-x-auto">
+                        <?php
+                        $options = [
+                            'itemsPerPage' => 15,
+                            'currentPage' => $_GET['paged'] ?? 1,
+                            'tableClass' => 'w-full bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden',
+                            'emptyMessage' => '<div class="text-center py-16"><h3 class="text-xl font-medium text-gray-900 mb-3">No deliveries found</h3><p class="text-gray-500 mb-6 text-lg">Get started by creating your first delivery</p><button onclick="switchTab(\'create\')" class="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-lg">Create Delivery</button></div>',
+                            'id' => 'deliveriesTable',
+                            'headerClass' => 'bg-gray-50 border-b border-gray-200',
+                            'rowClass' => 'hover:bg-gray-50 transition-colors duration-150 border-b border-gray-100',
+                            'cellClass' => 'px-6 py-4 text-sm text-gray-900',
+                            'headerCellClass' => 'px-6 py-4 text-xs font-semibold text-gray-700 uppercase tracking-wider',
+                        ];
+
+                        $columns = [
+                            'delivery_reference' => ['label' => 'Reference', 'align' => 'text-left'],
+                            'route' => ['label' => 'Route', 'align' => 'text-left'],
+                            'status' => ['label' => 'Status', 'align' => 'text-center'],
+                            'dispatch_date' => ['label' => 'Dispatch Date', 'align' => 'text-center'],
+                            'actions' => ['label' => 'Actions', 'align' => 'text-center'],
+                        ];
+
+                        $delivery_actions = function ($key, $row) {
+                            if ($key === 'delivery_reference') {
+                                return '<span class="font-semibold text-gray-900">' . esc_html($row->delivery_reference) . '</span>';
+                            }
+                            if ($key === 'route') {
+                                return '<span class="text-gray-700">' . esc_html($row->origin_country_name) . ' → ' . esc_html($row->destination_country_name) . '</span>';
+                            }
+                            if ($key === 'status') {
+                                return KIT_Commons::statusBadge($row->status);
+                            }
+                            if ($key === 'dispatch_date') {
+                                return '<span class="text-gray-500">' . date('M j, Y', strtotime($row->dispatch_date)) . '</span>';
+                            }
+                            if ($key === 'actions') {
+                                $html = '<div class="flex space-x-2">';
+                                $html .= '<a href="?page=view-deliveries&delivery_id=' . $row->id . '" class="inline-flex items-center px-3 py-2 text-xs font-medium text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200 transition-colors">View</a>';
+                                $html .= '<a href="?page=deliveries-dashboard&delete_delivery=' . $row->id . '" class="inline-flex items-center px-3 py-2 text-xs font-medium text-red-700 bg-red-100 rounded-lg hover:bg-red-200 transition-colors" onclick="return confirm(\'Are you sure you want to delete this delivery?\');">Delete</a>';
+                                $html .= '</div>';
+                                return $html;
+                            }
+                            return htmlspecialchars(($row->$key ?? '') ?: '');
+                        };
+                                                 echo KIT_Commons::render_versatile_table($deliveries, $columns, $delivery_actions, $options);
+                         ?>
+                     </div>
+                 </div>
+             </div>
+        </div>
+
+        <style>
+        /* Hide overlapping WordPress footer text */
+        #wpfooter,
+        .wp-footer,
+        .wp-version,
+        .update-nag,
+        .notice,
+        .updated,
+        .error,
+        .warning {
+            display: none !important;
+        }
+        
+        /* Ensure proper spacing at bottom */
+        .wrap {
+            margin-bottom: 40px !important;
+        }
+        </style>
+        
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Tab switching functionality
+            function switchTab(tabName) {
+                // Hide all tab contents
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.style.display = 'none';
+                });
+                
+                // Remove active class from all tab buttons
+                document.querySelectorAll('.tab-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                    btn.style.background = 'transparent';
+                    btn.style.color = '#6b7280';
+                    btn.style.boxShadow = 'none';
+                });
+                
+                // Show selected tab content
+                const selectedContent = document.getElementById(tabName + '-content');
+                if (selectedContent) {
+                    selectedContent.style.display = 'block';
+                }
+                
+                // Add active class to selected tab button
+                const selectedBtn = document.getElementById(tabName + '-tab');
+                if (selectedBtn) {
+                    selectedBtn.classList.add('active');
+                    selectedBtn.style.background = 'white';
+                    selectedBtn.style.color = '#374151';
+                    selectedBtn.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+                }
+            }
+            
+            // Make switchTab function globally available
+            window.switchTab = switchTab;
+            
+            // Add click event listeners to tab buttons
+            document.getElementById('overview-tab').addEventListener('click', () => switchTab('overview'));
+            document.getElementById('create-tab').addEventListener('click', () => switchTab('create'));
+            document.getElementById('manage-tab').addEventListener('click', () => switchTab('manage'));
+            
+            // Search and filter functionality
+            const searchInput = document.getElementById('delivery-search');
+            const statusFilter = document.getElementById('status-filter');
+            const tableRows = document.querySelectorAll('#deliveriesTable tbody tr');
+            
+            function filterDeliveries() {
+                const searchTerm = searchInput.value.toLowerCase();
+                const statusFilterValue = statusFilter.value.toLowerCase();
+                
+                tableRows.forEach(row => {
+                    const reference = row.querySelector('td:nth-child(1)')?.textContent.toLowerCase() || '';
+                    const route = row.querySelector('td:nth-child(2)')?.textContent.toLowerCase() || '';
+                    const status = row.querySelector('td:nth-child(3)')?.textContent.toLowerCase() || '';
+                    const date = row.querySelector('td:nth-child(4)')?.textContent.toLowerCase() || '';
+                    
+                    const matchesSearch = reference.includes(searchTerm) || 
+                                        route.includes(searchTerm) || 
+                                        status.includes(searchTerm) || 
+                                        date.includes(searchTerm);
+                    
+                    // Handle status filtering more precisely
+                    let matchesStatus = true;
+                    if (statusFilterValue) {
+                        if (statusFilterValue === 'scheduled') {
+                            matchesStatus = status.includes('scheduled');
+                        } else if (statusFilterValue === 'in_transit') {
+                            matchesStatus = status.includes('in transit') || status.includes('in_transit');
+                        } else if (statusFilterValue === 'delivered') {
+                            matchesStatus = status.includes('delivered');
+                        }
+                    }
+                    
+                    if (matchesSearch && matchesStatus) {
+                        row.style.display = '';
+                    } else {
+                        row.style.display = 'none';
+                    }
+                });
+                
+                // Update table info
+                updateTableInfo();
+            }
+            
+            function updateTableInfo() {
+                const visibleRows = Array.from(tableRows).filter(row => row.style.display !== 'none');
+                const totalRows = tableRows.length;
+                const showingRows = visibleRows.length;
+                
+                // Find and update the table info text
+                const tableInfo = document.querySelector('.table-info');
+                if (tableInfo) {
+                    tableInfo.textContent = `Showing ${showingRows} of ${totalRows} deliveries`;
+                }
+            }
+            
+            if (searchInput) {
+                searchInput.addEventListener('input', filterDeliveries);
+            }
+            
+            if (statusFilter) {
+                statusFilter.addEventListener('change', filterDeliveries);
+            }
+            
+            // Initialize table info
+            updateTableInfo();
+            
+            // Note: Select all functionality removed since checkbox column was removed
+            
+            // Delivery status dropdown functionality
+            window.toggleDropdownDeliveryStatus = function(deliveryId) {
+                const dropdown = document.getElementById('delivery-status-dropdown-' + deliveryId);
+                if (dropdown) {
+                    dropdown.classList.toggle('hidden');
+                }
+            }
+            
+            window.changeDeliveryStatus = function(deliveryId, newStatus) {
+                if (!confirm(`Are you sure you want to change this delivery status to "${newStatus.replace('_', ' ')}"?`)) {
+                    return;
+                }
+                
+                // Determine which AJAX action to call based on the new status
+                let action = '';
+                switch(newStatus) {
+                    case 'in_transit':
+                        action = 'delivery_changeTo_Intransit';
+                        break;
+                    case 'delivered':
+                        action = 'delivery_changeTo_Delivered';
+                        break;
+                    case 'scheduled':
+                        action = 'delivery_changeTo_Scheduled';
+                        break;
+                }
+                
+                if (action) {
+                    const formData = new FormData();
+                    formData.append('action', action);
+                    formData.append('id', deliveryId);
+                    
+                    fetch(ajaxurl, {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert('Status updated successfully!');
+                            location.reload(); // Refresh to show updated status
+                        } else {
+                            alert('Failed to update status: ' + (data.data || 'Unknown error'));
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Error updating status. Please try again.');
+                    });
+                }
+                
+                // Hide the dropdown
+                const dropdown = document.getElementById('delivery-status-dropdown-' + deliveryId);
+                if (dropdown) {
+                    dropdown.classList.add('hidden');
+                }
+            }
+            
+
+        });
+        </script>
+
+        <style>
+        /* Tab button hover effects */
+        .tab-btn:hover {
+            background: #e5e7eb !important;
+            color: #374151 !important;
+        }
+        
+        /* Stat card hover effects */
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 12px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+        }
+        
+        /* Recent delivery card hover effects */
+        .recent-delivery-card:hover {
+            background: #f3f4f6 !important;
+            transform: translateX(4px);
+            transition: all 0.2s ease;
+        }
+        
+        /* Quick action button hover effects */
+        .quick-action-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        </style>
+
+            <!-- Quick Links -->
+            <div class="quick-links" style="margin-top: 30px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                <a href="#" onclick="document.querySelector('#delivery-form324343434344343434pew9kwwsdkfpdsfodskpfosdkpfosdkfposdkfsdpofkdsapofk').scrollIntoView(); return false;" style="display: block; padding: 15px; background: #2563eb; color: white; text-decoration: none; border-radius: 6px; text-align: center;">
+                    <strong>Add New Delivery</strong>
+                </a>
+                <a href="?page=08600-waybill-create" style="display: block; padding: 15px; background: #059669; color: white; text-decoration: none; border-radius: 6px; text-align: center;">
+                    <strong>Create Waybill</strong>
+                </a>
+                <a href="?page=route-management" style="display: block; padding: 15px; background: #dc2626; color: white; text-decoration: none; border-radius: 6px; text-align: center;">
+                    <strong>Manage Routes</strong>
+                </a>
+                <a href="?page=08600-customers" style="display: block; padding: 15px; background: #7c3aed; color: white; text-decoration: none; border-radius: 6px; text-align: center;">
+                    <strong>Manage Customers</strong>
+                </a>
             </div>
         </div>
         <script>
@@ -1038,7 +1407,11 @@ class KIT_Deliveries
             ['id' => intval($id)]
         );
 
-        return $updated !== false ? true : false;
+        if ($updated !== false) {
+            wp_send_json_success('Status updated successfully');
+        } else {
+            wp_send_json_error('Failed to update status');
+        }
     }
     //Change delivery status from intransit to delivered
     public static function delivery_changeTo_Delivered()
@@ -1053,8 +1426,11 @@ class KIT_Deliveries
             ['id' => intval($id)]
         );
 
-        exit(var_dump($wpdb->last_query));
-        return $updated !== false ? true : false;
+        if ($updated !== false) {
+            wp_send_json_success('Status updated successfully');
+        } else {
+            wp_send_json_error('Failed to update status');
+        }
     }
     //Change delivery status scheduled
     public static function delivery_changeTo_Scheduled()
@@ -1068,7 +1444,11 @@ class KIT_Deliveries
             ['id' => intval($id)]
         );
 
-        return $updated !== false ? true : false;
+        if ($updated !== false) {
+            wp_send_json_success('Status updated successfully');
+        } else {
+            wp_send_json_error('Failed to update status');
+        }
     }
     public static function deliveries_by_CountStat($country)
     {

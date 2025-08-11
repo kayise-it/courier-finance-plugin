@@ -78,23 +78,60 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // VAT checkbox functionality
+    const vatCheckbox2 = document.getElementById('vat_include2');
     const vatCheckbox = document.getElementById('vat_include');
+    const SADC = document.getElementById('sadc_certificate');
     const optionz = document.querySelectorAll('.optionz');
+    const nextStep3 = document.getElementById('next-step-3');
+    const addWaybillItemBtn = document.getElementById('add-waybill-item-btn');
 
-    function toggleOptionzDisabled() {
-        if (vatCheckbox && vatCheckbox.checked) {
-            optionz.forEach(function (opt) {
-                opt.disabled = true;
-            });
-        } else if (vatCheckbox) {
-            optionz.forEach(function (opt) {
-                opt.disabled = false;
-            });
+    function toggleVatDisabled() {
+        if (SADC && SADC.checked) {
+            vatCheckbox2.checked = false;
+            vatCheckbox2.disabled = true;
+        } else if (SADC) {
+            vatCheckbox2.checked = true;
+            vatCheckbox2.disabled = false;
         }
+    }
+    function toggleOptionzDisabled() {
+        if (vatCheckbox && vatCheckbox.checked || vatCheckbox2 && vatCheckbox2.checked) {
+            //bg-gray-300 text-gray-500 rounded-md hover:bg-gray-400
+            if (nextStep3) {
+                nextStep3.disabled = true;
+                nextStep3.classList.add('bg-gray-300', 'text-gray-500');
+                nextStep3.classList.remove('bg-blue-600', 'text-white');
+            }
+
+            SADC.disabled = true;
+            SADC.checked = 0;
+        } else {
+            
+            if (nextStep3) {
+            nextStep3.disabled = false;
+            nextStep3.classList.remove('bg-gray-300', 'text-gray-500');
+            nextStep3.classList.add('bg-blue-600', 'text-white');
+            }
+            SADC.disabled = false;
+        }
+    }
+
+    if (vatCheckbox2) {
+        vatCheckbox2.addEventListener('change', toggleOptionzDisabled);
+        //vatCheckbox2.addEventListener('change', deleteAllItems);
+        // Run on page load in case VAT is pre-checked
     }
 
     if (vatCheckbox) {
         vatCheckbox.addEventListener('change', toggleOptionzDisabled);
+        // Run on page load in case VAT is pre-checked
+        toggleOptionzDisabled();
+    }
+
+    
+
+    if (SADC) {
+        SADC.addEventListener('change', toggleVatDisabled);
         // Run on page load in case VAT is pre-checked
         toggleOptionzDisabled();
     }
@@ -152,6 +189,15 @@ document.addEventListener('DOMContentLoaded', function () {
         const allChecked = jQuery('.selectRow:checked').length === jQuery('.selectRow').length;
         jQuery('.selectAllRows').prop('checked', allChecked);
     });
+    jQuery(document).on('click', '#add-waybill-item', function () {
+        const nextStep3 = document.getElementById('next-step-3');
+        if (nextStep3) {
+            nextStep3.disabled = false;
+            //hidden md:block next-step px-4 py-2 rounded-md hover:bg-blue-700 bg-gray-300 text-gray-500
+            nextStep3.classList.remove('bg-gray-300', 'text-gray-500');
+            nextStep3.classList.add('bg-blue-600', 'text-white');
+        }
+    });
 
     // Select all rows
     jQuery(document).on('change', '.selectAllRows', function () {
@@ -172,14 +218,122 @@ document.addEventListener('DOMContentLoaded', function () {
     // Warehoused checkbox
     jQuery(document).on('change', '#warehoused_option', function () {
         const scheduledDeliveriesList = document.getElementById('scheduled-deliveries-list');
+        const specialDeliveryBtn = document.getElementById('specialDeliveryBtn');
+        const destinationCountry = document.getElementById('stepDestinationSelect');
+        const destinationCity = document.getElementById('destination_city');
+        const destinationCountryHelp = document.getElementById('destination-country-help');
+        const destinationCityHelp = document.getElementById('destination-city-help');
+        
         if (jQuery(this).is(':checked')) {
+            // Hide scheduled deliveries when warehoused is checked
             scheduledDeliveriesList.classList.add('hidden');
-            const specialDeliveryBtn = document.getElementById('specialDeliveryBtn');
+            
+            // Enable the next button for warehoused items
+            specialDeliveryBtn.disabled = false;
+            specialDeliveryBtn.classList.remove('bg-gray-300', 'text-gray-500');
+            specialDeliveryBtn.classList.add('bg-blue-600', 'text-white');
+            
+            // Clear destination fields for warehoused items
+            if (destinationCountry) destinationCountry.value = '';
+            if (destinationCity) destinationCity.value = '';
+            
+            // Hide helper text for destination fields
+            if (destinationCountryHelp) destinationCountryHelp.style.display = 'none';
+            if (destinationCityHelp) destinationCityHelp.style.display = 'none';
+            
+        } else {
+            // Show scheduled deliveries when warehoused is unchecked
+            scheduledDeliveriesList.classList.remove('hidden');
+            
+            // Show helper text for destination fields
+            if (destinationCountryHelp) destinationCountryHelp.style.display = 'block';
+            if (destinationCityHelp) destinationCityHelp.style.display = 'block';
+            
+            // Validate destination selection
+            validateDestinationSelection();
+        }
+    });
+    
+    // Destination country change handler
+    jQuery(document).on('change', '#stepDestinationSelect', function () {
+        validateDestinationSelection();
+    });
+    
+    // Destination city change handler
+    jQuery(document).on('change', '#destination_city', function () {
+        validateDestinationSelection();
+    });
+    
+    // Function to validate destination selection
+    function validateDestinationSelection() {
+        const warehousedCheckbox = document.getElementById('warehoused_option');
+        const specialDeliveryBtn = document.getElementById('specialDeliveryBtn');
+        const destinationCountry = document.getElementById('stepDestinationSelect');
+        const destinationCity = document.getElementById('destination_city');
+        const destinationCountryHelp = document.getElementById('destination-country-help');
+        const destinationCityHelp = document.getElementById('destination-city-help');
+        
+        // If warehoused is checked, no validation needed
+        if (warehousedCheckbox && warehousedCheckbox.checked) {
+            specialDeliveryBtn.disabled = false;
+            specialDeliveryBtn.classList.remove('bg-gray-300', 'text-gray-500');
+            specialDeliveryBtn.classList.add('bg-blue-600', 'text-white');
+            return;
+        }
+        
+        // Check if both country and city are selected
+        const countrySelected = destinationCountry && destinationCountry.value && destinationCountry.value !== '';
+        const citySelected = destinationCity && destinationCity.value && destinationCity.value !== '';
+        
+        // Update helper text colors based on selection
+        if (destinationCountryHelp) {
+            if (countrySelected) {
+                destinationCountryHelp.classList.remove('text-red-500');
+                destinationCountryHelp.classList.add('text-green-500');
+                destinationCountryHelp.textContent = '✓ Country selected';
+            } else {
+                destinationCountryHelp.classList.remove('text-green-500');
+                destinationCountryHelp.classList.add('text-red-500');
+                destinationCountryHelp.textContent = '✗ Country required';
+            }
+        }
+        
+        if (destinationCityHelp) {
+            if (citySelected) {
+                destinationCityHelp.classList.remove('text-red-500');
+                destinationCityHelp.classList.add('text-green-500');
+                destinationCityHelp.textContent = '✓ City selected';
+            } else {
+                destinationCityHelp.classList.remove('text-green-500');
+                destinationCityHelp.classList.add('text-red-500');
+                destinationCityHelp.textContent = '✗ City required';
+            }
+        }
+        
+        if (countrySelected && citySelected) {
             specialDeliveryBtn.disabled = false;
             specialDeliveryBtn.classList.remove('bg-gray-300', 'text-gray-500');
             specialDeliveryBtn.classList.add('bg-blue-600', 'text-white');
         } else {
-            scheduledDeliveriesList.classList.remove('hidden');
+            specialDeliveryBtn.disabled = true;
+            specialDeliveryBtn.classList.remove('bg-blue-600', 'text-white');
+            specialDeliveryBtn.classList.add('bg-gray-300', 'text-gray-500');
+        }
+    }
+    
+    // Initialize validation on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        // Run initial validation
+        validateDestinationSelection();
+        
+        // Set initial state for helper text visibility
+        const warehousedCheckbox = document.getElementById('warehoused_option');
+        const destinationCountryHelp = document.getElementById('destination-country-help');
+        const destinationCityHelp = document.getElementById('destination-city-help');
+        
+        if (warehousedCheckbox && warehousedCheckbox.checked) {
+            if (destinationCountryHelp) destinationCountryHelp.style.display = 'none';
+            if (destinationCityHelp) destinationCityHelp.style.display = 'none';
         }
     });
 

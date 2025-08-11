@@ -3,21 +3,24 @@
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
         <div>
             <?php require COURIER_FINANCE_PLUGIN_PATH . 'includes/components/countriesSelect.php'; ?>
+            <p class="text-xs text-gray-500 mt-1" id="destination-country-help">Required for non-warehoused items</p>
         </div>
         <div class="<?= KIT_Commons::yspacingClass(); ?>">
             <label for="destination_city" class="<?= KIT_Commons::labelClass() ?>">Destination City</label>
             <div id="destinationWrap">
                 <select class="<?= KIT_Commons::selectClass(); ?>" name="destination_city" id="destination_city">
                     <!-- Display the options here -->
-                    <option value="">Select Country</option>
+                    <option value="">Select City</option>
                 </select>
             </div>
+            <p class="text-xs text-gray-500 mt-1" id="destination-city-help">Required for non-warehoused items</p>
         </div>
         <div class="<?= KIT_Commons::yspacingClass(); ?>">
 
             <label for="warehoused_option" class="<?= KIT_Commons::labelClass(); ?>">Warehoused
                 <input type="checkbox" name="warehoused" id="warehoused_option" value="1" class="mr-2">
             </label>
+            <p class="text-xs text-gray-500 mt-1">Check this if the item is to be warehoused (no destination required)</p>
         </div>
     </div>
 

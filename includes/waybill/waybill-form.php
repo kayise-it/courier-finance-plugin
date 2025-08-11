@@ -143,11 +143,13 @@ $scheduled_deliveries = KIT_Deliveries::getScheduledDeliveries();
                 const surname = selectedOption.getAttribute('data-surname');
                 const cell = selectedOption.getAttribute('data-cell');
                 const address = selectedOption.getAttribute('data-address');
+                const companyName = selectedOption.getAttribute('data-company-name');
 
                 console.log('Name:', name);
                 console.log('Surname:', surname);
                 console.log('Cell:', cell);
                 console.log('Address:', address);
+                console.log('Company Name:', companyName);
 
                 if (this.value === 'new') {
                     // Clear all fields for new customer
@@ -156,6 +158,12 @@ $scheduled_deliveries = KIT_Deliveries::getScheduledDeliveries();
                     cellInput.value = '';
                     addressInput.value = '';
                     custIdInput.value = '0';
+                    
+                    // Clear company name field
+                    const companyNameInput = document.getElementById('company_name');
+                    if (companyNameInput) {
+                        companyNameInput.value = '';
+                    }
                 } else if (this.value) {
                     // Populate fields with selected customer data
                     jQuery("#customer_name").value = name ;
@@ -163,6 +171,12 @@ $scheduled_deliveries = KIT_Deliveries::getScheduledDeliveries();
                     cellInput.value = cell ||'';
                     addressInput.value = address ||'';
                     custIdInput.value = '0';
+                    
+                    // Populate company name field
+                    const companyNameInput = document.getElementById('company_name');
+                    if (companyNameInput) {
+                        companyNameInput.value = companyName || '';
+                    }
                 }
             });
 
