@@ -184,36 +184,7 @@ class Database
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
     }
-    public static function create_quotations_table()
-    {
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'kit_quotations';
-        $charset_collate = $wpdb->get_charset_collate();
-
-        $sql = "CREATE TABLE $table_name (
-            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-            delivery_id INT UNSIGNED NOT NULL,
-            waybill_id INT UNSIGNED NOT NULL,
-            waybillNo VARCHAR(255) NOT NULL,
-            customer_id MEDIUMINT(10) UNSIGNED NOT NULL,
-            subtotal DECIMAL(10,2) NOT NULL,
-            vat_amount DECIMAL(10,2) DEFAULT 0.00,
-            total DECIMAL(10,2) NOT NULL,
-            quotation_notes TEXT NULL,
-            status ENUM('pending', 'sent', 'accepted', 'declined') DEFAULT 'pending',
-            created_by INT NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            last_updated_by INT NULL,
-            last_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            PRIMARY KEY (id),
-            FOREIGN KEY (delivery_id) REFERENCES {$wpdb->prefix}kit_deliveries(id),
-            FOREIGN KEY (waybill_id) REFERENCES {$wpdb->prefix}kit_waybills(id) ON DELETE CASCADE,
-            FOREIGN KEY (customer_id) REFERENCES {$wpdb->prefix}kit_customers(cust_id),
-            INDEX (status)
-        ) $charset_collate;";
-        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-        dbDelta($sql);
-    }
+    // Quotations table creation function removed
     public static function create_operating_countries_table()
     {
         global $wpdb;
@@ -583,6 +554,37 @@ class Database
         dbDelta($sql);
     }
 
+    public static function create_warehouse_tracking_table()
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'kit_warehouse_tracking';
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE $table_name (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            waybill_no INT UNSIGNED NOT NULL,
+            waybill_id INT UNSIGNED NOT NULL,
+            customer_id MEDIUMINT(10) UNSIGNED NOT NULL,
+            action ENUM('warehoused', 'assigned', 'removed') DEFAULT 'warehoused',
+            previous_status VARCHAR(50),
+            new_status VARCHAR(50),
+            assigned_delivery_id INT UNSIGNED NULL,
+            notes TEXT,
+            created_by INT UNSIGNED NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            FOREIGN KEY (waybill_no) REFERENCES {$wpdb->prefix}kit_waybills(waybill_no) ON DELETE CASCADE,
+            FOREIGN KEY (waybill_id) REFERENCES {$wpdb->prefix}kit_waybills(id) ON DELETE CASCADE,
+            FOREIGN KEY (customer_id) REFERENCES {$wpdb->prefix}kit_customers(cust_id),
+            INDEX (waybill_no),
+            INDEX (action),
+            INDEX (created_at)
+        ) $charset_collate;";
+
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+    }
+
     public static function delete_table($name)
     {
         global $wpdb;
@@ -603,18 +605,20 @@ class Database
         self::create_deliveries_table();
         self::create_waybills_table();
         self::create_waybill_items_table();
-        self::create_quotations_table();
+        // Quotations table creation removed
         self::create_invoices_table();
         self::create_discounts_table();
+        self::create_warehouse_tracking_table();
     }
     public static function deactivate()
     {
 
         // 1. Drop tables that depend on everything else (deepest children)
         self::delete_table('kit_waybill_items');
-        self::delete_table('kit_quotations');
+        // Quotations table deletion removed
         self::delete_table('kit_invoices');
         self::delete_table('kit_waybills');
+        self::delete_table('kit_warehouse_tracking');
 
         // 2. Drop delivery table (depends on directions & cities)
         self::delete_table('kit_deliveries');

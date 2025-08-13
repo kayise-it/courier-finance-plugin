@@ -362,15 +362,10 @@ class KIT_Deliveries
 
             <div id="delivery-status-dropdown-<?php echo $delivery_id; ?>" class="hidden absolute right-0 mt-2 w-56 bg-white shadow-lg rounded-md z-10">
                 <div class="py-1">
-                    <?php if ($status !== 'scheduled'): ?>
-                        <a href="#" onclick="changeDeliveryStatus(<?php echo $delivery_id; ?>, 'scheduled')" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Scheduled</a>
-                    <?php endif; ?>
-                    <?php if ($status !== 'in_transit'): ?>
-                        <a href="#" onclick="changeDeliveryStatus(<?php echo $delivery_id; ?>, 'in_transit')" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">In Transit</a>
-                    <?php endif; ?>
-                    <?php if ($status !== 'delivered'): ?>
-                        <a href="#" onclick="changeDeliveryStatus(<?php echo $delivery_id; ?>, 'delivered')" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Delivered</a>
-                    <?php endif; ?>
+                    <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Scheduled</a>
+                    <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">In Transit</a>
+                    <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Delivered</a>
+                    <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Cancelled</a>
                 </div>
             </div>
         </div>
@@ -620,11 +615,7 @@ class KIT_Deliveries
                                         return $row->customer_name . ' ' . $row->customer_surname;
                                     }
                                     if ($key === 'total') {
-                                        if (KIT_Commons::isAdmin()) {
-                                            return KIT_Commons::currency() . ' ' . ((int) $row->product_invoice_amount + (int) $row->miscellaneous);
-                                        } else {
-                                            return '***';
-                                        }
+                                        return KIT_Commons::currency() . ' ' . ((int) $row->product_invoice_amount + (int) $row->miscellaneous);
                                     }
                                     if ($key === 'approval') {
 
@@ -708,113 +699,9 @@ class KIT_Deliveries
 
     public static function deliveryForm($delivery_id = null)
     {
-        $delivery_id = $_POST['delivery_id'] ?? null;
-        if ($delivery_id) {
-            $delivery = self::get_delivery($delivery_id);
-        }
-
-
-
-    ?>
-        <form id="delivery-form" class="space-y-4 max-w-3xl" method="post" action="<?php echo admin_url('admin-post.php'); ?>">
-            <input type="hidden" name="action" value="kit_deliveries_crud">
-            <input type="hidden" name="delivery_id" id="delivery_id" value="0">
-            <?php wp_nonce_field('kit_deliveries_nonce', 'nonce'); ?>
-
-            <div class="space-y-2">
-                <label for="delivery_reference" class="block text-xs font-medium text-gray-700">Reference
-                    Number</label>
-                <input type="text" name="delivery_reference" id="delivery_reference" readonly value="<?= KIT_Deliveries::generateDeliveryRef() ?>"
-                    class="text-xs w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-            </div>
-
-            <div class="grid grid-cols-1 gap-2">
-                <label for="origin_country" class="block text-xs font-medium text-gray-700">Origin</label>
-                <div class="sm:grid sm:grid-cols-1 gap-2">
-                    <div class="">
-                        <?php echo KIT_Deliveries::selectAllCountries('origin_country', 'origin_country_select', 1, $required = "required", 'origin'); ?>
-                    </div>
-                    <div class="">
-                        <?php echo KIT_Deliveries::selectAllCitiesByCountry('origin_city', 'origin_city_select', 1, 1, $required = 'required', ''); ?>
-                    </div>
-                </div>
-            </div>
-            <div class="grid grid-cols-1 gap-2">
-                <label for="destination_country" class="block text-xs font-medium text-gray-700">Destination</label>
-                <div class="sm:grid sm:grid-cols-1 gap-2">
-                    <div class="">
-                        <?php echo KIT_Deliveries::selectAllCountries('destination_country', 'destination_country_select', 2, $required = "required", 'destination'); ?>
-                    </div>
-                    <div class="">
-                        <?php echo KIT_Deliveries::selectAllCitiesByCountry('destination_city', 'destination_city_select', 2, 6); ?>
-                    </div>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 gap-4">
-                <div class="space-y-2">
-                    <?= KIT_Commons::Linput([
-                        'label' => 'Dispatc12h Date',
-                        'name'  => 'dispatch_date',
-                        'id'  => 'dispatch_date',
-                        'type'  => 'date',
-                        'value' => '',
-                        'class' => 'additional-class'
-                    ]); ?>
-                    <script>
-                        document.addEventListener('DOMContentLoaded', function() {
-                            const dispatchDateInput = document.getElementById('dispatch_date');
-                            const today = new Date().toISOString().split('T')[0];
-                            // Set min date attribute
-                            dispatchDateInput.min = today;
-                            // Additional validation on form submission
-                            document.querySelector('form').addEventListener('submit', function(e) {
-                                const selectedDate = dispatchDateInput.value;
-                                if (selectedDate < today) {
-                                    e.preventDefault();
-                                    dispatchDateInput.focus();
-                                }
-                            });
-                        });
-                    </script>
-                </div>
-
-                <div class="space-y-2">
-                    <label for="truck_number" class="block text-xs font-medium text-gray-700">Truck Number</label>
-                    <input type="text" name="truck_number" id="truck_number"
-                        class="text-xs w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                </div>
-            </div>
-
-            <div class="space-y-2">
-                <?php
-                $deliveries_status = [
-                    'scheduled' => 'Scheduled',
-                    'in_transit' => 'In Transit',
-                    'delivered' => 'Delivered'
-                ];
-                echo KIT_Commons::simpleSelect(
-                    'Delivery Status',
-                    'status',
-                    'status',
-                    $deliveries_status,
-                    null
-                );
-                ?>
-            </div>
-
-            <div class="flex space-x-3">
-                <button type="submit"
-                    class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
-                    Save Delivery
-                </button>
-                <button type="button" id="cancel-edit"
-                    class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 hidden">
-                    Cancel
-                </button>
-            </div>
-        </form>
-    <?php
+        // This method is deprecated - form is now integrated into render_admin_page
+        // Keeping for backward compatibility but not used in the new UI
+        return '<p class="text-gray-500">Form has been moved to the main page layout.</p>';
     }
 
     /**
@@ -883,445 +770,521 @@ class KIT_Deliveries
         $scheduled_count = count($scheduled_deliveries);
         $in_transit_deliveries = array_filter($deliveries, function($d) { return $d->status === 'in_transit'; });
         $in_transit_count = count($in_transit_deliveries);
+        $delivered_deliveries = array_filter($deliveries, function($d) { return $d->status === 'delivered'; });
+        $delivered_count = count($delivered_deliveries);
         $delivered_countries = array_unique(array_column($deliveries, 'destination_country_name'));
         $countries_count = count($delivered_countries);
-        
-        // Get recent deliveries for overview
-        $recent_deliveries = array_slice($deliveries, 0, 5);
     ?>
 
-        <div class="wrap">
-            <h1 class="wp-heading-inline">Deliveries Management</h1>
-            <hr class="wp-header-end">
+        <div class="wrap deliveries-page">
+            <?php
+            echo KIT_Commons::showingHeader([
+                'title' => 'Deliveries Management',
+                'desc' => 'Manage and track all delivery operations',
+            ]);
+            ?>
 
-            <!-- Tab Navigation -->
-            <div class="delivery-tabs" style="margin-bottom: 30px;">
-                <div style="display: flex; background: #f3f4f6; padding: 4px; border-radius: 8px; width: fit-content;">
-                    <button id="overview-tab" class="tab-btn active" style="padding: 12px 24px; border-radius: 6px; font-weight: 500; font-size: 14px; transition: all 0.2s ease; background: white; color: #374151; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: none; cursor: pointer;">
-                        Overview
-                    </button>
-                    <button id="create-tab" class="tab-btn" style="padding: 12px 24px; border-radius: 6px; font-weight: 500; font-size: 14px; transition: all 0.2s ease; background: transparent; color: #6b7280; border: none; cursor: pointer;">
-                        Create Delivery
-                    </button>
-                    <button id="manage-tab" class="tab-btn" style="padding: 12px 24px; border-radius: 6px; font-weight: 500; font-size: 14px; transition: all 0.2s ease; background: transparent; color: #6b7280; border: none; cursor: pointer;">
-                        Manage Deliveries
-                    </button>
+            <!-- Statistics Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <div class="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                                <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
+                                </svg>
+                            </div>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Total Deliveries</p>
+                            <p class="text-2xl font-bold text-gray-900"><?php echo number_format($total_deliveries); ?></p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <div class="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                                <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                            </div>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Scheduled</p>
+                            <p class="text-2xl font-bold text-gray-900"><?php echo number_format($scheduled_count); ?></p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <div class="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
+                                <svg class="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                </svg>
+                            </div>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">In Transit</p>
+                            <p class="text-2xl font-bold text-gray-900"><?php echo number_format($in_transit_count); ?></p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <div class="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                                <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                            </div>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Countries Served</p>
+                            <p class="text-2xl font-bold text-gray-900"><?php echo number_format($countries_count); ?></p>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- Overview Tab -->
-            <div id="overview-content" class="tab-content">
-                <!-- Statistics Cards -->
-                <div class="dashboard-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px;">
-                    <div class="stat-card" style="background: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #2563eb;">
-                        <h3 style="margin: 0 0 10px 0; color: #2563eb;">Total Deliveries</h3>
-                        <div style="font-size: 2em; font-weight: bold; color: #1e293b;"><?php echo number_format($total_deliveries); ?></div>
-                        <p style="margin: 5px 0 0 0; color: #64748b;">All deliveries created</p>
-                    </div>
+            <!-- Tabbed Interface -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+                <!-- Tab Navigation -->
+                <div class="border-b border-gray-200">
+                    <nav class="flex space-x-8 px-6" aria-label="Tabs">
+                        <button id="tab-all-deliveries" class="tab-button active py-4 px-1 border-b-2 border-blue-500 font-medium text-sm text-blue-600">
+                            <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                            </svg>
+                            Show All Deliveries
+                        </button>
+                        <button id="tab-add-delivery" class="tab-button py-4 px-1 border-b-2 border-transparent font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                            <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                            </svg>
+                            Add Delivery
+                        </button>
+                    </nav>
+                </div>
 
-                    <div class="stat-card" style="background: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #059669;">
-                        <h3 style="margin: 0 0 10px 0; color: #059669;">Scheduled</h3>
-                        <div style="font-size: 2em; font-weight: bold; color: #1e293b;"><?php echo number_format($scheduled_count); ?></div>
-                        <p style="margin: 5px 0 0 0; color: #64748b;">Ready for pickup</p>
-                    </div>
-
-                    <div class="stat-card" style="background: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #dc2626;">
-                        <h3 style="margin: 0 0 10px 0; color: #dc2626;">In Transit</h3>
-                        <div style="font-size: 2em; font-weight: bold; color: #1e293b;"><?php echo number_format($in_transit_count); ?></div>
-                        <p style="margin: 5px 0 0 0; color: #64748b;">Currently shipping</p>
-                    </div>
-
-                    <div class="stat-card" style="background: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #7c3aed;">
-                        <h3 style="margin: 0 0 10px 0; color: #7c3aed;">Countries</h3>
-                        <div style="font-size: 2em; font-weight: bold; color: #1e293b;"><?php echo number_format($countries_count); ?></div>
-                        <p style="margin: 5px 0 0 0; color: #64748b;">Destinations served</p>
+                <!-- Tab Content -->
+                <div class="p-6">
+                    <!-- Tab 1: Show All Deliveries -->
+                    <div id="tab-content-all-deliveries" class="tab-content active">
+                        <!-- View Toggle Buttons -->
+                        <div class="flex justify-between items-center mb-6">
+                            <div class="flex space-x-2">
+                                <button id="block-view-btn" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium transition-colors">
+                                    Bloc2k View
+                                </button>
+                                <button id="table-view-btn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors hover:bg-gray-300">
+                                    Table View
+                                </button>
+                            </div>
+                            <div class="text-sm text-gray-600">
+                                <?php echo count($deliveries); ?> deliveries found
                     </div>
                 </div>
 
-                <!-- Recent Deliveries & Quick Actions -->
-                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
-                    <!-- Recent Deliveries -->
-                    <div style="background: white; padding: 24px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-                        <h2 style="margin: 0 0 20px 0; font-size: 1.25rem; font-weight: 600; color: #1f2937;">Recent Deliveries</h2>
-                        <?php if (!empty($recent_deliveries)): ?>
-                            <div style="display: flex; flex-direction: column; gap: 12px;">
-                                <?php foreach ($recent_deliveries as $delivery): ?>
-                                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #f9fafb; border-radius: 8px; border-left: 4px solid #2563eb;">
-                                        <div>
-                                            <div style="font-weight: 600; color: #1f2937;"><?php echo esc_html($delivery->delivery_reference); ?></div>
-                                            <div style="font-size: 14px; color: #6b7280;"><?php echo esc_html($delivery->origin_country_name); ?> → <?php echo esc_html($delivery->destination_country_name); ?></div>
-                                        </div>
-                                        <div style="display: flex; align-items: center; gap: 12px;">
-                                            <?php echo KIT_Commons::statusBadge($delivery->status); ?>
-                                            <?php echo self::deliveryStatus(['delivery_id' => $delivery->id, 'status' => $delivery->status, 'insideForm' => 'true']); ?>
-                                            <a href="?page=view-deliveries&delivery_id=<?php echo $delivery->id; ?>" style="color: #2563eb; font-size: 14px; text-decoration: none;">View</a>
+                            <?php if (!empty($deliveries)): ?>
+                                <!-- Block View -->
+                            <?php
+                                // Include the DeliveryCard component
+                                require_once plugin_dir_path(__FILE__) . '../components/deliveryCard.php';
+                                
+                                // Use the component to render the delivery grid
+                                echo KIT_DeliveryCard::renderGrid($deliveries, [
+                                    'show_actions' => true,
+                                    'show_truck' => true,
+                                    'show_waybill_count' => false,
+                                    'grid_class' => 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6',
+                                    'empty_message' => 'No deliveries found'
+                                ]);
+                                ?>
+
+                            <?php else: ?>
+                                <div class="text-center py-12">
+                                    <div class="mx-auto w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                                        <svg class="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
+                                        </svg>
+                                    </div>
+                                    <h3 class="text-lg font-medium text-gray-900 mb-2">No deliveries yet</h3>
+                                    <p class="text-gray-600 mb-6">Get started by creating your first delivery</p>
+                                    <button id="create-first-delivery" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors">
+                                        Create First Delivery
+                                    </button>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                    <!-- Tab 2: Add Delivery -->
+                    <div id="tab-content-add-delivery" class="tab-content hidden">
+                        <div class="max-w-2xl mx-auto">
+                            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                                <div class="mb-6">
+                                    <h2 class="text-xl font-semibold text-gray-900">Add New Delivery</h2>
+                                    <p class="text-sm text-gray-600 mt-1">Create a new delivery entry</p>
+                                </div>
+                                
+                                <form id="delivery-form" class="space-y-6">
+                                    <input type="hidden" name="action" value="kit_deliveries_crud">
+                                    <input type="hidden" name="delivery_id" id="delivery_id" value="0">
+                                    <?php wp_nonce_field('kit_deliveries_nonce', 'nonce'); ?>
+
+                                    <!-- Reference Number -->
+                                    <div class="form-field">
+                                        <label for="delivery_reference" class="block text-sm font-medium text-gray-700 mb-2">
+                                            Reference Number
+                                        </label>
+                                        <input type="text" name="delivery_reference" id="delivery_reference" 
+                                               readonly value="<?= KIT_Deliveries::generateDeliveryRef() ?>"
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50">
+                                    </div>
+
+                                    <!-- Origin -->
+                                    <div class="form-field">
+                                        <label class="block text-sm font-medium text-gray-700 mb-2">Origin</label>
+                                        <div class="space-y-3">
+                                            <div class="form-field">
+                                                <label for="origin_country" class="block text-xs font-medium text-gray-600 mb-1">Country</label>
+                                                <?php echo KIT_Deliveries::selectAllCountries('origin_country', 'origin_country_select', 1, $required = "required", 'origin'); ?>
+                                            </div>
+                                            <div class="form-field">
+                                                <label for="origin_city" class="block text-xs font-medium text-gray-600 mb-1">City</label>
+                                                <?php echo KIT_Deliveries::selectAllCitiesByCountry('origin_city', 'origin_city_select', 1, 1, $required = 'required', ''); ?>
+                                            </div>
                                         </div>
                                     </div>
-                                <?php endforeach; ?>
-                            </div>
-                        <?php else: ?>
-                            <div style="text-align: center; padding: 40px; color: #6b7280;">
-                                <p>No deliveries yet. Create your first delivery to get started.</p>
-                            </div>
-                        <?php endif; ?>
-                    </div>
 
-                    <!-- Quick Actions -->
-                    <div style="background: white; padding: 24px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-                        <h2 style="margin: 0 0 20px 0; font-size: 1.25rem; font-weight: 600; color: #1f2937;">Quick Actions</h2>
-                        <div style="display: flex; flex-direction: column; gap: 12px;">
-                            <button onclick="switchTab('create')" style="background: #2563eb; color: white; padding: 12px 16px; border: none; border-radius: 8px; font-weight: 500; cursor: pointer; transition: all 0.2s ease;">
-                                Create New Delivery
-                            </button>
-                            <button onclick="switchTab('manage')" style="background: #059669; color: white; padding: 12px 16px; border: none; border-radius: 8px; font-weight: 500; cursor: pointer; transition: all 0.2s ease;">
-                                View All Deliveries
-                            </button>
-                            <a href="?page=warehouse-waybills" style="background: #7c3aed; color: white; padding: 12px 16px; border: none; border-radius: 8px; font-weight: 500; cursor: pointer; transition: all 0.2s ease; text-decoration: none; text-align: center;">
-                                Assign Waybills
-                            </a>
+                                    <!-- Destination -->
+                                    <div class="form-field">
+                                        <label class="block text-sm font-medium text-gray-700 mb-2">Destination</label>
+                                        <div class="space-y-3">
+                                            <div class="form-field">
+                                                <label for="destination_country" class="block text-xs font-medium text-gray-600 mb-1">Country</label>
+                                                <?php echo KIT_Deliveries::selectAllCountries('destination_country', 'destination_country_select', 2, $required = "required", 'destination'); ?>
+                                            </div>
+                                            <div class="form-field">
+                                                <label for="destination_city" class="block text-xs font-medium text-gray-600 mb-1">City</label>
+                                                <?php echo KIT_Deliveries::selectAllCitiesByCountry('destination_city', 'destination_city_select', 2, 6); ?>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Dispatch Date -->
+                                    <div class="form-field">
+                                        <label for="dispatch_date" class="block text-sm font-medium text-gray-700 mb-2">
+                                            Dispatch Date
+                                        </label>
+                                        <input type="date" name="dispatch_date" id="dispatch_date" required
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    </div>
+
+                                    <!-- Truck Number -->
+                                    <div class="form-field">
+                                        <label for="truck_number" class="block text-sm font-medium text-gray-700 mb-2">
+                                            Truck Number
+                                        </label>
+                                        <input type="text" name="truck_number" id="truck_number" required
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                               placeholder="Enter truck number">
+                                    </div>
+
+                                    <!-- Status -->
+                                    <div class="form-field">
+                                        <label for="status" class="block text-sm font-medium text-gray-700 mb-2">
+                                            Delivery Status
+                                        </label>
+                                        <?php
+                                        $deliveries_status = [
+                                            'scheduled' => 'Scheduled',
+                                            'in_transit' => 'In Transit',
+                                            'delivered' => 'Delivered'
+                                        ];
+                                        echo KIT_Commons::simpleSelect(
+                                            '',
+                                            'status',
+                                            'status',
+                                            $deliveries_status,
+                                            'scheduled'
+                                        );
+                            ?>
+                        </div>
+
+                                    <!-- Form Actions -->
+                                    <div class="flex gap-3 pt-4">
+                                        <button type="submit" id="save-delivery-btn"
+                                                class="btn-primary flex-1">
+                                            Save Delivery
+                                        </button>
+                                        <button type="button" id="cancel-edit" 
+                                                class="btn-secondary hidden">
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Create Delivery Tab -->
-            <div id="create-content" class="tab-content" style="display: none;">
-                <div style="background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-                    <h2 style="margin: 0 0 24px 0; font-size: 1.5rem; font-weight: 600; color: #1f2937;">Create New Delivery</h2>
-                    <?= self::deliveryForm(); ?>
-                </div>
+            <!-- Quick Actions Section - Bottom of Page -->
+            <div class="mt-8">
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <a href="?page=08600-waybill-create" class="flex items-center p-4 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition-colors group">
+                            <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-200">
+                                <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <h4 class="font-medium text-gray-900">Create Waybill</h4>
+                                <p class="text-sm text-gray-600">Generate new waybill</p>
+                            </div>
+                        </a>
+
+                        <a href="?page=08600-customers" class="flex items-center p-4 bg-green-50 hover:bg-green-100 rounded-lg border border-green-200 transition-colors group">
+                            <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-green-200">
+                                <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <h4 class="font-medium text-gray-900">Manage Customers</h4>
+                                <p class="text-sm text-gray-600">View and edit customers</p>
+                            </div>
+                        </a>
+
+                        <a href="?page=route-management" class="flex items-center p-4 bg-purple-50 hover:bg-purple-100 rounded-lg border border-purple-200 transition-colors group">
+                            <div class="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-purple-200">
+                                <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-1.447-.894L15 4m0 13V4m-6 3l6-3"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <h4 class="font-medium text-gray-900">Manage Routes</h4>
+                                <p class="text-sm text-gray-600">Configure shipping routes</p>
+                            </div>
+                        </a>
+
+                        <a href="?page=warehouse-waybills" class="flex items-center p-4 bg-orange-50 hover:bg-orange-100 rounded-lg border border-orange-200 transition-colors group">
+                            <div class="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-orange-200">
+                                <svg class="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <h4 class="font-medium text-gray-900">Warehouse</h4>
+                                <p class="text-sm text-gray-600">Manage warehouse waybills</p>
+                            </div>
+                </a>
             </div>
-
-            <!-- Manage Deliveries Tab -->
-            <div id="manage-content" class="tab-content" style="display: none;">
-                <div style="background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-                    <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 24px;">
-                        <h2 style="margin: 0; font-size: 1.5rem; font-weight: 600; color: #1f2937;">Manage Deliveries</h2>
-                        <div style="display: flex; gap: 12px;">
-                            <input type="text" id="delivery-search" placeholder="Search deliveries..." style="padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px;">
-                            <select id="status-filter" style="padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px;">
-                                <option value="">All Status</option>
-                                <option value="scheduled">Scheduled</option>
-                                <option value="in_transit">In Transit</option>
-                                <option value="delivered">Delivered</option>
-                            </select>
-                        </div>
-                    </div>
-                    
-                    <div class="overflow-x-auto">
-                        <?php
-                        $options = [
-                            'itemsPerPage' => 15,
-                            'currentPage' => $_GET['paged'] ?? 1,
-                            'tableClass' => 'w-full bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden',
-                            'emptyMessage' => '<div class="text-center py-16"><h3 class="text-xl font-medium text-gray-900 mb-3">No deliveries found</h3><p class="text-gray-500 mb-6 text-lg">Get started by creating your first delivery</p><button onclick="switchTab(\'create\')" class="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-lg">Create Delivery</button></div>',
-                            'id' => 'deliveriesTable',
-                            'headerClass' => 'bg-gray-50 border-b border-gray-200',
-                            'rowClass' => 'hover:bg-gray-50 transition-colors duration-150 border-b border-gray-100',
-                            'cellClass' => 'px-6 py-4 text-sm text-gray-900',
-                            'headerCellClass' => 'px-6 py-4 text-xs font-semibold text-gray-700 uppercase tracking-wider',
-                        ];
-
-                        $columns = [
-                            'delivery_reference' => ['label' => 'Reference', 'align' => 'text-left'],
-                            'route' => ['label' => 'Route', 'align' => 'text-left'],
-                            'status' => ['label' => 'Status', 'align' => 'text-center'],
-                            'dispatch_date' => ['label' => 'Dispatch Date', 'align' => 'text-center'],
-                            'actions' => ['label' => 'Actions', 'align' => 'text-center'],
-                        ];
-
-                        $delivery_actions = function ($key, $row) {
-                            if ($key === 'delivery_reference') {
-                                return '<span class="font-semibold text-gray-900">' . esc_html($row->delivery_reference) . '</span>';
-                            }
-                            if ($key === 'route') {
-                                return '<span class="text-gray-700">' . esc_html($row->origin_country_name) . ' → ' . esc_html($row->destination_country_name) . '</span>';
-                            }
-                            if ($key === 'status') {
-                                return KIT_Commons::statusBadge($row->status);
-                            }
-                            if ($key === 'dispatch_date') {
-                                return '<span class="text-gray-500">' . date('M j, Y', strtotime($row->dispatch_date)) . '</span>';
-                            }
-                            if ($key === 'actions') {
-                                $html = '<div class="flex space-x-2">';
-                                $html .= '<a href="?page=view-deliveries&delivery_id=' . $row->id . '" class="inline-flex items-center px-3 py-2 text-xs font-medium text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200 transition-colors">View</a>';
-                                $html .= '<a href="?page=deliveries-dashboard&delete_delivery=' . $row->id . '" class="inline-flex items-center px-3 py-2 text-xs font-medium text-red-700 bg-red-100 rounded-lg hover:bg-red-200 transition-colors" onclick="return confirm(\'Are you sure you want to delete this delivery?\');">Delete</a>';
-                                $html .= '</div>';
-                                return $html;
-                            }
-                            return htmlspecialchars(($row->$key ?? '') ?: '');
-                        };
-                                                 echo KIT_Commons::render_versatile_table($deliveries, $columns, $delivery_actions, $options);
-                         ?>
-                     </div>
-                 </div>
-             </div>
+        </div>
+            </div>
         </div>
 
-        <style>
-        /* Hide overlapping WordPress footer text */
-        #wpfooter,
-        .wp-footer,
-        .wp-version,
-        .update-nag,
-        .notice,
-        .updated,
-        .error,
-        .warning {
-            display: none !important;
-        }
-        
-        /* Ensure proper spacing at bottom */
-        .wrap {
-            margin-bottom: 40px !important;
-        }
-        </style>
-        
         <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Tab switching functionality
-            function switchTab(tabName) {
-                // Hide all tab contents
-                document.querySelectorAll('.tab-content').forEach(content => {
-                    content.style.display = 'none';
-                });
-                
-                // Remove active class from all tab buttons
-                document.querySelectorAll('.tab-btn').forEach(btn => {
-                    btn.classList.remove('active');
-                    btn.style.background = 'transparent';
-                    btn.style.color = '#6b7280';
-                    btn.style.boxShadow = 'none';
-                });
-                
-                // Show selected tab content
-                const selectedContent = document.getElementById(tabName + '-content');
-                if (selectedContent) {
-                    selectedContent.style.display = 'block';
-                }
-                
-                // Add active class to selected tab button
-                const selectedBtn = document.getElementById(tabName + '-tab');
-                if (selectedBtn) {
-                    selectedBtn.classList.add('active');
-                    selectedBtn.style.background = 'white';
-                    selectedBtn.style.color = '#374151';
-                    selectedBtn.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-                }
-            }
-            
-            // Make switchTab function globally available
-            window.switchTab = switchTab;
-            
-            // Add click event listeners to tab buttons
-            document.getElementById('overview-tab').addEventListener('click', () => switchTab('overview'));
-            document.getElementById('create-tab').addEventListener('click', () => switchTab('create'));
-            document.getElementById('manage-tab').addEventListener('click', () => switchTab('manage'));
-            
-            // Search and filter functionality
-            const searchInput = document.getElementById('delivery-search');
-            const statusFilter = document.getElementById('status-filter');
-            const tableRows = document.querySelectorAll('#deliveriesTable tbody tr');
-            
-            function filterDeliveries() {
-                const searchTerm = searchInput.value.toLowerCase();
-                const statusFilterValue = statusFilter.value.toLowerCase();
-                
-                tableRows.forEach(row => {
-                    const reference = row.querySelector('td:nth-child(1)')?.textContent.toLowerCase() || '';
-                    const route = row.querySelector('td:nth-child(2)')?.textContent.toLowerCase() || '';
-                    const status = row.querySelector('td:nth-child(3)')?.textContent.toLowerCase() || '';
-                    const date = row.querySelector('td:nth-child(4)')?.textContent.toLowerCase() || '';
-                    
-                    const matchesSearch = reference.includes(searchTerm) || 
-                                        route.includes(searchTerm) || 
-                                        status.includes(searchTerm) || 
-                                        date.includes(searchTerm);
-                    
-                    // Handle status filtering more precisely
-                    let matchesStatus = true;
-                    if (statusFilterValue) {
-                        if (statusFilterValue === 'scheduled') {
-                            matchesStatus = status.includes('scheduled');
-                        } else if (statusFilterValue === 'in_transit') {
-                            matchesStatus = status.includes('in transit') || status.includes('in_transit');
-                        } else if (statusFilterValue === 'delivered') {
-                            matchesStatus = status.includes('delivered');
-                        }
-                    }
-                    
-                    if (matchesSearch && matchesStatus) {
-                        row.style.display = '';
-                    } else {
-                        row.style.display = 'none';
-                    }
-                });
-                
-                // Update table info
-                updateTableInfo();
-            }
-            
-            function updateTableInfo() {
-                const visibleRows = Array.from(tableRows).filter(row => row.style.display !== 'none');
-                const totalRows = tableRows.length;
-                const showingRows = visibleRows.length;
-                
-                // Find and update the table info text
-                const tableInfo = document.querySelector('.table-info');
-                if (tableInfo) {
-                    tableInfo.textContent = `Showing ${showingRows} of ${totalRows} deliveries`;
-                }
-            }
-            
-            if (searchInput) {
-                searchInput.addEventListener('input', filterDeliveries);
-            }
-            
-            if (statusFilter) {
-                statusFilter.addEventListener('change', filterDeliveries);
-            }
-            
-            // Initialize table info
-            updateTableInfo();
-            
-            // Note: Select all functionality removed since checkbox column was removed
-            
-            // Delivery status dropdown functionality
-            window.toggleDropdownDeliveryStatus = function(deliveryId) {
-                const dropdown = document.getElementById('delivery-status-dropdown-' + deliveryId);
-                if (dropdown) {
-                    dropdown.classList.toggle('hidden');
-                }
-            }
-            
-            window.changeDeliveryStatus = function(deliveryId, newStatus) {
-                if (!confirm(`Are you sure you want to change this delivery status to "${newStatus.replace('_', ' ')}"?`)) {
-                    return;
-                }
-                
-                // Determine which AJAX action to call based on the new status
-                let action = '';
-                switch(newStatus) {
-                    case 'in_transit':
-                        action = 'delivery_changeTo_Intransit';
-                        break;
-                    case 'delivered':
-                        action = 'delivery_changeTo_Delivered';
-                        break;
-                    case 'scheduled':
-                        action = 'delivery_changeTo_Scheduled';
-                        break;
-                }
-                
-                if (action) {
-                    const formData = new FormData();
-                    formData.append('action', action);
-                    formData.append('id', deliveryId);
-                    
-                    fetch(ajaxurl, {
-                        method: 'POST',
-                        body: formData
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            alert('Status updated successfully!');
-                            location.reload(); // Refresh to show updated status
-                        } else {
-                            alert('Failed to update status: ' + (data.data || 'Unknown error'));
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                        alert('Error updating status. Please try again.');
+            // Tab functionality
+            document.addEventListener('DOMContentLoaded', function() {
+                const tabButtons = document.querySelectorAll('.tab-button');
+                const tabContents = document.querySelectorAll('.tab-content');
+
+                function switchTab(tabId) {
+                    // Hide all tab contents
+                    tabContents.forEach(content => {
+                        content.classList.add('hidden');
+                        content.classList.remove('active');
                     });
+
+                    // Remove active class from all tab buttons
+                    tabButtons.forEach(button => {
+                        button.classList.remove('active', 'border-blue-500', 'text-blue-600');
+                        button.classList.add('border-transparent', 'text-gray-500');
+                    });
+
+                    // Show selected tab content
+                    const selectedContent = document.getElementById('tab-content-' + tabId);
+                    if (selectedContent) {
+                        selectedContent.classList.remove('hidden');
+                        selectedContent.classList.add('active');
+                    }
+
+                    // Activate selected tab button
+                    const selectedButton = document.getElementById('tab-' + tabId);
+                    if (selectedButton) {
+                        selectedButton.classList.add('active', 'border-blue-500', 'text-blue-600');
+                        selectedButton.classList.remove('border-transparent', 'text-gray-500');
+                    }
                 }
+
+                // Add click event listeners to tab buttons
+                tabButtons.forEach(button => {
+                    button.addEventListener('click', function() {
+                        const tabId = this.id.replace('tab-', '');
+                        switchTab(tabId);
+                    });
+                });
+
+                // Initialize with first tab active
+                switchTab('all-deliveries');
+            });
+
+            // Global function for handling country changes
+            function handleCountryChange(countryId, type) {
+                if (!countryId) return;
                 
-                // Hide the dropdown
-                const dropdown = document.getElementById('delivery-status-dropdown-' + deliveryId);
-                if (dropdown) {
-                    dropdown.classList.add('hidden');
-                }
+                const citySelectId = type === 'origin' ? 'origin_city_select' : 'destination_city_select';
+                const citySelect = document.getElementById(citySelectId);
+                
+                // Show loading state
+                citySelect.innerHTML = '<option value="">Loading cities...</option>';
+                citySelect.disabled = true;
+                
+                // Fetch cities for the selected country
+                jQuery.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'handle_get_cities_for_country',
+                        country_id: countryId,
+                        nonce: jQuery('#nonce').val()
+                    },
+                    success: function(response) {
+                        if (response.success && response.data) {
+                            citySelect.innerHTML = '<option value="">Select City</option>';
+                            response.data.forEach(function(city) {
+                                const option = document.createElement('option');
+                                option.value = city.id;
+                                option.textContent = city.city_name;
+                                citySelect.appendChild(option);
+                            });
+                        } else {
+                            citySelect.innerHTML = '<option value="">No cities found</option>';
+                        }
+                        citySelect.disabled = false;
+                    },
+                    error: function() {
+                        citySelect.innerHTML = '<option value="">Error loading cities</option>';
+                        citySelect.disabled = false;
+                    }
+                });
             }
-            
 
-        });
-        </script>
-
-        <style>
-        /* Tab button hover effects */
-        .tab-btn:hover {
-            background: #e5e7eb !important;
-            color: #374151 !important;
-        }
-        
-        /* Stat card hover effects */
-        .stat-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 12px rgba(0,0,0,0.1);
-            transition: all 0.3s ease;
-        }
-        
-        /* Recent delivery card hover effects */
-        .recent-delivery-card:hover {
-            background: #f3f4f6 !important;
-            transform: translateX(4px);
-            transition: all 0.2s ease;
-        }
-        
-        /* Quick action button hover effects */
-        .quick-action-btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        </style>
-
-            <!-- Quick Links -->
-            <div class="quick-links" style="margin-top: 30px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-                <a href="#" onclick="document.querySelector('#delivery-form324343434344343434pew9kwwsdkfpdsfodskpfosdkpfosdkfposdkfsdpofkdsapofk').scrollIntoView(); return false;" style="display: block; padding: 15px; background: #2563eb; color: white; text-decoration: none; border-radius: 6px; text-align: center;">
-                    <strong>Add New Delivery</strong>
-                </a>
-                <a href="?page=08600-waybill-create" style="display: block; padding: 15px; background: #059669; color: white; text-decoration: none; border-radius: 6px; text-align: center;">
-                    <strong>Create Waybill</strong>
-                </a>
-                <a href="?page=route-management" style="display: block; padding: 15px; background: #dc2626; color: white; text-decoration: none; border-radius: 6px; text-align: center;">
-                    <strong>Manage Routes</strong>
-                </a>
-                <a href="?page=08600-customers" style="display: block; padding: 15px; background: #7c3aed; color: white; text-decoration: none; border-radius: 6px; text-align: center;">
-                    <strong>Manage Customers</strong>
-                </a>
-            </div>
-        </div>
-        <script>
             jQuery(document).ready(function($) {
-                // Handle form submission
-                $('#delivery-form324343434344343434pew9kwwsdkfpdsfodskpfosdkpfosdkfposdkfsdpofksdpofkdsapofk').on('submit', function(e) {
-                    e.preventDefault();
-                    // Get form data
-                    const formData = $(this).serializeArray();
+                // Set minimum date for dispatch date
+                const dispatchDateInput = document.getElementById('dispatch_date');
+                const today = new Date().toISOString().split('T')[0];
+                dispatchDateInput.min = today;
 
-                    // Add the task parameter
+                // Handle form submission
+                $('#delivery-form').on('submit', function(e) {
+                    e.preventDefault();
+                    
+                    // Basic form validation
+                    const requiredFields = ['origin_country', 'destination_country', 'dispatch_date', 'truck_number'];
+                    let isValid = true;
+                    
+                    requiredFields.forEach(function(fieldName) {
+                        const field = document.querySelector(`[name="${fieldName}"]`);
+                        if (!field.value.trim()) {
+                            field.classList.add('border-red-500');
+                            isValid = false;
+                        } else {
+                            field.classList.remove('border-red-500');
+                        }
+                    });
+                    
+                    if (!isValid) {
+                        alert('Please fill in all required fields.');
+                        return;
+                    }
+                    
+                    const formData = $(this).serializeArray();
                     formData.push({
                         name: 'task',
                         value: $('#delivery_id').val() === '0' ? 'create_delivery' : 'update_delivery'
                     });
 
+                    // Show loading state
+                    $('#save-delivery-btn').prop('disabled', true).text('Saving...');
+
                     $.ajax({
                         url: ajaxurl,
                         type: 'POST',
-                        data: $.param(formData), // Convert array to query string
+                        data: $.param(formData),
                         success: function(response) {
                             if (response.success) {
+                                // Show success message
+                                const successMsg = $('<div class="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50">Delivery saved successfully!</div>');
+                                $('body').append(successMsg);
+                                setTimeout(function() {
+                                    successMsg.fadeOut(function() { $(this).remove(); });
                                 location.reload();
+                                }, 2000);
                             } else {
-                                console.log("response.data");
+                                alert('Error: ' + (response.data || 'Unknown error occurred'));
                             }
+                        },
+                        error: function() {
+                            alert('Network error occurred. Please try again.');
+                        },
+                        complete: function() {
+                            $('#save-delivery-btn').prop('disabled', false).text('Save Delivery');
                         }
                     });
                 });
 
+                // Handle "Add Delivery" button
+                $('#add-delivery-btn, #create-first-delivery').on('click', function() {
+                    // Switch to add delivery tab
+                    switchTab('add-delivery');
+                    $('#delivery-form input:first').focus();
+                });
 
+                // Handle edit delivery
+                window.editDelivery = function(deliveryId) {
+                    // TODO: Implement edit functionality
+                    alert('Edit functionality will be implemented');
+                };
+
+                // Handle delete delivery
+                window.deleteDelivery = function(deliveryId) {
+                    if (confirm('Are you sure you want to delete this delivery?')) {
+                        // TODO: Implement delete functionality
+                        alert('Delete functionality will be implemented');
+                    }
+                };
+
+                // Add visual feedback for form interactions
+                $('input, select').on('focus', function() {
+                    $(this).parent().addClass('ring-2 ring-blue-500 ring-opacity-50');
+                }).on('blur', function() {
+                    $(this).parent().removeClass('ring-2 ring-blue-500 ring-opacity-50');
+                });
+
+                // View toggle functionality
+                $('#block-view-btn').on('click', function() {
+                    $('#block-view').removeClass('hidden');
+                    $('#table-view').addClass('hidden');
+                    $('#block-view-btn').removeClass('bg-gray-200 text-gray-700').addClass('bg-blue-600 text-white');
+                    $('#table-view-btn').removeClass('bg-blue-600 text-white').addClass('bg-gray-200 text-gray-700');
+                });
+
+                $('#table-view-btn').on('click', function() {
+                    $('#table-view').removeClass('hidden');
+                    $('#block-view').addClass('hidden');
+                    $('#table-view-btn').removeClass('bg-gray-200 text-gray-700').addClass('bg-blue-600 text-white');
+                    $('#block-view-btn').removeClass('bg-blue-600 text-white').addClass('bg-gray-200 text-gray-700');
+                });
             });
         </script>
     <?php
@@ -1407,11 +1370,7 @@ class KIT_Deliveries
             ['id' => intval($id)]
         );
 
-        if ($updated !== false) {
-            wp_send_json_success('Status updated successfully');
-        } else {
-            wp_send_json_error('Failed to update status');
-        }
+        return $updated !== false ? true : false;
     }
     //Change delivery status from intransit to delivered
     public static function delivery_changeTo_Delivered()
@@ -1426,11 +1385,8 @@ class KIT_Deliveries
             ['id' => intval($id)]
         );
 
-        if ($updated !== false) {
-            wp_send_json_success('Status updated successfully');
-        } else {
-            wp_send_json_error('Failed to update status');
-        }
+        exit(var_dump($wpdb->last_query));
+        return $updated !== false ? true : false;
     }
     //Change delivery status scheduled
     public static function delivery_changeTo_Scheduled()
@@ -1444,11 +1400,7 @@ class KIT_Deliveries
             ['id' => intval($id)]
         );
 
-        if ($updated !== false) {
-            wp_send_json_success('Status updated successfully');
-        } else {
-            wp_send_json_error('Failed to update status');
-        }
+        return $updated !== false ? true : false;
     }
     public static function deliveries_by_CountStat($country)
     {
@@ -1650,10 +1602,14 @@ class KIT_Deliveries
         ob_start();
 
     ?>
-        <select class="<?= KIT_Commons::selectClass() ?>" name="<?php echo esc_attr($name); ?>" id="<?php echo esc_attr($id); ?>" <?php echo $required; ?> " onchange=" gaybitch(this.value, '<?php echo $type; ?>' )">
+        <select class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                name="<?php echo esc_attr($name); ?>" 
+                id="<?php echo esc_attr($id); ?>" 
+                <?php echo $required; ?> 
+                onchange="handleCountryChange(this.value, '<?php echo $type; ?>')">
             <option value="">Select Country</option>
             <?php foreach ($countries as $country): ?>
-                <option value=" <?php echo esc_attr($country->id); ?>" <?php echo ($country_id == $country->id) ? 'selected' : ''; ?>>
+                <option value="<?php echo esc_attr($country->id); ?>" <?php echo ($country_id == $country->id) ? 'selected' : ''; ?>>
                     <?php echo esc_html($country->country_name); ?>
                 </option>
             <?php endforeach; ?>
@@ -1667,7 +1623,10 @@ class KIT_Deliveries
         ob_start();
         $cities = KIT_Deliveries::get_Cities_forCountry($country_id);
     ?>
-        <select class="<?= KIT_Commons::selectClass() ?>" name="<?php echo esc_attr($name); ?>" id="<?php echo esc_attr($id); ?>" <?php echo $required; ?>>
+        <select class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                name="<?php echo esc_attr($name); ?>" 
+                id="<?php echo esc_attr($id); ?>" 
+                <?php echo $required; ?>>
             <option value="">Select City</option>
             <?php foreach ($cities as $city): ?>
                 <option value="<?php echo esc_attr($city->id); ?>" <?php echo ($city_id == $city->id) ? 'selected' : ''; ?>>

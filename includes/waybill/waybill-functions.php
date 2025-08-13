@@ -79,13 +79,8 @@ class KIT_Waybills
 
 
         if ($status === 'invoiced') {
-            // Create a quotation invoice in the kit_quotations table
-            $quotation_invoice = KIT_Quotations::convertToQuotation($waybillno);
-            if ($quotation_invoice) {
-                $msg = (['message' => 'Quotation invoice created successfully.']);
-            } else {
-                $msg = (['message' => 'Failed to create quotation invoice.']);
-            }
+            // Update waybill status to invoiced (quotations removed)
+            $msg = (['message' => 'Waybill status updated to invoiced.']);
         }
 
         // Check if it's AJAX
@@ -442,7 +437,7 @@ class KIT_Waybills
     public static function display_waybill_form()
     {
         wp_enqueue_style('kit-tailwind');
-        wp_enqueue_style('kit-quotations');
+        // Quotations CSS removed
         wp_enqueue_script('kit-scripts');
 
         ob_start();
@@ -1001,6 +996,11 @@ class KIT_Waybills
 
         $waybill_id = $wpdb->insert_id;
 
+        // Track warehouse action if waybill is being warehoused
+        if (isset($_POST['warehoused']) && $_POST['warehoused'] == 1) {
+            self::track_warehouse_action($waybill_no, $waybill_id, $customer_id, 'warehoused', null, 'warehoused');
+        }
+
         // Save items if provided
         if (!empty($data['custom_items'])) {
             self::save_waybill_items($data['custom_items'], $waybill_no, $waybill_id, $vat);
@@ -1541,7 +1541,7 @@ class KIT_Waybills
         FROM {$wpdb->prefix}kit_waybills AS w
         LEFT JOIN {$wpdb->prefix}kit_deliveries AS dt ON w.delivery_id = dt.id
         LEFT JOIN {$wpdb->prefix}kit_customers AS c ON w.customer_id = c.cust_id
-        LEFT JOIN {$wpdb->prefix}kit_quotations AS q ON q.waybill_id = w.id
+        -- Quotations table join removed
         LEFT JOIN {$wpdb->prefix}users AS u ON u.id = w.approval_userid
         LEFT JOIN {$shipDirectionTable} sd ON dt.direction_id = sd.id 
         LEFT JOIN {$wpdb->prefix}kit_operating_countries oc1 ON sd.origin_country_id = oc1.id 
@@ -1779,7 +1779,7 @@ class KIT_Waybills
                 FROM {$wpdb->prefix}kit_waybills AS w
                 LEFT JOIN {$wpdb->prefix}kit_deliveries AS dt ON w.delivery_id = dt.id
                 LEFT JOIN {$wpdb->prefix}kit_customers AS c ON w.customer_id = c.cust_id
-                LEFT JOIN {$wpdb->prefix}kit_quotations AS q ON q.waybill_id = w.id
+                -- Quotations table join removed
                 LEFT JOIN {$wpdb->prefix}users AS u ON u.id = w.approval_userid
                 LEFT JOIN {$wpdb->prefix}kit_shipping_directions AS us ON u.id = w.approval_userid
                 LEFT JOIN $shipDirectionTable sd ON dt.direction_id = sd.id 
@@ -2133,7 +2133,7 @@ class KIT_Waybills
         LEFT JOIN {$wpdb->prefix}kit_customers as c ON w.customer_id = c.id
         LEFT JOIN {$wpdb->prefix}kit_deliveries as d ON w.delivery_id = d.id
         LEFT JOIN {$wpdb->users} as u ON w.created_by = u.ID
-        LEFT JOIN {$wpdb->prefix}kit_quotations as q ON w.id = q.waybill_id
+        -- Quotations table join removed
         WHERE w.id = %d", $waybill_id));
     }
 
@@ -2270,6 +2270,39 @@ class KIT_Waybills
             $validate['vat'] = false;
         }
         return $validate;
+    }
+
+    /**
+     * Track warehouse actions for waybills
+     * 
+     * @param int $waybill_no Waybill number
+     * @param int $waybill_id Waybill ID
+     * @param int $customer_id Customer ID
+     * @param string $action Action type (warehoused, assigned, removed)
+     * @param string|null $previous_status Previous status
+     * @param string $new_status New status
+     * @param int|null $assigned_delivery_id Delivery ID if assigned
+     * @param string $notes Additional notes
+     */
+    public static function track_warehouse_action($waybill_no, $waybill_id, $customer_id, $action, $previous_status = null, $new_status = null, $assigned_delivery_id = null, $notes = '')
+    {
+        global $wpdb;
+        
+        $tracking_table = $wpdb->prefix . 'kit_warehouse_tracking';
+        
+        $tracking_data = [
+            'waybill_no' => $waybill_no,
+            'waybill_id' => $waybill_id,
+            'customer_id' => $customer_id,
+            'action' => $action,
+            'previous_status' => $previous_status,
+            'new_status' => $new_status,
+            'assigned_delivery_id' => $assigned_delivery_id,
+            'notes' => $notes,
+            'created_by' => get_current_user_id()
+        ];
+        
+        $wpdb->insert($tracking_table, $tracking_data);
     }
 
     public static function deleteWaybillItems($waybill_no)

@@ -9,7 +9,6 @@ if (!defined('ABSPATH')) {
     <hr class="wp-header-end">
 
     <div class="help-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
-        
         <!-- User Manual -->
         <div class="help-card" style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
             <h3 style="margin: 0 0 15px 0; color: #2563eb;">User Manual</h3>
@@ -63,10 +62,10 @@ if (!defined('ABSPATH')) {
             <h3 style="margin: 0 0 15px 0; color: #7c3aed;">Contact Support</h3>
             <ul style="list-style: none; padding: 0; margin: 0;">
                 <li style="margin-bottom: 10px;">
-                    <a href="mailto:support@08600.co.za" class="button button-secondary" style="width: 100%; text-align: left;">Email Support</a>
+                    <a href="mailto:info@kayiseit.co.za" class="button button-secondary" style="width: 100%; text-align: left;">Email Support</a>
                 </li>
                 <li style="margin-bottom: 10px;">
-                    <a href="tel:+27111234567" class="button button-secondary" style="width: 100%; text-align: left;">Phone Support</a>
+                    <a href="tel:0877022625" class="button button-secondary" style="width: 100%; text-align: left;">Phone Support</a>
                 </li>
                 <li style="margin-bottom: 10px;">
                     <a href="#" class="button button-secondary" style="width: 100%; text-align: left;">Live Chat</a>
@@ -110,11 +109,11 @@ if (!defined('ABSPATH')) {
     <!-- Quick Support Info -->
     <div class="support-info" style="margin-top: 30px; background: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #2563eb;">
         <h3 style="margin: 0 0 15px 0; color: #2563eb;">Need Immediate Help?</h3>
-        <p style="margin: 0 0 10px 0; color: #64748b;">
-            <strong>Email:</strong> support@08600.co.za<br>
-            <strong>Phone:</strong> +27 11 123 4567<br>
-            <strong>Hours:</strong> Monday - Friday, 8:00 AM - 6:00 PM (SAST)
-        </p>
+                    <p style="margin: 0 0 10px 0; color: #64748b;">
+                <strong>Email:</strong> info@kayiseit.co.za<br>
+                <strong>Phone:</strong> 0877022625<br>
+                <strong>Hours:</strong> Monday - Friday, 8:00 AM - 6:00 PM (SAST)
+            </p>
         <p style="margin: 0; color: #64748b;">
             For urgent issues outside business hours, please email us and we'll respond as soon as possible.
         </p>

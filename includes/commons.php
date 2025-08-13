@@ -5,22 +5,38 @@ class KIT_Commons
     {
         add_shortcode('showheader', [self::class, 'showingHeader']);
         add_shortcode('kitbutton', [self::class, 'kitButton']);
+        
+        // Register AJAX handlers for status updates
+        add_action('wp_ajax_update_delivery_status', [self::class, 'ajax_update_delivery_status']);
+        add_action('wp_ajax_update_waybill_status', [self::class, 'ajax_update_waybill_status']);
     }
 
-    public static function statusBadge($status, $addClass = null)
+    public static function statusBadge($status, $addClass = null, $dataAttributes = [])
     {
-
         $status = strtolower($status);
         $badge_classes = [
             'rejected' => 'border border-red-300 bg-red-50 text-red-800',
             'pending' => 'border border-yellow-300 bg-yellow-50 text-yellow-800',
-            'approved' => 'border border-green-300 bg-green-50 text-green-800'
+            'approved' => 'border border-green-300 bg-green-50 text-green-800',
+            'shipped' => 'border border-green-300 bg-green-50 text-green-800',
+            'delivered' => 'border border-blue-300 bg-blue-50 text-blue-800',
+            'cancelled' => 'border border-red-300 bg-red-50 text-red-800',
+            'completed' => 'border border-blue-300 bg-blue-50 text-blue-800'
         ];
 
         $class = $badge_classes[$status] ?? 'bg-gray-100 text-gray-800';
         $display_text = ucfirst($status);
+        
+        // Build data attributes
+        $dataAttrs = '';
+        foreach ($dataAttributes as $key => $value) {
+            $dataAttrs .= ' data-' . $key . '="' . esc_attr($value) . '"';
+        }
+        
+        // Add status as data attribute for filtering
+        $dataAttrs .= ' data-status="' . esc_attr($status) . '"';
 
-        return '<span class="inline-flex items-center px-5 py-2 rounded-lg text-xs font-medium ' . $class . '">'
+        return '<span class="inline-flex items-center px-5 py-2 rounded-lg text-xs font-medium ' . $class . '"' . $dataAttrs . '>'
             . $display_text . '</span>';
     }
 
@@ -989,9 +1005,319 @@ class KIT_Commons
             {
                 return 'text-xs w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 border border-gray-300 rounded px-3 py-2 bg-white';
             }
+            /**
+             * 08600 Button Theme System - Tailwind CSS Based
+             * Following 60-30-10 color rule with Blue (#2563eb) as primary
+             */
+            
+            // Base button classes
             public static function buttonClass()
             {
-                return 'inline-flex items-center px-4 py-2 text-xs font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2';
+                return 'inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg font-medium text-sm transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed';
+            }
+            
+            // Primary button (60% - Main Blue)
+            public static function buttonPrimary($size = 'md', $fullWidth = false)
+            {
+                $sizeClasses = [
+                    'sm' => 'px-4 py-2 text-xs',
+                    'md' => 'px-6 py-3 text-sm',
+                    'lg' => 'px-8 py-4 text-base',
+                    'xl' => 'px-10 py-5 text-lg'
+                ];
+                
+                $widthClass = $fullWidth ? 'w-full' : '';
+                
+                return 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white shadow-sm hover:shadow-md hover:-translate-y-0.5 focus:ring-blue-500 ' . $sizeClasses[$size] . ' ' . $widthClass;
+            }
+            
+            // Secondary button (30% - Gray)
+            public static function buttonSecondary($size = 'md', $fullWidth = false)
+            {
+                $sizeClasses = [
+                    'sm' => 'px-4 py-2 text-xs',
+                    'md' => 'px-6 py-3 text-sm',
+                    'lg' => 'px-8 py-4 text-base',
+                    'xl' => 'px-10 py-5 text-lg'
+                ];
+                
+                $widthClass = $fullWidth ? 'w-full' : '';
+                
+                return 'bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-700 border border-gray-300 hover:border-gray-400 focus:ring-gray-500 ' . $sizeClasses[$size] . ' ' . $widthClass;
+            }
+            
+            // Success button (10% - Green)
+            public static function buttonSuccess($size = 'md', $fullWidth = false)
+            {
+                $sizeClasses = [
+                    'sm' => 'px-4 py-2 text-xs',
+                    'md' => 'px-6 py-3 text-sm',
+                    'lg' => 'px-8 py-4 text-base',
+                    'xl' => 'px-10 py-5 text-lg'
+                ];
+                
+                $widthClass = $fullWidth ? 'w-full' : '';
+                
+                return 'bg-green-600 hover:bg-green-700 active:bg-green-800 text-white shadow-sm hover:shadow-md hover:-translate-y-0.5 focus:ring-green-500 ' . $sizeClasses[$size] . ' ' . $widthClass;
+            }
+            
+            // Danger button (10% - Red)
+            public static function buttonDanger($size = 'md', $fullWidth = false)
+            {
+                $sizeClasses = [
+                    'sm' => 'px-4 py-2 text-xs',
+                    'md' => 'px-6 py-3 text-sm',
+                    'lg' => 'px-8 py-4 text-base',
+                    'xl' => 'px-10 py-5 text-lg'
+                ];
+                
+                $widthClass = $fullWidth ? 'w-full' : '';
+                
+                return 'bg-red-600 hover:bg-red-700 active:bg-red-800 text-white shadow-sm hover:shadow-md hover:-translate-y-0.5 focus:ring-red-500 ' . $sizeClasses[$size] . ' ' . $widthClass;
+            }
+            
+            // Warning button (10% - Orange)
+            public static function buttonWarning($size = 'md', $fullWidth = false)
+            {
+                $sizeClasses = [
+                    'sm' => 'px-4 py-2 text-xs',
+                    'md' => 'px-6 py-3 text-sm',
+                    'lg' => 'px-8 py-4 text-base',
+                    'xl' => 'px-10 py-5 text-lg'
+                ];
+                
+                $widthClass = $fullWidth ? 'w-full' : '';
+                
+                return 'bg-orange-600 hover:bg-orange-700 active:bg-orange-800 text-white shadow-sm hover:shadow-md hover:-translate-y-0.5 focus:ring-orange-500 ' . $sizeClasses[$size] . ' ' . $widthClass;
+            }
+            
+            // Outline button variants
+            public static function buttonOutlinePrimary($size = 'md', $fullWidth = false)
+            {
+                $sizeClasses = [
+                    'sm' => 'px-4 py-2 text-xs',
+                    'md' => 'px-6 py-3 text-sm',
+                    'lg' => 'px-8 py-4 text-base',
+                    'xl' => 'px-10 py-5 text-lg'
+                ];
+                
+                $widthClass = $fullWidth ? 'w-full' : '';
+                
+                return 'bg-transparent hover:bg-blue-50 text-blue-600 border-2 border-blue-600 hover:border-blue-700 focus:ring-blue-500 ' . $sizeClasses[$size] . ' ' . $widthClass;
+            }
+            
+            public static function buttonOutlineSecondary($size = 'md', $fullWidth = false)
+            {
+                $sizeClasses = [
+                    'sm' => 'px-4 py-2 text-xs',
+                    'md' => 'px-6 py-3 text-sm',
+                    'lg' => 'px-8 py-4 text-base',
+                    'xl' => 'px-10 py-5 text-lg'
+                ];
+                
+                $widthClass = $fullWidth ? 'w-full' : '';
+                
+                return 'bg-transparent hover:bg-gray-50 text-gray-600 border-2 border-gray-300 hover:border-gray-400 focus:ring-gray-500 ' . $sizeClasses[$size] . ' ' . $widthClass;
+            }
+            
+            // Ghost button variants
+            public static function buttonGhost($size = 'md', $fullWidth = false)
+            {
+                $sizeClasses = [
+                    'sm' => 'px-4 py-2 text-xs',
+                    'md' => 'px-6 py-3 text-sm',
+                    'lg' => 'px-8 py-4 text-base',
+                    'xl' => 'px-10 py-5 text-lg'
+                ];
+                
+                $widthClass = $fullWidth ? 'w-full' : '';
+                
+                return 'bg-transparent hover:bg-gray-100 text-gray-600 hover:text-gray-800 focus:ring-gray-500 ' . $sizeClasses[$size] . ' ' . $widthClass;
+            }
+            
+            public static function buttonGhostPrimary($size = 'md', $fullWidth = false)
+            {
+                $sizeClasses = [
+                    'sm' => 'px-4 py-2 text-xs',
+                    'md' => 'px-6 py-3 text-sm',
+                    'lg' => 'px-8 py-4 text-base',
+                    'xl' => 'px-10 py-5 text-lg'
+                ];
+                
+                $widthClass = $fullWidth ? 'w-full' : '';
+                
+                return 'bg-transparent hover:bg-blue-50 text-blue-600 hover:text-blue-700 focus:ring-gray-500 ' . $sizeClasses[$size] . ' ' . $widthClass;
+            }
+            
+            // Tab button styles
+            public static function buttonTab($active = false)
+            {
+                if ($active) {
+                    return 'bg-white text-gray-900 shadow-sm border border-gray-200 px-6 py-3 rounded-lg font-medium text-sm transition-all duration-200';
+                }
+                return 'bg-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50 px-6 py-3 rounded-lg font-medium text-sm transition-all duration-200';
+            }
+            
+            // Toggle button styles
+            public static function buttonToggle($active = false)
+            {
+                if ($active) {
+                    return 'bg-white text-gray-900 shadow-sm border border-gray-200 px-4 py-2 rounded-md font-medium text-sm transition-all duration-200';
+                }
+                return 'bg-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-md font-medium text-sm transition-all duration-200';
+            }
+            
+            // Link button styles
+            public static function buttonLink($size = 'md')
+            {
+                $sizeClasses = [
+                    'sm' => 'px-3 py-1 text-xs',
+                    'md' => 'px-4 py-2 text-sm',
+                    'lg' => 'px-6 py-3 text-base'
+                ];
+                
+                return 'bg-transparent text-blue-600 hover:text-blue-700 hover:underline focus:ring-blue-500 ' . $sizeClasses[$size];
+            }
+            
+            // Icon button styles
+            public static function buttonIcon($size = 'md')
+            {
+                $sizeClasses = [
+                    'sm' => 'p-2 w-8 h-8',
+                    'md' => 'p-3 w-10 h-10',
+                    'lg' => 'p-4 w-12 h-12'
+                ];
+                
+                return 'inline-flex items-center justify-center rounded-lg transition-all duration-200 ' . $sizeClasses[$size];
+            }
+            
+            // Loading state
+            public static function buttonLoading()
+            {
+                return 'relative text-transparent';
+            }
+            
+            // Disabled state
+            public static function buttonDisabled()
+            {
+                return 'opacity-50 cursor-not-allowed pointer-events-none';
+            }
+            
+            /**
+             * Generate complete button HTML with consistent styling
+             */
+            public static function renderButton($text, $type = 'primary', $size = 'md', $options = [])
+            {
+                $defaults = [
+                    'href' => null,
+                    'onclick' => null,
+                    'disabled' => false,
+                    'loading' => false,
+                    'fullWidth' => false,
+                    'icon' => null,
+                    'iconPosition' => 'left', // 'left' or 'right'
+                    'classes' => '',
+                    'id' => null,
+                    'name' => null,
+                    'value' => null,
+                    'type' => 'button'
+                ];
+                
+                $options = array_merge($defaults, $options);
+                
+                // Get base classes
+                $baseClasses = self::buttonClass();
+                
+                // Get type-specific classes
+                $typeClasses = '';
+                switch ($type) {
+                    case 'primary':
+                        $typeClasses = self::buttonPrimary($size, $options['fullWidth']);
+                        break;
+                    case 'secondary':
+                        $typeClasses = self::buttonSecondary($size, $options['fullWidth']);
+                        break;
+                    case 'success':
+                        $typeClasses = self::buttonSuccess($size, $options['fullWidth']);
+                        break;
+                    case 'danger':
+                        $typeClasses = self::buttonDanger($size, $options['fullWidth']);
+                        break;
+                    case 'warning':
+                        $typeClasses = self::buttonWarning($size, $options['fullWidth']);
+                        break;
+                    case 'outline-primary':
+                        $typeClasses = self::buttonOutlinePrimary($size, $options['fullWidth']);
+                        break;
+                    case 'outline-secondary':
+                        $typeClasses = self::buttonOutlineSecondary($size, $options['fullWidth']);
+                        break;
+                    case 'ghost':
+                        $typeClasses = self::buttonGhost($size, $options['fullWidth']);
+                        break;
+                    case 'ghost-primary':
+                        $typeClasses = self::buttonGhostPrimary($size, $options['fullWidth']);
+                        break;
+                    case 'link':
+                        $typeClasses = self::buttonLink($size);
+                        break;
+                    default:
+                        $typeClasses = self::buttonPrimary($size, $options['fullWidth']);
+                }
+                
+                // Add loading state
+                if ($options['loading']) {
+                    $typeClasses .= ' ' . self::buttonLoading();
+                }
+                
+                // Add disabled state
+                if ($options['disabled']) {
+                    $typeClasses .= ' ' . self::buttonDisabled();
+                }
+                
+                // Combine all classes
+                $allClasses = trim($baseClasses . ' ' . $typeClasses . ' ' . $options['classes']);
+                
+                // Build attributes
+                $attributes = [];
+                if ($options['id']) $attributes[] = 'id="' . esc_attr($options['id']) . '"';
+                if ($options['name']) $attributes[] = 'name="' . esc_attr($options['name']) . '"';
+                if ($options['value']) $attributes[] = 'value="' . esc_attr($options['value']) . '"';
+                if ($options['onclick']) $attributes[] = 'onclick="' . esc_js($options['onclick']) . '"';
+                if ($options['disabled']) $attributes[] = 'disabled';
+                if ($options['type']) $attributes[] = 'type="' . esc_attr($options['type']) . '"';
+                
+                $attributesStr = implode(' ', $attributes);
+                
+                // Build content
+                $content = '';
+                
+                // Add icon if specified
+                if ($options['icon'] && $options['iconPosition'] === 'left') {
+                    $content .= '<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">' . $options['icon'] . '</svg>';
+                }
+                
+                $content .= '<span>' . esc_html($text) . '</span>';
+                
+                // Add icon if specified (right position)
+                if ($options['icon'] && $options['iconPosition'] === 'right') {
+                    $content .= '<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">' . $options['icon'] . '</svg>';
+                }
+                
+                // Add loading spinner
+                if ($options['loading']) {
+                    $content .= '<svg class="absolute w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>';
+                }
+                
+                // Return button HTML
+                if ($options['href']) {
+                    return '<a href="' . esc_url($options['href']) . '" class="' . $allClasses . '" ' . $attributesStr . '>' . $content . '</a>';
+                } else {
+                    return '<button class="' . $allClasses . '" ' . $attributesStr . '>' . $content . '</button>';
+                }
             }
             public static function labelClass()
             {
@@ -1357,29 +1683,20 @@ class KIT_Commons
 
                 addBtn.addEventListener('click', function() {
                     const newItem = document.createElement('div');
-                    newItem.className = 'flex flex-row gap-2 waybill-item rounded-lg shadow-sm';
+                    newItem.className = 'misc-item';
+                    newItem.style = 'display: flex; gap: 10px; margin-bottom: 10px; align-items: center;';
                     newItem.innerHTML = `
-                    <div class="w-full md:w-1/3">
-                        <label class="<?php echo esc_js($defaults['label_class']) . " " . $options['specialClass'] ?>">Item</label>
-                        <input type="text" tabindex="1" name="<?php echo esc_js($options['group_name']); ?>[${itemIndex}][item_name]" 
-                               class="<?php echo esc_js($defaults['input_class']); ?>" 
-                               placeholder="e.g. Laptop, Router, etc">
-                    </div>
-                    <div class="w-full md:w-1/6">
-                        <label class="<?php echo esc_js($options['label_class']) . " " . $options['specialClass']; ?>">Qty</label>
-                        <input type="number" tabindex="2" name="<?php echo esc_js($options['group_name']); ?>[${itemIndex}][quantity]" 
-                               class="<?php echo esc_js($defaults['input_class']); ?> w-full" value="1">
-                    </div>
-                    <div class="w-full md:w-1/3">
-                        <label class="<?php echo esc_js($options['label_class']) . " " . $options['specialClass']; ?>">Unit Price</label>
-                        <input type="number" tabindex="3" name="<?php echo esc_js($options['group_name']); ?>[${itemIndex}][unit_price]" 
-                               class="<?php echo esc_js($defaults['input_class']); ?> w-full">
-                    </div>
-
-                    <div class="w-full md:w-auto flex items-end">
-                        
-                        <button type="button" class="remove-item <?php echo esc_attr($options['remove_btn_class']); ?>" title="Delete" style="background-color: #ef4444; color: white; padding: 8px; border-radius: 4px; border: none; cursor: pointer;">×</button>
-                    </div>
+                    <input type="text" name="<?php echo esc_js($options['group_name']); ?>[misc_item][]" 
+                           class="<?php echo esc_js(self::inputClass() . ' ' . $options['input_class']); ?>" 
+                           style="flex: 2;" placeholder="Item name">
+                    <input type="number" name="<?php echo esc_js($options['group_name']); ?>[misc_price][]" 
+                           class="<?php echo esc_js(self::inputClass() . ' ' . $options['input_class']); ?>" 
+                           style="flex: 1;" placeholder="Amount">
+                    <input type="number" name="<?php echo esc_js($options['group_name']); ?>[misc_quantity][]" 
+                           class="<?php echo esc_js(self::inputClass() . ' ' . $options['input_class']); ?>" 
+                           style="flex: 1;" placeholder="Qty">
+                    <button type="button" class="remove-misc-btn" 
+                            style="background-color: #ef4444; color: white; padding: 8px; border-radius: 4px; border: none; cursor: pointer;">×</button>
                 `;
                     container.appendChild(newItem);
                     itemIndex++;
@@ -1387,11 +1704,8 @@ class KIT_Commons
 
                 // Event delegation for remove buttons
                 document.addEventListener('click', function(e) {
-                    if (e.target.classList.contains('remove-item') ||
-                        e.target.closest('.remove-item')) {
-                        const btn = e.target.classList.contains('remove-item') ?
-                            e.target : e.target.closest('.remove-item');
-                        btn.closest('.waybill-item').remove();
+                    if (e.target.classList.contains('remove-misc-btn')) {
+                        e.target.closest('.misc-item').remove();
                     }
                 });
             });
@@ -1488,6 +1802,10 @@ class KIT_Commons
 
                 public static function render_versatile_table($data, $columns, $cell_callback = null, $options = [])
                 {
+                    // Generate unique table ID for search functionality
+                    $table_id = $options['id'] ?? 'versatile-table-' . uniqid();
+                    
+                    // Handle bulk actions
                     if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['bulk_action'])) {
                         $selectedRows = $_POST['selected_rows'];
                         $action = $_POST['bulk_action'];
@@ -1543,32 +1861,97 @@ class KIT_Commons
                         return;
                     }
 
+                    // Modern Search and Filter Controls (only if not disabled)
+                    if (!isset($options['disable_search']) || !$options['disable_search']) {
+                        echo '<div class="bg-white border border-gray-200 rounded-lg p-4 mb-6 shadow-sm">';
+                        echo '<div class="flex flex-wrap items-center gap-4">';
+                        
+                        // Search Bar
+                        echo '<div class="flex-1 min-w-64">';
+                        echo '<div class="relative">';
+                        echo '<div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">';
+                        echo '<svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">';
+                        echo '<path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />';
+                        echo '</svg>';
+                        echo '</div>';
+                        echo '<input type="text" id="search-' . $table_id . '" placeholder="Search..." class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm">';
+                        echo '</div>';
+                        echo '</div>';
+                        
+                        // Filter Dropdown (Status by default, overridable)
+                        if (!isset($options['disable_filters']) || !$options['disable_filters']) {
+                            echo '<div class="flex-shrink-0">';
+                            $filterLabel = $options['filterOverride'] ?? '';
+                            if ($filterLabel === 'country') {
+                                // Country filter replaces status
+                                echo '<select id="status-filter-' . $table_id . '" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white">';
+                                echo '<option value="">All countries</option>';
+                                global $wpdb; $countries = $wpdb->get_results("SELECT id, country_name FROM {$wpdb->prefix}kit_operating_countries ORDER BY country_name");
+                                if ($countries) { foreach ($countries as $c) { echo '<option data-text="' . esc_attr(strtolower($c->country_name)) . '" value="' . intval($c->id) . '">' . esc_html($c->country_name) . '</option>'; } }
+                                echo '</select>';
+                            } else {
+                                // Default Status filter
+                                echo '<select id="status-filter-' . $table_id . '" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white">';
+                                echo '<option value="">All Status</option>';
+                                echo '<option value="pending">Pending</option>';
+                                echo '<option value="shipped">Shipped</option>';
+                                echo '<option value="delivered">Delivered</option>';
+                                echo '<option value="cancelled">Cancelled</option>';
+                                echo '</select>';
+                            }
+                            echo '</div>';
+                            
+                            // Date Filter (keep for non-country mode)
+                            echo '<div class="flex-shrink-0">';
+                            echo '<div class="relative">';
+                            echo '<input type="date" id="date-filter-' . $table_id . '" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white">';
+                            echo '</div>';
+                            echo '</div>';
+                        }
+                        
+                        // Add New Button
+                        if (isset($options['add_button'])) {
+                            echo '<div class="flex-shrink-0">';
+                            echo '<button type="button" onclick="' . $options['add_button']['onclick'] . '" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">';
+                            echo '<svg class="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">';
+                            echo '<path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd" />';
+                            echo '</svg>';
+                            echo $options['add_button']['text'];
+                            echo '</button>';
+                            echo '</div>';
+                        }
+                        
+                        echo '</div>';
+                        echo '</div>';
+                    }
+
                     echo KIT_Commons::paginationSelect($itemsPerPage, $totalPages, $currentPage);
 
                     // ✅ Bulk Actions Form START (POST)
                     echo '<form method="POST" action="' . esc_url($_SERVER['REQUEST_URI']) . '&bulk_action=delete" id="bulkActionForm">';
 
-                    // Table
-                    echo '<div class="rounded-xl border border-gray-200 shadow-sm">';
-                    echo '<table class="min-w-full divide-y divide-gray-200 text-sm bg-white">';
-                    echo '<thead class="bg-gray-50 text-xs text-gray-700 uppercase tracking-wide">';
+                    // Modern Table Container
+                    echo '<div class="bg-white shadow-sm border border-gray-200 rounded-lg overflow-hidden">';
+                    echo '<table id="' . $table_id . '" class="min-w-full divide-y divide-gray-200">';
+                    echo '<thead class="bg-gray-50">';
                     echo '<tr>';
 
                     // Select All Checkbox Header
-                    echo '<th class="px-2 py-2 text-center w-5 ">';
-                    echo '<input type="checkbox" class="selectAllRows w-4 h-4">';
+                    echo '<th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">';
+                    echo '<input type="checkbox" class="selectAllRows w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">';
                     echo '</th>';
 
                     foreach ($columns as $key => $header) {
-
                         $label = $header['label'];
                         $align = $header['align'];
-                        echo '<th class="' . $align . '">' . htmlspecialchars($label) . '</th>';
+                        echo '<th scope="col" class="' . $align . ' px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">';
+                        echo htmlspecialchars($label);
+                        echo '</th>';
                     }
 
                     echo '</tr>';
                     echo '</thead>';
-                    echo '<tbody class="divide-y divide-gray-100 ">';
+                    echo '<tbody class="bg-white divide-y divide-gray-200">';
 
                     foreach ($pagedData as $row) {
 
@@ -1583,16 +1966,16 @@ class KIT_Commons
                             $rowId = htmlspecialchars($row->id ?? '');
                         }
 
-                        echo '<tr class="hover:bg-gray-50 transition" data-row-id="' . $rowId . '">';
+                        echo '<tr class="hover:bg-gray-50 transition-colors duration-200" data-row-id="' . $rowId . '">';
 
                         // Checkbox with name and value for bulk actions
-                        echo '<td class="px-2 py-2 text-center">';
-                        echo '<input type="checkbox" name="selected_rows[]" value="' . $rowId . '" class="selectRow w-4 h-4">';
+                        echo '<td class="px-6 py-4 whitespace-nowrap">';
+                        echo '<input type="checkbox" name="selected_rows[]" value="' . $rowId . '" class="selectRow w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">';
                         echo '</td>';
 
                         foreach ($columns as $key => $label) {
                             $alignment = $label['align'];
-                            echo '<td class="' . $alignment . '">';
+                            echo '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">';
                             if ($cell_callback && is_callable($cell_callback)) {
                                 echo $cell_callback($key, $row);
                             } else {
@@ -1608,32 +1991,52 @@ class KIT_Commons
                     echo '</table>';
                     echo '</div>';
 
-                    // Bulk Actions Buttons (still inside the same form)
-                    echo '<div class="bg-slate-100 rounded p-3 flex flex-wrap items-center justify-start gap-2 text-sm text-gray-100">';
-                    echo '<select name="bulk_action" class="rounded-md border-gray-300 bg-white px-5 py-1 text-sm text-gray-800 shadow-sm">';
-                    echo '<option value="">Bulk actions</option>';
-                    if ($invoicing = true) {
-                        echo '<option value="bulkInvoice">Bulk Invoice</option>';
+                    // Modern Bulk Actions
+                    echo '<div class="bg-gray-50 px-6 py-3 border-t border-gray-200">';
+                    echo '<div class="flex items-center justify-between">';
+                    echo '<div class="flex items-center space-x-3">';
+                    echo '<select name="bulk_action" class="rounded-md border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500">';
+                    echo '<option value="">Bulk Actions</option>';
+                    if (isset($options['bulk_actions'])) {
+                        foreach ($options['bulk_actions'] as $action => $label) {
+                            echo '<option value="' . $action . '">' . $label . '</option>';
+                        }
+                    } else {
+                        if (isset($invoicing) && $invoicing) {
+                            echo '<option value="bulkInvoice">Bulk Invoice</option>';
+                        }
+                        echo '<option value="delete">Delete</option>';
+                        echo '<option value="export">Export</option>';
                     }
-                    echo '<option value="delete">Delete</option>';
-                    echo '<option value="export">Export</option>';
                     echo '</select>';
-                    echo '<button type="submit" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Apply</button>';
+                    echo '<button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">Apply</button>';
+                    echo '</div>';
+                    echo '<div class="text-sm text-gray-500">';
+                    echo '<span id="selected-count-' . $table_id . '">0</span> items selected';
+                    echo '</div>';
+                    echo '</div>';
                     echo '</div>';
 
                     echo '</form>';  // ✅ Bulk Actions Form END
 
-
-                    // JavaScript for Select All
+                    // Enhanced JavaScript for Select All and Dynamic Search
                     ?>
         <script>
             document.addEventListener('DOMContentLoaded', function() {
-                const selectAll = document.querySelector('.selectAllRows');
-                const rowCheckboxes = document.querySelectorAll('.selectRow');
+                const tableId = '<?php echo $table_id; ?>';
+                const table = document.getElementById(tableId);
+                const searchInput = document.getElementById('search-' + tableId);
+                const statusFilter = document.getElementById('status-filter-' + tableId);
+                const dateFilter = document.getElementById('date-filter-' + tableId);
+                const selectAll = table.querySelector('.selectAllRows');
+                const rowCheckboxes = table.querySelectorAll('.selectRow');
+                const selectedCountSpan = document.getElementById('selected-count-' + tableId);
 
+                // Select All functionality
                 if (selectAll) {
                     selectAll.addEventListener('change', function() {
                         rowCheckboxes.forEach(cb => cb.checked = selectAll.checked);
+                        updateSelectedCount();
                     });
                 }
 
@@ -1641,8 +2044,82 @@ class KIT_Commons
                     cb.addEventListener('change', function() {
                         const allChecked = Array.from(rowCheckboxes).every(checkbox => checkbox.checked);
                         selectAll.checked = allChecked;
+                        updateSelectedCount();
                     });
                 });
+
+                // Update selected count
+                function updateSelectedCount() {
+                    const selectedCount = table.querySelectorAll('.selectRow:checked').length;
+                    if (selectedCountSpan) {
+                        selectedCountSpan.textContent = selectedCount;
+                    }
+                }
+
+                // Dynamic Search functionality (only if not disabled)
+                if (searchInput && (!<?php echo isset($options['disable_search']) && $options['disable_search'] ? 'true' : 'false'; ?>)) {
+                    searchInput.addEventListener('input', function() {
+                        filterTable();
+                    });
+                }
+
+                // Status filter (only if not disabled)
+                if (statusFilter && (!<?php echo isset($options['disable_filters']) && $options['disable_filters'] ? 'true' : 'false'; ?>)) {
+                    statusFilter.addEventListener('change', function() {
+                        filterTable();
+                    });
+                }
+
+                // Date filter (only if not disabled)
+                if (dateFilter && (!<?php echo isset($options['disable_filters']) && $options['disable_filters'] ? 'true' : 'false'; ?>)) {
+                    dateFilter.addEventListener('change', function() {
+                        filterTable();
+                    });
+                }
+
+                // Immediate filter without animations (undo cascade)
+                function filterTable() {
+                    const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
+                    const statusValue = statusFilter ? statusFilter.value.toLowerCase() : '';
+                    const dateValue = dateFilter ? dateFilter.value : '';
+                    const rows = table.querySelectorAll('tbody tr');
+                    rows.forEach(row => {
+                        const text = row.textContent.toLowerCase();
+                        const statusCell = row.querySelector('[data-status]');
+                        const dateCell = row.querySelector('[data-date]');
+                        let showRow = true;
+                        if (searchTerm && !text.includes(searchTerm)) showRow = false;
+                        <?php if (isset($options['filterOverride']) && $options['filterOverride'] === 'country') { ?>
+                            if (statusFilter && statusFilter.value) {
+                                const ths = table.querySelectorAll('thead th');
+                                let idx = -1; for (let i=0;i<ths.length;i++){ if ((ths[i].textContent||'').trim().toLowerCase()==='country'){ idx=i; break; } }
+                                if (idx>=0){
+                                    const cCell = row.querySelector('td:nth-child('+(idx+1)+')');
+                                    const cText = (cCell && cCell.textContent ? cCell.textContent : '').trim().toLowerCase();
+                                    const opt = statusFilter.options[statusFilter.selectedIndex];
+                                    const sel = (opt && (opt.getAttribute('data-text')||opt.textContent)).toLowerCase();
+                                    if (cText !== sel) showRow = false;
+                                }
+                            }
+                        <?php } else { ?>
+                            if (statusValue){
+                                if (statusCell){
+                                    const rowStatus = statusCell.getAttribute('data-status').toLowerCase();
+                                    if (rowStatus !== statusValue) showRow = false;
+                                } else {
+                                    const ths = table.querySelectorAll('thead th');
+                                    let idx=-1; for (let i=0;i<ths.length;i++){ const l=(ths[i].textContent||'').trim().toLowerCase(); if (l==='status'||l==='approval'){ idx=i; break; } }
+                                    if (idx>=0){ const sCell=row.querySelector('td:nth-child('+(idx+1)+')'); const sText=(sCell&&sCell.textContent?sCell.textContent:'').trim().toLowerCase(); if (sText!==statusValue) showRow=false; }
+                                }
+                            }
+                        <?php } ?>
+                        if (dateValue && dateCell){ const rowDate = dateCell.getAttribute('data-date'); if (rowDate !== dateValue) showRow = false; }
+                        row.style.display = showRow ? '' : 'none';
+                    });
+                }
+
+                // Initialize
+                updateSelectedCount();
             });
         </script><?php
                 }
@@ -1694,6 +2171,203 @@ class KIT_Commons
 
                     echo '</div>'; // End rows-per-page + pagination container
 
+                }
+
+                /**
+                 * Creates an AJAX-based status change select that works within versatile tables
+                 * 
+                 * @param string $current_status Current status value
+                 * @param int $item_id ID of the item to update
+                 * @param string $item_type Type of item (delivery, waybill, etc.)
+                 * @param array $status_options Array of status options ['value' => 'label']
+                 * @return string HTML for the status select
+                 */
+                public static function create_ajax_status_select($current_status, $item_id, $item_type, $status_options = [])
+                {
+                    // Default status options if none provided
+                    if (empty($status_options)) {
+                        $status_options = [
+                            'pending' => 'Pending',
+                            'scheduled' => 'Scheduled',
+                            'in_transit' => 'In Transit',
+                            'delivered' => 'Delivered',
+                            'cancelled' => 'Cancelled'
+                        ];
+                    }
+                    
+                    $select_id = 'status-select-' . $item_type . '-' . $item_id;
+                    $nonce = wp_create_nonce('update_status_' . $item_type);
+                    
+                    $html = '<select id="' . $select_id . '" class="text-xs border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" data-item-id="' . $item_id . '" data-item-type="' . $item_type . '" data-nonce="' . $nonce . '">';
+                    
+                    foreach ($status_options as $value => $label) {
+                        $selected = ($current_status === $value) ? ' selected' : '';
+                        $html .= '<option value="' . esc_attr($value) . '"' . $selected . '>' . esc_html($label) . '</option>';
+                    }
+                    
+                    $html .= '</select>';
+                    
+                    // Add JavaScript for AJAX handling
+                    $html .= '<script>
+                    document.addEventListener("DOMContentLoaded", function() {
+                        const select = document.getElementById("' . $select_id . '");
+                        if (select) {
+                            select.addEventListener("change", function() {
+                                const itemId = this.dataset.itemId;
+                                const itemType = this.dataset.itemType;
+                                const newStatus = this.value;
+                                const nonce = this.dataset.nonce;
+                                const originalValue = this.getAttribute("data-original-value") || "' . $current_status . '";
+                                
+                                // Show loading state
+                                this.disabled = true;
+                                this.style.opacity = "0.5";
+                                
+                                // Make AJAX request
+                                fetch(ajaxurl, {
+                                    method: "POST",
+                                    headers: {
+                                        "Content-Type": "application/x-www-form-urlencoded",
+                                    },
+                                    body: new URLSearchParams({
+                                        action: "update_" + itemType + "_status",
+                                        item_id: itemId,
+                                        new_status: newStatus,
+                                        nonce: nonce
+                                    })
+                                })
+                                .then(response => response.json())
+                                .then(data => {
+                                    if (data.success) {
+                                        // Update original value
+                                        this.setAttribute("data-original-value", newStatus);
+                                        
+                                        // Show success indicator
+                                        this.style.borderColor = "#10b981";
+                                        setTimeout(() => {
+                                            this.style.borderColor = "";
+                                        }, 2000);
+                                        
+                                        // Optional: Show success message
+                                        if (data.data && data.data.message) {
+                                            const successMsg = document.createElement("div");
+                                            successMsg.className = "fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg z-50 text-sm";
+                                            successMsg.textContent = data.data.message;
+                                            document.body.appendChild(successMsg);
+                                            setTimeout(() => successMsg.remove(), 3000);
+                                        }
+                                    } else {
+                                        // Revert to original value
+                                        this.value = originalValue;
+                                        alert("Error: " + (data.data || "Failed to update status"));
+                                    }
+                                })
+                                .catch(error => {
+                                    // Revert to original value
+                                    this.value = originalValue;
+                                    alert("Network error: " + error.message);
+                                })
+                                .finally(() => {
+                                    // Re-enable select
+                                    this.disabled = false;
+                                    this.style.opacity = "1";
+                                });
+                            });
+                            
+                            // Store original value
+                            select.setAttribute("data-original-value", "' . $current_status . '");
+                        }
+                    });
+                    </script>';
+                    
+                    return $html;
+                }
+
+                /**
+                 * AJAX handler for updating delivery status
+                 */
+                public static function ajax_update_delivery_status()
+                {
+                    // Verify nonce
+                    if (!wp_verify_nonce($_POST['nonce'], 'update_status_delivery')) {
+                        wp_send_json_error('Invalid nonce');
+                    }
+                    
+                    // Check permissions
+                    if (!current_user_can('edit_posts')) {
+                        wp_send_json_error('Insufficient permissions');
+                    }
+                    
+                    $delivery_id = intval($_POST['item_id']);
+                    $new_status = sanitize_text_field($_POST['new_status']);
+                    
+                    // Validate status
+                    $valid_statuses = ['scheduled', 'in_transit', 'delivered', 'cancelled'];
+                    if (!in_array($new_status, $valid_statuses)) {
+                        wp_send_json_error('Invalid status');
+                    }
+                    
+                    global $wpdb;
+                    $result = $wpdb->update(
+                        $wpdb->prefix . 'kit_deliveries',
+                        [
+                            'status' => $new_status,
+                            'last_updated_at' => current_time('mysql')
+                        ],
+                        ['id' => $delivery_id],
+                        ['%s', '%s'],
+                        ['%d']
+                    );
+                    
+                    if ($result !== false) {
+                        wp_send_json_success(['message' => 'Delivery status updated successfully']);
+                    } else {
+                        wp_send_json_error('Failed to update delivery status');
+                    }
+                }
+                
+                /**
+                 * AJAX handler for updating waybill status
+                 */
+                public static function ajax_update_waybill_status()
+                {
+                    // Verify nonce
+                    if (!wp_verify_nonce($_POST['nonce'], 'update_status_waybill')) {
+                        wp_send_json_error('Invalid nonce');
+                    }
+                    
+                    // Check permissions
+                    if (!current_user_can('edit_posts')) {
+                        wp_send_json_error('Insufficient permissions');
+                    }
+                    
+                    $waybill_id = intval($_POST['item_id']);
+                    $new_status = sanitize_text_field($_POST['new_status']);
+                    
+                    // Validate status
+                    $valid_statuses = ['pending', 'quoted', 'paid', 'completed', 'invoiced', 'rejected', 'warehoused', 'assigned'];
+                    if (!in_array($new_status, $valid_statuses)) {
+                        wp_send_json_error('Invalid status');
+                    }
+                    
+                    global $wpdb;
+                    $result = $wpdb->update(
+                        $wpdb->prefix . 'kit_waybills',
+                        [
+                            'status' => $new_status,
+                            'last_updated_at' => current_time('mysql'),
+                            'last_updated_by' => get_current_user_id()
+                        ],
+                        ['id' => $waybill_id],
+                        ['%s', '%s', '%d'],
+                        ['%d']
+                    );
+                    
+                    if ($result !== false) {
+                        wp_send_json_success(['message' => 'Waybill status updated successfully']);
+                    } else {
+                        wp_send_json_error('Failed to update waybill status');
+                    }
                 }
             }
             KIT_Commons::init();

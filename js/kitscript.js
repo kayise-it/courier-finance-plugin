@@ -442,3 +442,161 @@ const SpinnerManager = {
         this.activeSpinners.clear();
     }
 };
+
+// Customer Dashboard Tab Functionality
+function switchCustomerTab(tabName) {
+    // Hide all tab contents
+    const tabContents = document.querySelectorAll('.tab-content');
+    tabContents.forEach(content => {
+        content.style.display = 'none';
+    });
+
+    // Remove active class from all tab buttons
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    tabButtons.forEach(btn => {
+        btn.classList.remove('active');
+        btn.style.background = 'transparent';
+        btn.style.color = '#6b7280';
+    });
+
+    // Show selected tab content
+    const selectedContent = document.getElementById(tabName + '-content');
+    if (selectedContent) {
+        selectedContent.style.display = 'block';
+    }
+
+    // Add active class to selected tab button
+    const selectedButton = document.getElementById(tabName + '-tab');
+    if (selectedButton) {
+        selectedButton.classList.add('active');
+        selectedButton.style.background = 'white';
+        selectedButton.style.color = '#374151';
+    }
+}
+
+// Initialize customer dashboard tabs
+document.addEventListener('DOMContentLoaded', function() {
+    // Customer dashboard tab functionality
+    const customerTabButtons = document.querySelectorAll('.customer-tabs .tab-btn');
+    customerTabButtons.forEach(btn => {
+        btn.addEventListener('click', function() {
+            const tabName = this.id.replace('-tab', '');
+            switchCustomerTab(tabName);
+        });
+    });
+
+    // Handle inline customer form submission
+    const inlineCustomerForm = document.getElementById('inlineCustomerForm');
+    if (inlineCustomerForm) {
+        inlineCustomerForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const submitBtn = document.getElementById('saveCustomerBtn');
+            let messagesDiv = document.getElementById('customerFormMessages');
+            if (!messagesDiv) {
+                // Create a messages container if it doesn't exist
+                messagesDiv = document.createElement('div');
+                messagesDiv.id = 'customerFormMessages';
+                messagesDiv.style.marginBottom = '12px';
+                // Insert before the form
+                inlineCustomerForm.parentNode.insertBefore(messagesDiv, inlineCustomerForm);
+            }
+            
+            // Show loading state
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Saving...';
+            
+            // Collect form data
+            const formData = new FormData(this);
+            formData.append('action', 'save_customer_ajax');
+            formData.append('nonce', customerAjax.nonce);
+            const safeVal = (id) => {
+                const el = document.getElementById(id);
+                return el ? el.value : '';
+            };
+            formData.append('name', safeVal('customer_name'));
+            formData.append('surname', safeVal('customer_surname'));
+            formData.append('cell', safeVal('cell'));
+            formData.append('email_address', safeVal('email_address'));
+            formData.append('address', safeVal('address'));
+            formData.append('company_name', safeVal('company_name'));
+            formData.append('country_id', safeVal('country_id'));
+            formData.append('city_id', safeVal('city_id'));
+            
+            // Submit via AJAX
+            fetch(ajaxurl || '/wp-admin/admin-ajax.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Show success message
+                    messagesDiv.innerHTML = '<div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">' + data.data.message + '</div>';
+                    
+                    // Reset form
+                    inlineCustomerForm.reset();
+                    
+                    // Switch to overview tab after 2 seconds
+                    setTimeout(() => {
+                        switchCustomerTab('overview');
+                        messagesDiv.innerHTML = '';
+                    }, 2000);
+                } else {
+                    // Show error message
+                    messagesDiv.innerHTML = '<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">Error: ' + (data.data || 'Unknown error occurred') + '</div>';
+                }
+            })
+            .catch(error => {
+                messagesDiv.innerHTML = '<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">Network error: ' + error.message + '</div>';
+            })
+            .finally(() => {
+                // Reset button state
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Save Customer';
+            });
+        });
+    }
+
+    // Handle country change for city loading
+    const countrySelect = document.getElementById('country_id');
+    const citySelect = document.getElementById('city_id');
+    
+    if (countrySelect && citySelect) {
+        countrySelect.addEventListener('change', function() {
+            const countryId = this.value;
+            
+            // Clear city options
+            citySelect.innerHTML = '<option value="">Select City</option>';
+            
+            if (countryId) {
+                // Load cities for selected country
+                fetch(ajaxurl || '/wp-admin/admin-ajax.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: new URLSearchParams({
+                        action: 'get_cities_by_country',
+                        country_id: countryId,
+                        nonce: customerAjax.nonce
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.data) {
+                        data.data.forEach(city => {
+                            const option = document.createElement('option');
+                            option.value = city.id;
+                            option.textContent = city.city_name;
+                            citySelect.appendChild(option);
+                        });
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading cities:', error);
+                });
+            }
+        });
+    }
+});

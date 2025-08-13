@@ -96,6 +96,16 @@ function plugin_add_menu()
         'kit-deliveries',
         ['KIT_Deliveries', 'render_admin_page']
     );
+    
+    // Warehouse Tracking - Now integrated into main warehouse page
+    // add_submenu_page(
+    //     '08600-waybills',
+    //     'Warehouse Tracking',
+    //     'Warehouse Tracking',
+    //     'edit_pages',
+    //     'warehouse-tracking',
+    //     'warehouse_tracking_page'
+    // );
 
 
 
@@ -126,15 +136,7 @@ function plugin_add_menu()
     // are accessed via direct URLs and don't need to be registered as submenu items
     // This prevents blank spaces in the menu structure
 
-    // Quotations (moved under 08600 Waybills menu)
-    add_submenu_page(
-        '08600-waybills',
-        'Quotations',
-        'Quotations',
-        'manage_options',
-        'Quotations',
-        'plugin_quotations_list_page'
-    );
+    // Quotations removed - not used
 
     // Settings (at bottom)
     add_submenu_page(
@@ -180,6 +182,10 @@ function waybill_help_page() {
 function warehouse_waybills_page() {
     include plugin_dir_path(__FILE__) . 'admin-pages/warehouse.php';
 }
+
+// function warehouse_tracking_page() {
+//     include plugin_dir_path(__FILE__) . 'admin-pages/warehouse-tracking.php';
+// }
 
 
 

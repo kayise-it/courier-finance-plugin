@@ -50,7 +50,7 @@ include_once plugin_dir_path(__FILE__) . 'includes/commons.php';
 include_once plugin_dir_path(__FILE__) . 'includes/admin-menu.php';
 include_once plugin_dir_path(__FILE__) . 'includes/admin-pages.php';
 include_once(plugin_dir_path(__FILE__) . 'includes/services/services-functions.php');
-include_once(plugin_dir_path(__FILE__) . 'includes/quotations/quotations-functions.php');
+// Quotations functions include removed
 require_once plugin_dir_path(__FILE__) . 'includes/waybill/waybill-functions.php';
 require_once plugin_dir_path(__FILE__) . 'includes/customers/customers-functions.php';
 require_once plugin_dir_path(__FILE__) . 'includes/user-roles.php';
@@ -58,6 +58,7 @@ require_once plugin_dir_path(__FILE__) . 'includes/deliveries/deliveries-functio
 require_once plugin_dir_path(__FILE__) . 'includes/waybillmultiform.php';
 require_once plugin_dir_path(__FILE__) . 'includes/countries/opc-functions.php';
 require_once plugin_dir_path(__FILE__) . 'includes/routes/routes-functions.php';
+require_once plugin_dir_path(__FILE__) . 'includes/components/quickActions.php';
 
 function my_plugin_enqueue_scripts()
 {
@@ -266,18 +267,7 @@ add_action('admin_post_delete_service', 'handle_service_deletion');
 /**
  * Services list page callback
  */
-function plugin_quotations_list_page()
-{
-    echo '<div class="wrap">';
-    echo KIT_Commons::showingHeader([
-        'title' => 'Admin View Quotations',
-        'desc' => "342234",
-    ]);
-    echo '<div class="' . KIT_Commons::container() . ' space-y-4">';
-    echo kit_get_all_quotations_table();
-    echo '</div>';
-    echo '</div>';
-}
+// Quotations page function removed
 
 
 

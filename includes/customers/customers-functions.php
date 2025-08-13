@@ -10,6 +10,8 @@ class KIT_Customers
         add_action('wp_ajax_save_customer_ajax', [self::class, 'handle_save_customer_ajax']);
         add_action('wp_ajax_nopriv_save_customer_ajax', [self::class, 'handle_save_customer_ajax']);
         add_action('wp_ajax_test_customer_ajax', [self::class, 'test_customer_ajax']);
+        add_action('wp_ajax_get_cities_by_country', [self::class, 'handle_get_cities_by_country']);
+        add_action('wp_ajax_nopriv_get_cities_by_country', [self::class, 'handle_get_cities_by_country']);
     }
     public static function gamaCustomer($id)
     {
@@ -158,7 +160,7 @@ class KIT_Customers
         error_log('Customer AJAX request received: ' . print_r($_POST, true));
 
         // Verify nonce
-        if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'save_customer_nonce')) {
+        if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'customer_nonce')) {
             error_log('Customer AJAX nonce failed');
             wp_send_json_error(['message' => 'Security check failed']);
         }
@@ -208,6 +210,34 @@ class KIT_Customers
     public static function test_customer_ajax()
     {
         wp_send_json_success(['message' => 'AJAX is working!', 'post_data' => $_POST]);
+    }
+
+    public static function handle_get_cities_by_country()
+    {
+        // Verify nonce
+        if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'customer_nonce')) {
+            wp_send_json_error(['message' => 'Security check failed']);
+        }
+
+        $country_id = intval($_POST['country_id'] ?? 0);
+
+        if (!$country_id) {
+            wp_send_json_error(['message' => 'Country ID is required']);
+        }
+
+        global $wpdb;
+        $cities_table = $wpdb->prefix . 'kit_cities';
+
+        $cities = $wpdb->get_results($wpdb->prepare(
+            "SELECT id, city_name FROM $cities_table WHERE country_id = %d ORDER BY city_name ASC",
+            $country_id
+        ));
+
+        if ($cities) {
+            wp_send_json_success($cities);
+        } else {
+            wp_send_json_success([]); // Return empty array if no cities found
+        }
     }
 
     //After the new customer is saved, go back to the customer table and update the cust_id to the new customer id
@@ -476,11 +506,178 @@ KIT_Customers::init();
 
 function customer_dashboard()
 {
-    if (isset($_GET['delete_customer'])) {
-        delete_customer($_GET['delete_customer']);
+    // Enqueue required scripts
+    wp_enqueue_script('kitscript', plugin_dir_url(__FILE__) . '../js/kitscript.js', ['jquery'], null, true);
+
+    // Localize script with AJAX data
+    wp_localize_script('kitscript', 'customerAjax', array(
+        'ajaxurl' => admin_url('admin-ajax.php'),
+        'nonce' => wp_create_nonce('customer_nonce')
+    ));
+
+    // Handle delete customer action
+    if (isset($_GET['delete_customer']) && !empty($_GET['delete_customer'])) {
+        $customer_id = intval($_GET['delete_customer']);
+
+        // Check if user has permission to delete customers
+        if (current_user_can('manage_options') || current_user_can('administrator')) {
+            delete_customer($customer_id, true);
+            wp_redirect(admin_url('admin.php?page=08600-customers&deleted=1'));
+            exit;
+        } else {
+            wp_die('Sorry, you are not allowed to delete customers.');
+        }
     }
 
+    // Handle view customer action
+    if (isset($_GET['view_customer']) && !empty($_GET['view_customer'])) {
+        customer_detail_view($_GET['view_customer']);
+        return;
+    }
+
+	// Data
     $customers = tholaMaCustomer();
+	$total_customers = is_array($customers) ? count($customers) : 0;
+	$active_customers_count = is_array($customers)
+		? count(array_filter($customers, function ($c) { return !empty($c->company_name); }))
+		: 0;
+	$inactive_customers = max(0, $total_customers - $active_customers_count);
+
+	// UI Shell
+	echo '<div class="wrap" style="max-width: 100%; margin-bottom: 80px;">';
+	echo KIT_Commons::showingHeader([
+		'title' => 'Customer Dashboard',
+		'desc'  => 'Manage customers and their waybills',
+	]);
+	echo '<hr class="wp-header-end">';
+
+	// Tabs
+	echo '<div class="customer-tabs mb-6">';
+    echo '  <div class="flex bg-gray-100 p-1 rounded-md w-fit">';
+    echo '    <button id="overview-tab" class="tab-btn active px-4 py-2 text-sm font-medium rounded-md border border-gray-200 bg-white text-gray-900 shadow hover:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition">Overview</button>';
+    echo '    <button id="add-customer-tab" class="tab-btn px-4 py-2 text-sm font-medium rounded-md border border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition">Add Customer</button>';
+    echo '    <button id="manage-customers-tab" class="tab-btn px-4 py-2 text-sm font-medium rounded-md border border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition">Manage Customers</button>';
+	echo '  </div>';
+	echo '</div>';
+
+	// Overview
+	require_once plugin_dir_path(__FILE__) . '../components/quickStats.php';
+	require_once plugin_dir_path(__FILE__) . '../components/dashboardQuickies.php';
+
+	echo '<div id="overview-content" class="tab-content" style="display:block">';
+	// Quick stats row
+	echo KIT_QuickStats::render([
+		['title' => 'Total Customers',   'value' => number_format($total_customers),       'icon' => 'M17 20h5v-2a3 3 0 00-5.356-1.857M7 20H2v-2a3 3 0 015.356-1.857', 'color' => 'blue'],
+		['title' => 'Active Customers',  'value' => number_format($active_customers_count),'icon' => 'M5 13l4 4L19 7',                                            'color' => 'green'],
+		['title' => 'Inactive',          'value' => number_format($inactive_customers),    'icon' => 'M6 18L18 6M6 6l12 12',                                       'color' => 'red'],
+		['title' => 'This Month',        'value' => date('M Y'),                            'icon' => 'M8 7V3m8 4V3M3 11h18M5 19h14',                                  'color' => 'purple'],
+	], 'Customer Stats');
+
+	// Quick actions row
+	echo KIT_DashboardQuickies::render([
+		['title' => 'Add Customer',     'href' => '#', 'onclick' => "switchCustomerTab('add-customer')",     'icon' => 'M12 6v12m6-6H6', 'color' => 'blue'],
+		['title' => 'Manage Customers', 'href' => '#', 'onclick' => "switchCustomerTab('manage-customers')", 'icon' => 'M3 7h18M3 12h18M3 17h18', 'color' => 'green'],
+		['title' => 'Create Waybill',   'href' => '?page=08600-waybills',                                       'icon' => 'M12 4v16m8-8H4', 'color' => 'purple'],
+		['title' => 'Routes',           'href' => '?page=route-management',                                      'icon' => 'M9 20l-5.447-2.724', 'color' => 'orange'],
+	], 'Quick Actions');
+	echo '</div>';
+
+	// Add Customer (inline form)
+	echo '<div id="add-customer-content" class="tab-content" style="display:none">';
+	echo '<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">';
+	echo '<h3 class="text-base font-semibold text-gray-900 mb-4">Add New Customer</h3>';
+	echo '<form method="post" class="space-y-6" id="inlineCustomerForm" action="">';
+	echo '  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">';
+	echo '    <div><label class="block text-sm text-gray-700 mb-2">Company Name</label><input type="text" name="company_name" id="company_name" class="w-full px-3 py-2 border border-gray-300 rounded-md"></div>';
+	echo '    <div><label class="block text-sm text-gray-700 mb-2">First Name *</label><input type="text" name="customer_name" id="customer_name" required class="w-full px-3 py-2 border border-gray-300 rounded-md"></div>';
+	echo '    <div><label class="block text-sm text-gray-700 mb-2">Last Name *</label><input type="text" name="customer_surname" id="customer_surname" required class="w-full px-3 py-2 border border-gray-300 rounded-md"></div>';
+	echo '    <div><label class="block text-sm text-gray-700 mb-2">Cell Phone *</label><input type="tel" name="cell" id="cell" required class="w-full px-3 py-2 border border-gray-300 rounded-md"></div>';
+	echo '    <div><label class="block text-sm text-gray-700 mb-2">Email Address</label><input type="email" name="email_address" id="email_address" class="w-full px-3 py-2 border border-gray-300 rounded-md"></div>';
+	echo '    <div><label class="block text-sm text-gray-700 mb-2">Address</label><textarea name="address" id="address" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md"></textarea></div>';
+	echo '  </div>';
+	echo '  <div class="flex justify-end gap-2 pt-4">';
+	echo '    <button type="button" class="px-4 py-2 border rounded-md" onclick="switchCustomerTab(\'overview\')">Cancel</button>';
+	echo '    <button type="submit" id="saveCustomerBtn" class="px-5 py-2 bg-blue-600 text-white rounded-md">Save Customer</button>';
+	echo '  </div>';
+	echo '</form>';
+	echo '</div>';
+	echo '</div>';
+
+	// Manage Customers (table)
+	echo '<div id="manage-customers-content" class="tab-content" style="display:none">';
+	echo '<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">';
+	echo '<h3 class="text-base font-semibold text-gray-900 mb-4">Customer Management</h3>';
+
+	$columns = [
+		'cust_id'       => ['label' => 'ID',      'align' => 'text-left'],
+		'company_name'  => ['label' => 'Company', 'align' => 'text-left'],
+		'customer_name' => ['label' => 'Name',    'align' => 'text-left'],
+		'country_name'  => ['label' => 'Country', 'align' => 'text-left'],
+		'actions'       => ['label' => 'Actions', 'align' => 'text-center'],
+	];
+
+	$cell_callback = function ($key, $row) {
+		if ($key === 'customer_name') {
+			$html  = '<div class="flex flex-col">';
+			$html .= '<span class="font-medium text-gray-900">' . esc_html(($row->customer_name ?? '') . ' ' . ($row->customer_surname ?? '')) . '</span>';
+			$html .= '<span class="text-xs text-gray-500">' . esc_html($row->email_address ?? '') . '</span>';
+			return $html . '</div>';
+		}
+		if ($key === 'actions') {
+			$html  = '<div class="flex justify-center gap-2">';
+			$html .= '<a class="inline-flex px-3 py-1 text-xs rounded-md bg-blue-100 text-blue-700" href="?page=08600-customers&view_customer=' . intval($row->cust_id) . '">View</a>';
+			$html .= '<a class="inline-flex px-3 py-1 text-xs rounded-md bg-red-100 text-red-700" href="?page=08600-customers&delete_customer=' . intval($row->cust_id) . '" onclick="return confirm(\'Delete this customer and all their waybills?\');">Delete</a>';
+			return $html . '</div>';
+		}
+		return htmlspecialchars(($row->$key ?? '') ?: '');
+	};
+
+	$options = [
+		'itemsPerPage' => 10,
+		'currentPage'  => $_GET['paged'] ?? 1,
+		'tableClass'   => 'w-full text-left text-xs text-gray-700',
+		'emptyMessage' => 'No customers found. <a href="#" onclick="switchCustomerTab(\'add-customer\'); return false;">Add your first customer</a>',
+		'id'           => 'customerTable',
+		'role'         => 'customers',
+		'filterOverride' => 'country',
+	];
+
+	echo '<div class="overflow-x-auto">';
+	echo KIT_Commons::render_versatile_table($customers, $columns, $cell_callback, $options);
+	echo '</div>';
+
+	// Client-side country filtering for versatile table
+	echo '<script>\n';
+	echo 'document.addEventListener("DOMContentLoaded", function(){\n';
+	echo '  const select = document.getElementById("customerCountryFilter");\n';
+	echo '  function countryColIndex(){\n';
+	echo '    const ths = document.querySelectorAll("#customerTable thead th");\n';
+	echo '    for (let i=0;i<ths.length;i++){ if ((ths[i].textContent||"").trim().toLowerCase()==="country") return i; }\n';
+	echo '    return -1;\n';
+	echo '  }\n';
+	echo '  const col = countryColIndex();\n';
+	echo '  function applyFilter(){\n';
+	echo '    const selectedText = select && select.value!=="" ? select.options[select.selectedIndex].text.toLowerCase() : "";\n';
+	echo '    const rows = document.querySelectorAll("#customerTable tbody tr");\n';
+	echo '    rows.forEach(function(row){\n';
+	echo '      if (col < 0 || !select || select.value===""){ row.style.display=""; return; }\n';
+	echo '      const cell = row.querySelector("td:nth-child("+(col+1)+")");\n';
+	echo '      const txt = (cell && cell.textContent ? cell.textContent : "").trim().toLowerCase();\n';
+	echo '      row.style.display = (txt === selectedText) ? "" : "none";\n';
+	echo '    });\n';
+	echo '  }\n';
+	echo '  if (select){ select.addEventListener("change", function(){ setTimeout(applyFilter, 0); }); }\n';
+	echo '  const search = document.getElementById("customerTable-search");\n';
+	echo '  if (search){ search.addEventListener("input", function(){ setTimeout(applyFilter, 50); }); }\n';
+	echo '  setTimeout(applyFilter, 200);\n';
+	echo '});\n';
+	echo '</script>';
+	echo '</div>';
+	echo '</div>';
+
+	// Close wrap
+	echo '</div>';
+	return;
 
     // Get customer statistics
     $total_customers = count($customers);
@@ -490,52 +687,143 @@ function customer_dashboard()
     $active_customers_count = count($active_customers);
     $inactive_customers = $total_customers - $active_customers_count;
 ?>
-    <div class="wrap">
-        <h1 class="wp-heading-inline">Customer Dashboard</h1>
+    <div class="wrap" style="max-width: 100%; margin-bottom: 80px;">
+        <?php if (isset($_GET['deleted']) && $_GET['deleted'] == '1'): ?>
+            <div class="notice notice-success is-dismissible">
+                <p>
+                    Customer deleted successfully!
+                    <?php if (isset($_GET['waybills_deleted']) && $_GET['waybills_deleted'] > 0): ?>
+                        Also deleted <?php echo intval($_GET['waybills_deleted']); ?> waybill(s) and their associated items.
+                    <?php endif; ?>
+                </p>
+            </div>
+        <?php endif; ?>
+        <?= KIT_Commons::showingHeader([
+            'title' => 'Customer Dashboard',
+            'desc' => 'Manage customers and their waybills',
+        ]);
+        ?>
         <hr class="wp-header-end">
 
-        <!-- Statistics Cards -->
-        <div class="dashboard-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px;">
-            <div class="stat-card" style="background: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #2563eb;">
-                <h3 style="margin: 0 0 10px 0; color: #2563eb;">Total Customers</h3>
-                <div style="font-size: 2em; font-weight: bold; color: #1e293b;"><?php echo number_format($total_customers); ?></div>
-                <p style="margin: 5px 0 0 0; color: #64748b;">All registered customers</p>
+        <!-- Tab Navigation -->
+        <div class="customer-tabs" style="margin-bottom: 30px;">
+            <div style="display: flex; background: #f3f4f6; padding: 4px; border-radius: 8px; width: fit-content;">
+                <button id="overview-tab" class="tab-btn active">
+                    Overview
+                </button>
+                <button id="add-customer-tab" class="tab-btn">
+                    Add Customer
+                </button>
+                <button id="manage-customers-tab" class="tab-btn">
+                    Manage Customers
+                </button>
+            </div>
             </div>
 
-            <div class="stat-card" style="background: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #059669;">
-                <h3 style="margin: 0 0 10px 0; color: #059669;">Active Customers</h3>
-                <div style="font-size: 2em; font-weight: bold; color: #1e293b;"><?php echo number_format($active_customers_count); ?></div>
-                <p style="margin: 5px 0 0 0; color: #64748b;">With company details</p>
+        <!-- Overview Tab Content -->
+        <div id="overview-content" class="tab-content active">
             </div>
 
-            <div class="stat-card" style="background: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #dc2626;">
-                <h3 style="margin: 0 0 10px 0; color: #dc2626;">Inactive Customers</h3>
-                <div style="font-size: 2em; font-weight: bold; color: #1e293b;"><?php echo number_format($inactive_customers); ?></div>
-                <p style="margin: 5px 0 0 0; color: #64748b;">Without company details</p>
+        <!-- Add Customer Tab Content -->
+        <div id="add-customer-content" class="tab-content">
+            <div style="background: white; padding: 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #e5e7eb;">
+                <h3 style="font-size: 18px; font-weight: 600; color: #111827; margin: 0 0 20px 0;">Add New Customer</h3>
+
+                <form method="post" class="space-y-6" id="inlineCustomerForm" action="">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Company Name -->
+                        <div>
+                            <label for="company_name" class="block text-sm font-medium text-gray-700 mb-2">Company Name</label>
+                            <input type="text" name="company_name" id="company_name" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Enter company name">
             </div>
 
-            <div class="stat-card" style="background: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #7c3aed;">
-                <h3 style="margin: 0 0 10px 0; color: #7c3aed;">Quick Actions</h3>
-                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                    <button id="customerModalButton" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl shadow">
-                        + Add New Customer
+                        <!-- Customer Name -->
+                        <div>
+                            <label for="customer_name" class="block text-sm font-medium text-gray-700 mb-2">First Name *</label>
+                            <input type="text" name="customer_name" id="customer_name" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Enter first name">
+                        </div>
+
+                        <!-- Customer Surname -->
+                        <div>
+                            <label for="customer_surname" class="block text-sm font-medium text-gray-700 mb-2">Last Name *</label>
+                            <input type="text" name="customer_surname" id="customer_surname" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Enter last name">
+                        </div>
+
+                        <!-- Cell Phone -->
+                        <div>
+                            <label for="cell" class="block text-sm font-medium text-gray-700 mb-2">Cell Phone *</label>
+                            <input type="tel" name="cell" id="cell" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Enter cell phone number">
+                        </div>
+
+                        <!-- Email Address -->
+                        <div>
+                            <label for="email_address" class="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+                            <input type="email" name="email_address" id="email_address" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Enter email address">
+                        </div>
+
+                        <!-- Address -->
+                        <div>
+                            <label for="address" class="block text-sm font-medium text-gray-700 mb-2">Address</label>
+                            <textarea name="address" id="address" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Enter address"></textarea>
+                        </div>
+
+                        <!-- Country -->
+                        <div>
+                            <label for="country_id" class="block text-sm font-medium text-gray-700 mb-2">Country</label>
+                            <select name="country_id" id="country_id" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500">
+                                <option value="">Select Country</option>
+                                <?php
+                                global $wpdb;
+                                $countries = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}kit_operating_countries ORDER BY country_name");
+                                foreach ($countries as $country) {
+                                    echo '<option value="' . esc_attr($country->id) . '">' . esc_html($country->country_name) . '</option>';
+                                }
+                                ?>
+                            </select>
+                        </div>
+
+                        <!-- City -->
+                        <div>
+                            <label for="city_id" class="block text-sm font-medium text-gray-700 mb-2">City</label>
+                            <select name="city_id" id="city_id" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500">
+                                <option value="">Select City</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <div class="flex justify-end space-x-3 pt-6 border-t border-gray-200">
+                        <button type="button" onclick="switchCustomerTab('overview')" class="px-4 py-2 text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 transition-colors">
+                            Cancel
                     </button>
-                    <a href="?page=08600-waybill-create" class="button" style="text-decoration: none;">Create Waybill</a>
+                        <button type="submit" id="saveCustomerBtn" class="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+                            Save Customer
+                        </button>
                 </div>
+                </form>
+
+                <!-- Success/Error Messages -->
+                <div id="customerFormMessages" class="mt-4"></div>
             </div>
         </div>
 
-        <!-- Customer Management Section -->
-        <div class="customer-management" style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-            <h2 style="margin: 0 0 20px 0;">Customer Management</h2>
+        <!-- Manage Customers Tab Content -->
+        <div id="manage-customers-content" class="tab-content">
+            <div style="background: white; padding: 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #e5e7eb; margin-bottom: 60px;">
+                <h3 style="font-size: 18px; font-weight: 600; color: #111827; margin: 0 0 20px 0;">Customer Management</h3>
 
             <?php
             $options = [
                 'itemsPerPage' => 10,
                 'currentPage' => $_GET['paged'] ?? 1,
-                'tableClass' => 'min-w-full text-left text-xs text-gray-700',
-                'emptyMessage' => 'No customers found. <a href="#" onclick="document.getElementById(\'createCustomerBtn\').click(); return false;">Add your first customer</a>',
+                    'tableClass' => 'w-full text-left text-xs text-gray-700',
+                    'emptyMessage' => 'No customers found. <a href="#" onclick="switchCustomerTab(\'add-customer\'); return false;">Add your first customer</a>',
                 'id' => 'customerTable',
+                    'role' => 'customers',
+                    'bulk_actions' => [
+                        'delete' => 'Delete Selected',
+                        'export' => 'Export Selected'
+                    ]
             ];
 
             $columns = [
@@ -543,23 +831,33 @@ function customer_dashboard()
                 'company_name' => ['label' => 'Company', 'align' => 'text-left'],
                 'customer_name' => ['label' => 'Name', 'align' => 'text-left'],
                 'country_name' => ['label' => 'Country', 'align' => 'text-left'],
-                'waybills' => ['label' => 'Waybills', 'align' => 'text-left'],
                 'actions' => ['label' => 'Actions', 'align' => 'text-center'],
             ];
 
             $cell_callback = function ($key, $row) {
                 if ($key === 'company_name') {
-                    return $row->company_name;
+                        return '<span class="font-medium text-gray-900">' . esc_html($row->company_name ?: 'N/A') . '</span>';
                 }
                 if ($key === 'customer_name') {
-                    return $row->customer_name . ' ' . $row->customer_surname;
-                }
-                if ($key === 'waybills') {
-                    return '<a href="?page=all-customer-waybills&cust_id=' . $row->cust_id . '" class="text-blue-600 hover:underline">Waybills</a>';
-                }
+                        $html = '<div class="flex flex-col">';
+                        $html .= '<span class="font-medium text-gray-900">' . esc_html($row->customer_name . ' ' . $row->customer_surname) . '</span>';
+                        $html .= '<span class="text-sm text-gray-500">' . esc_html($row->email_address ?: '') . '</span>';
+                        // Show the country as a badge using KIT_Commons::badge
+                        if (!empty($row->country_name)) {
+                            $html .= '<span style="display:inline-block; margin-top:4px;">' . KIT_Commons::badge(esc_html($row->country_name), 'info', ['size' => 'sm']) . '</span>';
+                        }
+                        $html .= '</div>';
+                        return $html;
+                    }
+                    if ($key === 'country_name') {
+                        return '<span class="text-gray-900">' . esc_html($row->country_name ?: 'N/A') . '</span>';
+                    }
+
                 if ($key === 'actions') {
-                    $html = '<a href="?page=all-customer-waybills&cust_id=' . $row->cust_id . '" class="text-blue-600 hover:underline">View</a> ';
-                    $html .= '<a href="?page=customers-dashboard&delete_customer=' . $row->cust_id . '" class="text-red-600 hover:underline" onclick="return confirm(\'Are you sure you want to delete this customer?\');">Delete</a>';
+                        $html = '<div class="flex space-x-2 justify-center">';
+                        $html .= '<a href="?page=08600-customers&view_customer=' . $row->cust_id . '" class="inline-flex items-center px-3 py-1 text-xs font-medium text-blue-700 bg-blue-100 rounded-md hover:bg-blue-200 transition-colors">View</a>';
+                        $html .= '<a href="?page=08600-customers&delete_customer=' . $row->cust_id . '" class="inline-flex items-center px-3 py-1 text-xs font-medium text-red-700 bg-red-100 rounded-md hover:bg-red-200 transition-colors" onclick="return confirm(\'⚠️ WARNING: This will permanently delete the customer AND all their waybills and waybill items. This action cannot be undone. Are you sure?\');">Delete</a>';
+                        $html .= '</div>';
                     return $html;
                 }
                 return htmlspecialchars(($row->$key ?? '') ?: '');
@@ -582,34 +880,59 @@ function customer_dashboard()
                 }
             }
 
-            echo KIT_Commons::render_versatile_table($customers, $columns, $cell_callback, $options);
             ?>
+                <div style="overflow-x-auto;">
+                    <?php echo KIT_Commons::render_versatile_table($customers, $columns, $cell_callback, $options); ?>
+                </div>
+            </div>
         </div>
 
-        <!-- Customer Modal -->
-        <?php echo customer_form(); ?>
 
-        <!-- Quick Links -->
-        <div class="quick-links" style="margin-top: 30px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-            <a href="#" onclick="document.getElementById('createCustomerBtn').click(); return false;" style="display: block; padding: 15px; background: #2563eb; color: white; text-decoration: none; border-radius: 6px; text-align: center;">
-                <strong>Add New Customer</strong>
-            </a>
-            <a href="?page=08600-waybill-create" style="display: block; padding: 15px; background: #059669; color: white; text-decoration: none; border-radius: 6px; text-align: center;">
-                <strong>Create Waybill</strong>
-            </a>
-            <a href="?page=route-management" style="display: block; padding: 15px; background: #dc2626; color: white; text-decoration: none; border-radius: 6px; text-align: center;">
-                <strong>Manage Routes</strong>
-            </a>
-            <a href="?page=kit-deliveries" style="display: block; padding: 15px; background: #7c3aed; color: white; text-decoration: none; border-radius: 6px; text-align: center;">
-                <strong>Manage Deliveries</strong>
-            </a>
-        </div>
 
     </div>
 
         <!-- Customer Modal -->
         <?php echo customer_form(); ?>
     </div>
+
+<script>
+// Robust tab handler (no inline styles required)
+document.addEventListener('DOMContentLoaded', function() {
+    function switchCustomerTab(name) {
+        // Hide all panels
+        document.querySelectorAll('.tab-content').forEach(function(panel) {
+            panel.style.display = 'none';
+        });
+        // Deactivate all buttons
+        document.querySelectorAll('.customer-tabs .tab-btn').forEach(function(btn) {
+            btn.classList.remove('active');
+        });
+        // Show requested panel
+        var panel = document.getElementById(name + '-content');
+        if (panel) panel.style.display = 'block';
+        // Activate corresponding button
+        var btn = document.getElementById(name + '-tab');
+        if (btn) btn.classList.add('active');
+    }
+
+    // Delegate clicks from tab container
+    var tabsContainer = document.querySelector('.customer-tabs');
+    if (tabsContainer) {
+        tabsContainer.addEventListener('click', function(e) {
+            var btn = e.target.closest('.tab-btn');
+            if (!btn) return;
+            e.preventDefault();
+            var name = btn.id.replace('-tab', '');
+            switchCustomerTab(name);
+        });
+    }
+
+    // Initialize to whichever tab is marked active, else overview
+    var activeBtn = document.querySelector('.customer-tabs .tab-btn.active');
+    var initial = activeBtn ? activeBtn.id.replace('-tab', '') : 'overview';
+    switchCustomerTab(initial);
+});
+</script>
 
     <style>
         /* Hide WordPress admin footer text that's overlapping */
@@ -634,6 +957,26 @@ function customer_dashboard()
             position: relative;
             z-index: 10;
         }
+
+        /* Tab styling */
+        .tab-btn:hover {
+            background: #e5e7eb !important;
+            color: #374151 !important;
+        }
+
+        .tab-btn.active {
+            background: white !important;
+            color: #374151 !important;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content:first-child {
+            display: block;
+        }
         
         /* Hide specific overlapping text */
         .wp-admin .wrap:after,
@@ -652,7 +995,7 @@ function customer_dashboard()
         }
         
         /* Force hide any overlapping elements */
-        .wp-admin .wrap > *:last-child:not(.customer-management):not(.quick-links) {
+        .wp-admin .wrap>*:last-child:not(.customer-management):not(.quick-links) {
             display: none !important;
         }
     </style>
@@ -975,21 +1318,173 @@ function save_customer()
     }
 }
 
+function customer_detail_view($customer_id)
+{
+    global $wpdb;
+    $customer_id = intval($customer_id);
+
+    // Get customer details
+    $customer = get_customer_details($customer_id);
+
+    if (!$customer) {
+        echo '<div class="notice notice-error"><p>Customer not found.</p></div>';
+        return;
+    }
+
+    // Get waybills for this customer
+    $waybills_table = $wpdb->prefix . 'kit_waybills';
+    $waybills = $wpdb->get_results($wpdb->prepare(
+        "SELECT * FROM $waybills_table WHERE customer_id = %d ORDER BY created_at DESC",
+        $customer_id
+    ));
+
+?>
+    <div class="wrap">
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="wp-heading-inline">Customer Details</h1>
+            <a href="?page=08600-customers" class="button button-secondary">← Back to Customers</a>
+        </div>
+
+        <!-- Customer Information Card -->
+        <div class="bg-white shadow rounded-lg p-6 mb-6">
+            <h2 class="text-xl font-semibold text-gray-900 mb-4">Customer Information</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <h3 class="text-lg font-medium text-gray-700 mb-3">Personal Details</h3>
+                    <div class="space-y-3">
+                        <div>
+                            <span class="text-sm font-medium text-gray-500">Full Name:</span>
+                            <p class="text-gray-900"><?php echo esc_html($customer->customer_name . ' ' . $customer->customer_surname); ?></p>
+                        </div>
+                        <div>
+                            <span class="text-sm font-medium text-gray-500">Cell Phone:</span>
+                            <p class="text-gray-900"><?php echo esc_html($customer->cell); ?></p>
+                        </div>
+                        <div>
+                            <span class="text-sm font-medium text-gray-500">Email:</span>
+                            <p class="text-gray-900"><?php echo esc_html($customer->email_address ?: 'Not provided'); ?></p>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="text-lg font-medium text-gray-700 mb-3">Company & Location</h3>
+                    <div class="space-y-3">
+                        <div>
+                            <span class="text-sm font-medium text-gray-500">Company:</span>
+                            <p class="text-gray-900"><?php echo esc_html($customer->company_name ?: 'Not provided'); ?></p>
+                        </div>
+                        <div>
+                            <span class="text-sm font-medium text-gray-500">Country:</span>
+                            <p class="text-gray-900"><?php echo esc_html($customer->country_name ?: 'Not specified'); ?></p>
+                        </div>
+                        <div>
+                            <span class="text-sm font-medium text-gray-500">City:</span>
+                            <p class="text-gray-900"><?php echo esc_html($customer->city_name ?: 'Not specified'); ?></p>
+                        </div>
+                        <div>
+                            <span class="text-sm font-medium text-gray-500">Address:</span>
+                            <p class="text-gray-900"><?php echo esc_html($customer->address ?: 'Not provided'); ?></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Waybills Section -->
+        <div class="bg-white shadow rounded-lg p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold text-gray-900">Waybills (<?php echo count($waybills); ?>)</h2>
+                <a href="?page=08600-waybills&customer_id=<?php echo $customer_id; ?>" class="button button-primary">View All Waybills</a>
+            </div>
+
+            <?php if (!empty($waybills)): ?>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Waybill #</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <?php foreach (array_slice($waybills, 0, 5) as $waybill): ?>
+                                <tr>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <div class="text-sm font-medium text-gray-900">#<?php echo esc_html($waybill->waybill_no); ?></div>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                                            <?php echo $waybill->status === 'completed' ? 'bg-green-100 text-green-800' : ($waybill->status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-800'); ?>">
+                                            <?php echo ucfirst(esc_html($waybill->status)); ?>
+                                        </span>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                        R<?php echo number_format($waybill->product_invoice_amount, 2); ?>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        <?php echo date('M j, Y', strtotime($waybill->created_at)); ?>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                        <a href="?page=08600-Waybill-view&waybill_id=<?php echo $waybill->id; ?>" class="text-blue-600 hover:text-blue-900">View</a>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <?php if (count($waybills) > 5): ?>
+                    <div class="mt-4 text-center">
+                        <p class="text-sm text-gray-500">Showing 5 of <?php echo count($waybills); ?> waybills</p>
+                    </div>
+                <?php endif; ?>
+            <?php else: ?>
+                <div class="text-center py-8">
+                    <p class="text-gray-500">No waybills found for this customer.</p>
+                    <a href="?page=08600-waybill-create&customer_id=<?php echo $customer_id; ?>" class="button button-primary mt-2">Create First Waybill</a>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+<?php
+}
+
 function delete_customer($id, $redirect = false)
 {
     global $wpdb;
     $customer_id = intval($id);
 
-    // First, delete all waybills for this customer
+    // First, get all waybill IDs for this customer
     $waybills_table = $wpdb->prefix . 'kit_waybills';
+    $waybill_ids = $wpdb->get_col($wpdb->prepare(
+        "SELECT id FROM $waybills_table WHERE customer_id = %d",
+        $customer_id
+    ));
+
+    if (!empty($waybill_ids)) {
+        // Delete waybill items for all waybills of this customer
+        $waybill_items_table = $wpdb->prefix . 'kit_waybill_items';
+        foreach ($waybill_ids as $waybill_id) {
+            $wpdb->delete($waybill_items_table, ['waybillno' => $waybill_id]);
+        }
+
+        // Delete all waybills for this customer
     $wpdb->delete($waybills_table, ['customer_id' => $customer_id]);
+    }
 
     // Now delete the customer
     $customers_table = $wpdb->prefix . 'kit_customers';
     $deleted = $wpdb->delete($customers_table, ['cust_id' => $customer_id]);
 
     if ($deleted && $redirect) {
-        wp_redirect(esc_url($_SERVER['REQUEST_URI']));
+        $deleted_count = count($waybill_ids);
+        $message = "Customer deleted successfully!";
+        if ($deleted_count > 0) {
+            $message .= " Also deleted $deleted_count waybill(s) and their associated items.";
+        }
+        wp_redirect(admin_url('admin.php?page=08600-customers&deleted=1&waybills_deleted=' . $deleted_count));
         exit;
     } elseif (!$redirect) {
         echo '<div class="bg-yellow-100 text-yellow-800 p-4 rounded mb-4">Customer not found or already deleted.</div>';

@@ -28,6 +28,23 @@ function plugin_Waybill_list_page()
         <?php echo do_shortcode('[showheader title="Waybill Dashboard" desc=""]'); ?>
 
         <div class="max-w-7xl mx-auto">
+            <!-- Bulk Invoice Section -->
+            <div class="bg-white shadow rounded-lg p-6 mb-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold text-gray-900">Bulk Invoice Generator</h3>
+                    <button id="select-all-waybills" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                        Select All
+                    </button>
+                </div>
+                <p class="text-sm text-gray-600 mb-4">Select waybills to generate a bulk invoice with waybill number, destination country, city, and grand total.</p>
+                <button id="generate-bulk-invoice" class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium transition-colors" disabled>
+                    <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                    Generate Bulk Invoice (<span id="selected-count">0</span> selected)
+                </button>
+            </div>
+
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <!-- Total Waybills Card -->
                 <div class="bg-white shadow rounded-lg p-4">
@@ -144,7 +161,6 @@ function plugin_Waybill_list_page()
                     $columns = [
                         'waybill_no' => ['label' => 'Waybill #', 'align' => 'text-left'],
                         'customer_name' => ['label' => 'Name', 'align' => 'text-left'],
-                        'status' => ['label' => 'Status', 'align' => 'text-left'],
                         'total' => ['label' => 'Total', 'align' => 'text-right'],
                         'actions' => ['label' => 'Actions', 'align' => 'text-center'],
                     ];
@@ -152,10 +168,6 @@ function plugin_Waybill_list_page()
                     $waybill_actions = function ($key, $row) {
                         if ($key === 'customer_name') {
                             return $row->customer_name . ' ' . $row->customer_surname;
-                        }
-                        if ($key === 'status') {
-                            //return badge
-                            return KIT_Commons::statusBadge($row->status, "bg-orange-400");
                         }
                         if ($key === 'total') {
                             if (KIT_Commons::isAdmin()) {
@@ -180,5 +192,83 @@ function plugin_Waybill_list_page()
             </div>
         </div>
     </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Bulk invoice functionality
+    const selectAllBtn = document.getElementById('select-all-waybills');
+    const generateBulkInvoiceBtn = document.getElementById('generate-bulk-invoice');
+    const selectedCountSpan = document.getElementById('selected-count');
+    
+    let selectedWaybills = new Set();
+    
+    // Select all functionality
+    function updateSelectAllButton() {
+        const checkboxes = document.querySelectorAll('.waybill-checkbox');
+        const checkedCount = document.querySelectorAll('.waybill-checkbox:checked').length;
+        
+        if (checkedCount === 0) {
+            selectAllBtn.textContent = 'Select All';
+        } else if (checkedCount === checkboxes.length) {
+            selectAllBtn.textContent = 'Deselect All';
+        } else {
+            selectAllBtn.textContent = `Select All (${checkedCount}/${checkboxes.length})`;
+        }
+        
+        // Update selected count
+        selectedCountSpan.textContent = checkedCount;
+        
+        // Enable/disable generate button
+        generateBulkInvoiceBtn.disabled = checkedCount === 0;
+    }
+    
+    // Select all button click
+    selectAllBtn.addEventListener('click', function() {
+        const checkboxes = document.querySelectorAll('.waybill-checkbox');
+        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+        
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = !allChecked;
+            if (!allChecked) {
+                selectedWaybills.add(checkbox.value);
+            } else {
+                selectedWaybills.delete(checkbox.value);
+            }
+        });
+        
+        updateSelectAllButton();
+    });
+    
+            // Individual checkbox change
+        document.addEventListener('change', function(e) {
+            if (e.target.classList.contains('waybill-checkbox')) {
+                if (e.target.checked) {
+                    selectedWaybills.add(e.target.value);
+                } else {
+                    selectedWaybills.delete(e.target.value);
+                }
+                updateSelectAllButton();
+            }
+        });
+    
+    // Generate bulk invoice
+    generateBulkInvoiceBtn.addEventListener('click', function() {
+        if (selectedWaybills.size === 0) {
+            alert('Please select at least one waybill to generate a bulk invoice.');
+            return;
+        }
+        
+        const selectedIds = Array.from(selectedWaybills).join(',');
+        const url = '<?php echo plugin_dir_url(__FILE__); ?>customers/pdf-bulkinvoicing.php?selected_ids=' + selectedIds;
+        
+        // Open in new window/tab
+        window.open(url, '_blank');
+    });
+    
+    // Initialize
+    updateSelectAllButton();
+});
+</script>
+
 <?php
 }
