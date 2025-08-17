@@ -1,3 +1,4 @@
+<?php if (!defined('ABSPATH')) { exit; } ?>
  <div class="bg-white p-6">
      <div class="grid md:grid-cols-5 gap-4">
          <div class="md:col-span-3 rounded-lg">
@@ -74,13 +75,14 @@
                                  <div id="misc-items-container">
                                      <!-- Existing misc items will be loaded here -->
                                      <?php
-                                        if (!empty($quotation->miscellaneous)) {
-                                            $misc_items = json_decode($quotation->miscellaneous, true);
-                                            if (is_array($misc_items)) {
-                                                foreach ($misc_items as $index => $item) {
+                                        // Check if we have waybill data with miscellaneous items
+                                        if (isset($waybill) && !empty($waybill->miscellaneous)) {
+                                            $misc_items = maybe_unserialize($waybill->miscellaneous);
+                                            if (is_array($misc_items) && isset($misc_items['others'])) {
+                                                foreach ($misc_items['others'] as $index => $item) {
                                                     echo '<div class="misc-item" style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
-                                                            <input type="text" name="misc_item[]" value="' . esc_attr($item['name']) . '" placeholder="Item description" style="flex: 2; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-                                                            <input type="number" name="misc_price[]" value="' . esc_attr($item['price']) . '" placeholder="Amount" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                                            <input type="text" name="misc_item[]" value="' . esc_attr($item['name'] ?? '') . '" placeholder="Item description" style="flex: 2; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                                            <input type="number" name="misc_price[]" value="' . esc_attr($item['price'] ?? '') . '" placeholder="Amount" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                                                             <button type="button" class="remove-misc-btn" style="background-color: #ef4444; color: white; padding: 8px; border-radius: 4px; border: none; cursor: pointer;">×</button>
                                                         </div>';
                                                 }

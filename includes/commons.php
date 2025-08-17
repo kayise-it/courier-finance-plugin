@@ -1683,20 +1683,33 @@ class KIT_Commons
 
                 addBtn.addEventListener('click', function() {
                     const newItem = document.createElement('div');
-                    newItem.className = 'misc-item';
-                    newItem.style = 'display: flex; gap: 10px; margin-bottom: 10px; align-items: center;';
+                    newItem.className = 'flex flex-row gap-2 waybill-item p-1 rounded-lg shadow-sm';
                     newItem.innerHTML = `
-                    <input type="text" name="<?php echo esc_js($options['group_name']); ?>[misc_item][]" 
-                           class="<?php echo esc_js(self::inputClass() . ' ' . $options['input_class']); ?>" 
-                           style="flex: 2;" placeholder="Item name">
-                    <input type="number" name="<?php echo esc_js($options['group_name']); ?>[misc_price][]" 
-                           class="<?php echo esc_js(self::inputClass() . ' ' . $options['input_class']); ?>" 
-                           style="flex: 1;" placeholder="Amount">
-                    <input type="number" name="<?php echo esc_js($options['group_name']); ?>[misc_quantity][]" 
-                           class="<?php echo esc_js(self::inputClass() . ' ' . $options['input_class']); ?>" 
-                           style="flex: 1;" placeholder="Qty">
-                    <button type="button" class="remove-misc-btn" 
-                            style="background-color: #ef4444; color: white; padding: 8px; border-radius: 4px; border: none; cursor: pointer;">×</button>
+                        <!-- Description -->
+                        <div class="w-full md:w-1/3">
+                            <label class="<?php echo esc_js($options['label_class']); ?>">Item</label>
+                            <input type="text" name="<?php echo esc_js($options['group_name']); ?>[${itemIndex}][item_name]" 
+                                   class="<?php echo esc_js($options['input_class']); ?>" 
+                                   placeholder="e.g. Laptop, Router, etc">
+                        </div>
+                        <!-- Quantity -->
+                        <div class="w-full md:w-1/6">
+                            <label class="<?php echo esc_js($options['label_class']); ?>">Qty</label>
+                            <input type="number" name="<?php echo esc_js($options['group_name']); ?>[${itemIndex}][quantity]" 
+                                   class="<?php echo esc_js($options['input_class']); ?>" 
+                                   value="1">
+                        </div>
+                        <!-- Unit Price -->
+                        <div class="w-full md:w-1/3">
+                            <label class="<?php echo esc_js($options['label_class']); ?>">Unit Price</label>
+                            <input type="number" name="<?php echo esc_js($options['group_name']); ?>[${itemIndex}][unit_price]" 
+                                   class="<?php echo esc_js($options['input_class']); ?>" 
+                                   value="0">
+                        </div>
+                        <!-- Delete Icon -->
+                        <div class="flex items-end">
+                            <button type="button" class="remove-item <?php echo esc_js($options['remove_btn_class']); ?>" title="Delete">×</button>
+                        </div>
                 `;
                     container.appendChild(newItem);
                     itemIndex++;
@@ -1704,8 +1717,8 @@ class KIT_Commons
 
                 // Event delegation for remove buttons
                 document.addEventListener('click', function(e) {
-                    if (e.target.classList.contains('remove-misc-btn')) {
-                        e.target.closest('.misc-item').remove();
+                    if (e.target.classList.contains('remove-item')) {
+                        e.target.closest('.waybill-item').remove();
                     }
                 });
             });

@@ -1,3 +1,4 @@
+<?php if (!defined('ABSPATH')) { exit; } ?>
 <div class="bg-white p-6">
     <h3 class="text-lg font-medium text-gray-700 mb-3">Item Information</h3>
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">

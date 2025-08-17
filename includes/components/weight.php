@@ -1,3 +1,4 @@
+<?php if (!defined('ABSPATH')) { exit; } ?>
 <input type="hidden" name="origin_country_id" value="2" id="countrydestination_id" />
 <input type="hidden" name="current_rate" id="current_rate" value="<?= isset($waybill['miscellaneous']['others']['mass_rate']) ?>">
 <div class="bg-slate-100 p-6 rounded">
@@ -39,8 +40,10 @@
                     'tabindex' => '1',
                 ]); ?>
             </div>
-            <div id="" class="text-sm text-gray-700">
-                = R<span id="mass_charge_display"><?= esc_html($waybill['mass_charge'] ?? '0.00'); ?></span> <span id="manipulated_mass_charge_display"></span>
+            <div class="text-sm text-gray-700">
+                = R<span id="mass_base_display">0.00</span>
+                <span id="mass_manip_display"></span>
+                <span id="mass_equals_display"></span>
             </div>
         </div>
 
@@ -87,8 +90,9 @@
                         const totalMassInput = document.getElementById('total_mass_kg');
                         const massRateInput = document.getElementById('mass_rate');
                         const massChargeInput = document.getElementById('mass_charge');
-                        const massChargeDisplay = document.getElementById('mass_charge_display');
-                        const manipulatedMassChargeDisplay = document.getElementById('manipulated_mass_charge_display');
+                        const massBaseDisplay = document.getElementById('mass_base_display');
+                        const massManipDisplay = document.getElementById('mass_manip_display');
+                        const massEqualsDisplay = document.getElementById('mass_equals_display');
                         const manipulatorInput = document.getElementById('mass_charge_manipulator');
                         
                         // Function to calculate mass charge
@@ -106,13 +110,14 @@
                             }
                             
                             // Update displays
-                            massChargeDisplay.textContent = baseCharge.toFixed(2);
-                            massChargeInput.value = finalCharge.toFixed(2);
-                            
-                            if (checkbox && checkbox.checked && manipulatorValue > 0) {
-                                manipulatedMassChargeDisplay.textContent = ` + R${manipulatorValue.toFixed(2)} (manipulated)`;
+                            if (massBaseDisplay) massBaseDisplay.textContent = baseCharge.toFixed(2);
+                            if (massChargeInput) massChargeInput.value = finalCharge.toFixed(2);
+                            if (checkbox && checkbox.checked && manipulatorValue !== 0) {
+                                if (massManipDisplay) massManipDisplay.textContent = ` + R${manipulatorValue.toFixed(2)}`;
+                                if (massEqualsDisplay) massEqualsDisplay.textContent = ` = R${finalCharge.toFixed(2)}`;
                             } else {
-                                manipulatedMassChargeDisplay.textContent = '';
+                                if (massManipDisplay) massManipDisplay.textContent = '';
+                                if (massEqualsDisplay) massEqualsDisplay.textContent = '';
                             }
                         }
                         

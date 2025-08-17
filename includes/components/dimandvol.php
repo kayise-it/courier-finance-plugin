@@ -1,3 +1,4 @@
+<?php if (!defined('ABSPATH')) { exit; } ?>
 <div class="space-y-6 mb-6">
     <div class="rounded bg-slate-100 p-6">
         <h3 class="text-lg font-semibold text-gray-800 mb-2">Item Dimensions</h3>

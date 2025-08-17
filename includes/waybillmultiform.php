@@ -22,8 +22,13 @@ function kit_render_waybill_multiform($atts)
     $delivery_id = esc_attr($atts['delivery_id']);
     $direction_id = KIT_Deliveries::getDirectionId($delivery_id);
 
-    // Decode JSON values
-    $waybill = json_decode(stripslashes($atts['waybill']), true);
+    // Decode JSON values safely (handles string JSON or already-parsed arrays)
+    $waybill_raw = $atts['waybill'] ?? '{}';
+    if (is_array($waybill_raw)) {
+        $waybill = $waybill_raw;
+    } else {
+        $waybill = json_decode(stripslashes((string)$waybill_raw), true);
+    }
     $customer = $atts['customer'];
 
     ob_start(); ?>
@@ -74,8 +79,8 @@ function kit_render_waybill_multiform($atts)
             const customerSelect = document.getElementById('customer-select');
             const custIdInput = document.getElementById('cust_id');
 
-            const nameInput = getCustomerInput('customer_name');
-            const surnameInput = getCustomerInput('customer_surname');
+            const nameInput = getCustomerInput('name');
+            const surnameInput = getCustomerInput('surname');
             const cellInput = getCustomerInput('cell');
             const addressInput = getCustomerInput('address');
 
@@ -237,7 +242,6 @@ function kit_render_waybill_multiform($atts)
 
         <?php if (!$atts['ajaxform']): ?>
             // AJAX Form Submission
-            alert();
             jQuery(document).ready(function($) {
                 $('#multi-step-waybill-form').on('submit', function(e) {
                     e.preventDefault();

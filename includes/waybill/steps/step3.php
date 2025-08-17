@@ -1,4 +1,4 @@
-<!-- Waybill Items Step -->
+<?php if (!defined('ABSPATH')) { exit; } ?>
 <div class="bg-white p-6" id="step-3">
     <!-- VAT Validation Message -->
     <div id="vat-validation-message" class="mb-6 p-4 rounded-lg border-l-4" style="display: none;">

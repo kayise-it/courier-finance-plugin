@@ -1,3 +1,4 @@
+<?php if (!defined('ABSPATH')) { exit; } ?>
 <div class="">
     <tr>
         <th><label for="destination_country_select" class="<?= KIT_Commons::labelClass() ?>">Destination Country</label></th>

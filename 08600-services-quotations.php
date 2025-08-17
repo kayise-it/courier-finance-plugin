@@ -28,8 +28,24 @@ function customStyling()
 require_once plugin_dir_path(__FILE__) . 'includes/class-database.php';
 include_once(plugin_dir_path(__FILE__) . 'includes/class-plugin.php');
 
-// Activate and deactivate hooks
-register_activation_hook(__FILE__, array('Database', 'activate'));
+// Activate and deactivate hooks (guard against unexpected output)
+register_activation_hook(__FILE__, function() {
+    // Absorb any accidental output during activation to avoid "unexpected output" notice
+    $level = ob_get_level();
+    $prev_display = ini_get('display_errors');
+    @ini_set('display_errors', '0');
+    global $wpdb; if (isset($wpdb)) { $wpdb->suppress_errors(true); }
+    ob_start();
+    try {
+        Database::activate();
+    } finally {
+        while (ob_get_level() > $level) {
+            ob_end_clean();
+        }
+        if (isset($wpdb)) { $wpdb->suppress_errors(false); }
+        if ($prev_display !== false) { @ini_set('display_errors', $prev_display); }
+    }
+});
 register_deactivation_hook(__FILE__, array('Database', 'deactivate'));
 
 function kit_remove_manage_options_from_editor()

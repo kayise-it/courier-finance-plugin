@@ -1,3 +1,4 @@
+<?php if (!defined('ABSPATH')) { exit; } ?>
 <div class="mb-6">
     <h2 class="text-lg font-medium text-gray-700 mb-3">Customer Information</h2>
     <?php $is_existing_customer = $atts['is_existing_customer'] ?>
@@ -33,9 +34,9 @@
                         'name'  => 'company_name',
                         'id'    => 'company_name',
                         'type'  => 'text',
-                        'value' => esc_attr($is_existing_customer ? $customer->name : rand(1, 23)),
+                        'value' => esc_attr($is_existing_customer ? $customer->name : ''),
                         'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500',
-                        'special' => ''
+                        'special' => 'autocomplete="organization"'
                     ]); ?>
                 </div>
             </div>
@@ -48,7 +49,7 @@
                         'type'  => 'text',
                         'value' => esc_attr($is_existing_customer ? $customer->name : ''),
                         'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500',
-                        'special' => ''
+                        'special' => 'autocomplete="given-name"'
                     ]); ?>
                 </div>
                 <div>
@@ -59,7 +60,7 @@
                         'type'  => 'text',
                         'value' => esc_attr($is_existing_customer ? $customer->surname : ''),
                         'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500',
-                        'special' => ''
+                        'special' => 'autocomplete="family-name"'
                     ]); ?>
                 </div>
                 <div>
@@ -67,10 +68,10 @@
                         'label' => 'Cell',
                         'name'  => 'cell',
                         'id'    => 'cell',
-                        'type'  => 'text',
+                        'type'  => 'tel',
                         'value' => esc_attr($is_existing_customer ? $customer->cell : ''),
                         'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500',
-                        'special' => ''
+                        'special' => 'autocomplete="tel"'
                     ]); ?>
                 </div>
                 <div>
@@ -78,10 +79,10 @@
                         'label' => 'Email',
                         'name'  => 'email_address',
                         'id'    => 'email_address',
-                        'type'  => 'text',
-                        'value' => esc_attr($is_existing_customer ? $customer->email_address : 'me@me.com'),
+                        'type'  => 'email',
+                        'value' => esc_attr($is_existing_customer ? $customer->email_address : ''),
                         'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500',
-                        'special' => ''
+                        'special' => 'autocomplete="email"'
                     ]); ?>
                 </div>
 
@@ -95,7 +96,7 @@
                     'type'  => 'text',
                     'value' => esc_attr($is_existing_customer ? $customer->address : ''),
                     'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500',
-                    'special' => ''
+                    'special' => 'autocomplete="address-line1"'
                 ]); ?>
             </div>
             <div>

@@ -1,16 +1,4 @@
-<!-- 
-$waybill['include_sad500']
-$waybill['include_sadc']
-$waybill['vat_include']
-$waybill['warehouse']
- -->
-
-<?php
-// The logic here is broken and confusing:
-// - The elseif conditions are incorrect: `isset($optionChoice) && !isset($optionChoice) == 2` will never be true.
-// - The intent is to show different UI for different $optionChoice values (1, 2, 3, etc).
-// - The first block is for when $optionChoice is not set (default).
-// - The second and third blocks are unreachable due to the logic error.
+<?php if (!defined('ABSPATH')) { exit; }
 
 if (!isset($optionChoice)) : ?>
 

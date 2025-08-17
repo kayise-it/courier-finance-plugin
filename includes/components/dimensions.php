@@ -1,3 +1,4 @@
+<?php if (!defined('ABSPATH')) { exit; } ?>
 <div class="">
     <div class="grid grid-cols-3 gap-4 mb-4">
         <?php

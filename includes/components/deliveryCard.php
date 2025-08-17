@@ -118,9 +118,9 @@ class KIT_DeliveryCard {
             }
             
             if ($options['actions']['edit']) {
-                $html .= '<a href="?page=kit-deliveries&edit_delivery=' . $delivery->id . '" class="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors">';
+                $html .= '<button onclick="editDelivery(' . $delivery->id . ')" class="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors">';
                 $html .= 'Edit';
-                $html .= '</a>';
+                $html .= '</button>';
             }
             
             if ($options['actions']['delete']) {

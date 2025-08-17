@@ -1,4 +1,4 @@
-<!-- File location: includes/components/citySelect.php -->
+<?php if (!defined('ABSPATH')) { exit; } ?>
 <div id="waybill-form-city">
   <?php
   $selectedCountry = 1;

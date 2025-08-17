@@ -1,3 +1,4 @@
+<?php if (!defined('ABSPATH')) { exit; } ?>
 <div id="scheduled-deliveries-container" class="mt-4">
     <h4 class="text-md font-medium text-gray-600 mb-2">Scheduled Deliveries</h4>
     <div id="scheduled-deliveries-list" class="flex gap-4 min-h-20 bg-slate-200 max-h-60 overflow-y-auto p-2 border rounded-md">

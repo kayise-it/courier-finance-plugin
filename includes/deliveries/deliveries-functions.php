@@ -21,14 +21,13 @@ class KIT_Deliveries
         add_action('wp_ajax_get_deliveries_by_country_id', [self::class, 'handle_get_deliveries_by_country_id']);
         add_action('wp_ajax_nopriv_get_deliveries_by_country_id', [self::class, 'handle_get_deliveries_by_country_id']);
         add_shortcode('country_select', [self::class, 'CountrySelect']);
-        add_action('wp_ajax_handle_get_cities_for_country', [self::class, 'handle_get_cities_for_country']);
+        add_action('wp_ajax_handle_get_cities_for_country', [self::class, 'handle_get_cities_for_country_callback']);
+        add_action('wp_ajax_nopriv_handle_get_cities_for_country', [self::class, 'handle_get_cities_for_country_callback']);
         add_action('wp_ajax_handle_get_countryDeliveries', [self::class, 'handle_get_countryDeliveries_callback']);
         add_action('wp_ajax_handle_get_price_per_kg', [self::class, 'handle_get_price_per_kg']);
         add_action('wp_ajax_nopriv_handle_get_price_per_kg', [self::class, 'handle_get_price_per_kg']);
         add_action('wp_ajax_handle_get_price_per_m3', [self::class, 'handle_get_price_per_m3']);
         add_action('wp_ajax_nopriv_handle_get_price_per_m3', [self::class, 'handle_get_price_per_m3']);
-        add_action('wp_ajax_handle_get_cities_for_country', [self::class, 'handle_get_cities_for_country_callback']);
-        add_action('wp_ajax_nopriv_handle_get_cities_for_country', [self::class, 'handle_get_cities_for_country_callback']);
     }
     public static function shippingDirections()
     {
@@ -62,7 +61,7 @@ class KIT_Deliveries
         if (!$chargeGroup || !$total_volume_m3) {
             wp_send_json_error(['message' => 'Missing chargeGroup or volume.']);
         }
-        
+
 
         $table = $wpdb->prefix . 'kit_shipping_rates_volume';
 
@@ -209,7 +208,7 @@ class KIT_Deliveries
     {
         // Menu registration moved to unified 08600 Waybills menu
         // Individual menu registration commented out to avoid conflicts
-        
+
         /*
         add_menu_page(
             'Deliveries Management',
@@ -660,8 +659,13 @@ class KIT_Deliveries
     {
         global $wpdb;
         $table_name = $wpdb->prefix . 'kit_operating_cities';
-        $query = $wpdb->prepare("SELECT * FROM $table_name WHERE country_id = %d", $country_id);
-        return $wpdb->get_results($query);
+        $query = $wpdb->prepare("SELECT * FROM $table_name WHERE country_id = %d ORDER BY city_name ASC", $country_id);
+        $results = $wpdb->get_results($query);
+
+        // Debug logging
+        error_log("Getting cities for country ID: $country_id, found: " . count($results));
+
+        return $results;
     }
     public static function CountrySelect($name = '', $id = '', $delivery_id = null, $required = true)
     {
@@ -683,7 +687,7 @@ class KIT_Deliveries
         <?php endif;
         ob_start();
         ?>
-        <select onchange="handleCountryChange(this.value)" name="<?php echo esc_attr($name); ?>" id="<?php echo esc_attr($id); ?>" <?php echo $required_attr; ?>
+        <select onchange="handleCountryChange(this.value, '<?php echo esc_attr($name); ?>')" name="<?php echo esc_attr($name); ?>" id="<?php echo esc_attr($id); ?>" <?php echo $required_attr; ?>
             class="<?= KIT_Commons::selectClass(); ?>">
             <option value="">Select Country</option>
             <?php foreach ($countries as $country): ?>
@@ -699,9 +703,381 @@ class KIT_Deliveries
 
     public static function deliveryForm($delivery_id = null)
     {
-        // This method is deprecated - form is now integrated into render_admin_page
-        // Keeping for backward compatibility but not used in the new UI
-        return '<p class="text-gray-500">Form has been moved to the main page layout.</p>';
+        // Get delivery data for editing
+        $delivery = null;
+        if ($delivery_id) {
+            $delivery = self::get_delivery($delivery_id);
+        }
+        
+        ob_start();
+        ?>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div class="mb-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-xl font-semibold text-gray-900">
+                            <?= $delivery ? 'Edit Delivery' : 'Create New Delivery' ?>
+                        </h2>
+                        <p class="text-sm text-gray-600 mt-1">
+                            <?= $delivery ? 'Update delivery information and settings' : 'Create a new delivery entry' ?>
+                        </p>
+                    </div>
+                    <?php if ($delivery): ?>
+                    <div class="flex items-center space-x-2">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                            <?= $delivery->status === 'delivered' ? 'bg-green-100 text-green-800' : 
+                                ($delivery->status === 'in_transit' ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-blue-800') ?>">
+                            <?= ucfirst(str_replace('_', ' ', $delivery->status)) ?>
+                        </span>
+                    </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <form id="edit-delivery-form" class="space-y-6">
+                <input type="hidden" name="action" value="kit_deliveries_crud">
+                <input type="hidden" name="delivery_id" id="delivery_id" value="<?= $delivery ? $delivery->id : 0 ?>">
+                <?php wp_nonce_field('get_waybills_nonce', 'nonce'); ?>
+
+                <!-- Reference Number -->
+                <div class="form-field">
+                    <label for="delivery_reference" class="block text-sm font-medium text-gray-700 mb-2">
+                        <span class="flex items-center">
+                            <svg class="w-4 h-4 mr-1 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                            Reference Number
+                        </span>
+                    </label>
+                    <div class="relative">
+                        <input type="text" name="delivery_reference" id="delivery_reference"
+                            readonly value="<?= $delivery ? esc_attr($delivery->delivery_reference) : KIT_Deliveries::generateDeliveryRef() ?>"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50 text-gray-700 font-mono text-sm">
+                        <div class="absolute inset-y-0 right-0 flex items-center pr-3">
+                            <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                        </div>
+                    </div>
+                    <p class="mt-1 text-xs text-gray-500">Auto-generated reference number</p>
+                </div>
+
+                <!-- Route Information -->
+                <div class="bg-gray-50 rounded-lg p-4">
+                    <h3 class="text-sm font-medium text-gray-700 mb-4 flex items-center">
+                        <svg class="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        </svg>
+                        Route Information
+                    </h3>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- Origin -->
+                        <div class="form-field">
+                            <label for="origin_country_select" class="block text-sm font-medium text-gray-700 mb-2">
+                                <span class="flex items-center">
+                                    <svg class="w-4 h-4 mr-1 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                    </svg>
+                                    Origin Country
+                                </span>
+                            </label>
+                            <div class="relative">
+                                <?php require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/selectsOrigin.php'); ?>
+                            </div>
+                        </div>
+
+                        <!-- Destination -->
+                        <div class="form-field">
+                            <label for="destination_country_select" class="block text-sm font-medium text-gray-700 mb-2">
+                                <span class="flex items-center">
+                                    <svg class="w-4 h-4 mr-1 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                    </svg>
+                                    Destination Country
+                                </span>
+                            </label>
+                            <div class="relative">
+                                <?php require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/selectsDestination.php'); ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Delivery Details -->
+                <div class="bg-gray-50 rounded-lg p-4">
+                    <h3 class="text-sm font-medium text-gray-700 mb-4 flex items-center">
+                        <svg class="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        Delivery Details
+                    </h3>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- Dispatch Date -->
+                        <div class="form-field">
+                            <label for="dispatch_date" class="block text-sm font-medium text-gray-700 mb-2">
+                                <span class="flex items-center">
+                                    <svg class="w-4 h-4 mr-1 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                    </svg>
+                                    Dispatch Date
+                                </span>
+                            </label>
+                            <input type="date" name="dispatch_date" id="dispatch_date" required
+                                value="<?= $delivery ? esc_attr($delivery->dispatch_date) : '' ?>"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors">
+                        </div>
+
+                        <!-- Truck Number -->
+                        <div class="form-field">
+                            <label for="truck_number" class="block text-sm font-medium text-gray-700 mb-2">
+                                <span class="flex items-center">
+                                    <svg class="w-4 h-4 mr-1 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                    </svg>
+                                    Truck Number
+                                </span>
+                            </label>
+                            <input type="text" name="truck_number" id="truck_number" required
+                                value="<?= $delivery ? esc_attr($delivery->truck_number) : '' ?>"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                                placeholder="Enter truck number">
+                        </div>
+                    </div>
+
+                    <!-- Status -->
+                    <div class="form-field mt-4">
+                        <label for="status" class="block text-sm font-medium text-gray-700 mb-2">
+                            <span class="flex items-center">
+                                <svg class="w-4 h-4 mr-1 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                Delivery Status
+                            </span>
+                        </label>
+                        <div class="relative">
+                            <?php
+                            $deliveries_status = [
+                                'scheduled' => 'Scheduled',
+                                'in_transit' => 'In Transit',
+                                'delivered' => 'Delivered'
+                            ];
+                            $current_status = $delivery ? $delivery->status : 'scheduled';
+                            echo KIT_Commons::simpleSelect(
+                                '',
+                                'status',
+                                'status',
+                                $deliveries_status,
+                                $current_status
+                            );
+                            ?>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Form Actions -->
+                <div class="flex gap-3 pt-6 border-t border-gray-200">
+                    <button type="submit" id="save-delivery-btn"
+                        class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                        </svg>
+                        <span><?= $delivery ? 'Update Delivery' : 'Save Delivery' ?></span>
+                    </button>
+                    <a href="?page=view-deliveries&delivery_id=<?= $delivery_id ?>" 
+                       class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center justify-center space-x-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                        <span>Cancel</span>
+                    </a>
+                </div>
+            </form>
+        </div>
+
+        <style>
+        .form-field input:focus,
+        .form-field select:focus {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+        }
+        
+        .form-field input.error,
+        .form-field select.error {
+            border-color: #ef4444;
+            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+        }
+        
+        .success-toast {
+            animation: slideInRight 0.3s ease-out;
+        }
+        
+        @keyframes slideInRight {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        </style>
+
+        <script>
+        jQuery(document).ready(function($) {
+            // Enhanced form validation with visual feedback
+            function validateField(field) {
+                const $field = $(field);
+                const value = $field.val().trim();
+                const isRequired = $field.prop('required');
+                
+                if (isRequired && !value) {
+                    $field.addClass('error').removeClass('border-gray-300').addClass('border-red-500');
+                    $field.closest('.form-field').find('label').addClass('text-red-600');
+                    return false;
+                } else {
+                    $field.removeClass('error').removeClass('border-red-500').addClass('border-gray-300');
+                    $field.closest('.form-field').find('label').removeClass('text-red-600');
+                    return true;
+                }
+            }
+
+            // Real-time validation
+            $('#edit-delivery-form input, #edit-delivery-form select').on('blur', function() {
+                validateField(this);
+            });
+
+            $('#edit-delivery-form').on('submit', function(e) {
+                e.preventDefault();
+                
+                // Validate all fields
+                let isValid = true;
+                $(this).find('input[required], select[required]').each(function() {
+                    if (!validateField(this)) {
+                        isValid = false;
+                    }
+                });
+
+                if (!isValid) {
+                    // Show error message with better styling
+                    const errorMsg = $('<div class="fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2">' +
+                        '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
+                        '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>' +
+                        '</svg>' +
+                        '<span>Please fill in all required fields</span>' +
+                        '</div>');
+                    $('body').append(errorMsg);
+                    
+                    // Auto-remove error message
+                    setTimeout(function() {
+                        errorMsg.fadeOut(function() {
+                            $(this).remove();
+                        });
+                    }, 4000);
+                    
+                    // Scroll to first error
+                    $('html, body').animate({
+                        scrollTop: $('.error').first().offset().top - 100
+                    }, 500);
+                    
+                    return;
+                }
+
+                const formData = $(this).serializeArray();
+                formData.push({
+                    name: 'task',
+                    value: $('#delivery_id').val() === '0' ? 'create_delivery' : 'update_delivery'
+                });
+
+                // Show loading state with better UX
+                const $btn = $('#save-delivery-btn');
+                const originalText = $btn.find('span').text();
+                $btn.prop('disabled', true)
+                    .find('span').text('Saving...');
+                
+                // Add loading spinner
+                $btn.prepend('<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">' +
+                    '<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>' +
+                    '<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>' +
+                    '</svg>');
+
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: $.param(formData),
+                    success: function(response) {
+                        if (response.success) {
+                            // Enhanced success message
+                            const successMsg = $('<div class="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2 success-toast">' +
+                                '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
+                                '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>' +
+                                '</svg>' +
+                                '<span>Delivery saved successfully!</span>' +
+                                '</div>');
+                            $('body').append(successMsg);
+                            
+                            setTimeout(function() {
+                                successMsg.fadeOut(function() {
+                                    $(this).remove();
+                                    location.reload();
+                                });
+                            }, 2000);
+                        } else {
+                            // Enhanced error message
+                            const errorMsg = $('<div class="fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2">' +
+                                '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
+                                '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>' +
+                                '</svg>' +
+                                '<span>Error: ' + (response.data || 'Unknown error occurred') + '</span>' +
+                                '</div>');
+                            $('body').append(errorMsg);
+                            
+                            setTimeout(function() {
+                                errorMsg.fadeOut(function() {
+                                    $(this).remove();
+                                });
+                            }, 5000);
+                        }
+                    },
+                    error: function() {
+                        // Network error message
+                        const errorMsg = $('<div class="fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2">' +
+                            '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
+                            '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>' +
+                            '</svg>' +
+                            '<span>Network error occurred. Please try again.</span>' +
+                            '</div>');
+                        $('body').append(errorMsg);
+                        
+                        setTimeout(function() {
+                            errorMsg.fadeOut(function() {
+                                $(this).remove();
+                            });
+                        }, 5000);
+                    },
+                    complete: function() {
+                        // Reset button state
+                        $btn.prop('disabled', false)
+                            .find('span').text(originalText);
+                        $btn.find('svg.animate-spin').remove();
+                    }
+                });
+            });
+
+            // Add visual feedback for form interactions
+            $('#edit-delivery-form input, #edit-delivery-form select').on('focus', function() {
+                $(this).closest('.form-field').addClass('ring-2 ring-blue-500 ring-opacity-50');
+            }).on('blur', function() {
+                $(this).closest('.form-field').removeClass('ring-2 ring-blue-500 ring-opacity-50');
+            });
+        });
+        </script>
+        <?php
+        return ob_get_clean();
     }
 
     /**
@@ -762,15 +1138,33 @@ class KIT_Deliveries
 
     public static function render_admin_page()
     {
+        // Check if we're viewing a specific delivery
+        if (isset($_GET['view_delivery']) && is_numeric($_GET['view_delivery'])) {
+            // Set the delivery_id parameter for the view_deliveries_page function
+            $_GET['delivery_id'] = $_GET['view_delivery'];
+            self::view_deliveries_page();
+            return;
+        }
+
+        // Enqueue necessary scripts for AJAX functionality
+        wp_enqueue_script('kitscript', plugin_dir_url(__FILE__) . '../js/kitscript.js', ['jquery'], null, true);
+        wp_enqueue_script('waybill-pagination', plugin_dir_url(__FILE__) . '../../js/waybill-pagination.js', ['jquery'], null, true);
+
         $deliveries = self::get_all_deliveries();
-        
+
         // Get delivery statistics
         $total_deliveries = count($deliveries);
-        $scheduled_deliveries = array_filter($deliveries, function($d) { return $d->status === 'scheduled'; });
+        $scheduled_deliveries = array_filter($deliveries, function ($d) {
+            return $d->status === 'scheduled';
+        });
         $scheduled_count = count($scheduled_deliveries);
-        $in_transit_deliveries = array_filter($deliveries, function($d) { return $d->status === 'in_transit'; });
+        $in_transit_deliveries = array_filter($deliveries, function ($d) {
+            return $d->status === 'in_transit';
+        });
         $in_transit_count = count($in_transit_deliveries);
-        $delivered_deliveries = array_filter($deliveries, function($d) { return $d->status === 'delivered'; });
+        $delivered_deliveries = array_filter($deliveries, function ($d) {
+            return $d->status === 'delivered';
+        });
         $delivered_count = count($delivered_deliveries);
         $delivered_countries = array_unique(array_column($deliveries, 'destination_country_name'));
         $countries_count = count($delivered_countries);
@@ -887,153 +1281,158 @@ class KIT_Deliveries
                             </div>
                             <div class="text-sm text-gray-600">
                                 <?php echo count($deliveries); ?> deliveries found
+                            </div>
+                        </div>
+
+                        <?php if (!empty($deliveries)): ?>
+                            <!-- Block View -->
+                            <?php
+                            // Include the DeliveryCard component
+                            require_once plugin_dir_path(__FILE__) . '../components/deliveryCard.php';
+
+                            // Use the component to render the delivery grid
+                            echo KIT_DeliveryCard::renderGrid($deliveries, [
+                                'show_actions' => true,
+                                'show_truck' => true,
+                                'show_waybill_count' => false,
+                                'grid_class' => 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6',
+                                'empty_message' => 'No deliveries found'
+                            ]);
+                            ?>
+
+                        <?php else: ?>
+                            <div class="text-center py-12">
+                                <div class="mx-auto w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                                    <svg class="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
+                                    </svg>
+                                </div>
+                                <h3 class="text-lg font-medium text-gray-900 mb-2">No deliveries yet</h3>
+                                <p class="text-gray-600 mb-6">Get started by creating your first delivery</p>
+                                <button id="create-first-delivery" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors">
+                                    Create First Delivery
+                                </button>
+                            </div>
+                        <?php endif; ?>
                     </div>
                 </div>
 
-                            <?php if (!empty($deliveries)): ?>
-                                <!-- Block View -->
-                            <?php
-                                // Include the DeliveryCard component
-                                require_once plugin_dir_path(__FILE__) . '../components/deliveryCard.php';
-                                
-                                // Use the component to render the delivery grid
-                                echo KIT_DeliveryCard::renderGrid($deliveries, [
-                                    'show_actions' => true,
-                                    'show_truck' => true,
-                                    'show_waybill_count' => false,
-                                    'grid_class' => 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6',
-                                    'empty_message' => 'No deliveries found'
-                                ]);
-                                ?>
-
-                            <?php else: ?>
-                                <div class="text-center py-12">
-                                    <div class="mx-auto w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                                        <svg class="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
-                                        </svg>
-                                    </div>
-                                    <h3 class="text-lg font-medium text-gray-900 mb-2">No deliveries yet</h3>
-                                    <p class="text-gray-600 mb-6">Get started by creating your first delivery</p>
-                                    <button id="create-first-delivery" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors">
-                                        Create First Delivery
-                                    </button>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-
-                    <!-- Tab 2: Add Delivery -->
-                    <div id="tab-content-add-delivery" class="tab-content hidden">
-                        <div class="max-w-2xl mx-auto">
-                            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                                <div class="mb-6">
-                                    <h2 class="text-xl font-semibold text-gray-900">Add New Delivery</h2>
-                                    <p class="text-sm text-gray-600 mt-1">Create a new delivery entry</p>
-                                </div>
-                                
-                                <form id="delivery-form" class="space-y-6">
-                                    <input type="hidden" name="action" value="kit_deliveries_crud">
-                                    <input type="hidden" name="delivery_id" id="delivery_id" value="0">
-                                    <?php wp_nonce_field('kit_deliveries_nonce', 'nonce'); ?>
-
-                                    <!-- Reference Number -->
-                                    <div class="form-field">
-                                        <label for="delivery_reference" class="block text-sm font-medium text-gray-700 mb-2">
-                                            Reference Number
-                                        </label>
-                                        <input type="text" name="delivery_reference" id="delivery_reference" 
-                                               readonly value="<?= KIT_Deliveries::generateDeliveryRef() ?>"
-                                               class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50">
-                                    </div>
-
-                                    <!-- Origin -->
-                                    <div class="form-field">
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Origin</label>
-                                        <div class="space-y-3">
-                                            <div class="form-field">
-                                                <label for="origin_country" class="block text-xs font-medium text-gray-600 mb-1">Country</label>
-                                                <?php echo KIT_Deliveries::selectAllCountries('origin_country', 'origin_country_select', 1, $required = "required", 'origin'); ?>
-                                            </div>
-                                            <div class="form-field">
-                                                <label for="origin_city" class="block text-xs font-medium text-gray-600 mb-1">City</label>
-                                                <?php echo KIT_Deliveries::selectAllCitiesByCountry('origin_city', 'origin_city_select', 1, 1, $required = 'required', ''); ?>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <!-- Destination -->
-                                    <div class="form-field">
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Destination</label>
-                                        <div class="space-y-3">
-                                            <div class="form-field">
-                                                <label for="destination_country" class="block text-xs font-medium text-gray-600 mb-1">Country</label>
-                                                <?php echo KIT_Deliveries::selectAllCountries('destination_country', 'destination_country_select', 2, $required = "required", 'destination'); ?>
-                                            </div>
-                                            <div class="form-field">
-                                                <label for="destination_city" class="block text-xs font-medium text-gray-600 mb-1">City</label>
-                                                <?php echo KIT_Deliveries::selectAllCitiesByCountry('destination_city', 'destination_city_select', 2, 6); ?>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <!-- Dispatch Date -->
-                                    <div class="form-field">
-                                        <label for="dispatch_date" class="block text-sm font-medium text-gray-700 mb-2">
-                                            Dispatch Date
-                                        </label>
-                                        <input type="date" name="dispatch_date" id="dispatch_date" required
-                                               class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                    </div>
-
-                                    <!-- Truck Number -->
-                                    <div class="form-field">
-                                        <label for="truck_number" class="block text-sm font-medium text-gray-700 mb-2">
-                                            Truck Number
-                                        </label>
-                                        <input type="text" name="truck_number" id="truck_number" required
-                                               class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                               placeholder="Enter truck number">
-                                    </div>
-
-                                    <!-- Status -->
-                                    <div class="form-field">
-                                        <label for="status" class="block text-sm font-medium text-gray-700 mb-2">
-                                            Delivery Status
-                                        </label>
-                                        <?php
-                                        $deliveries_status = [
-                                            'scheduled' => 'Scheduled',
-                                            'in_transit' => 'In Transit',
-                                            'delivered' => 'Delivered'
-                                        ];
-                                        echo KIT_Commons::simpleSelect(
-                                            '',
-                                            'status',
-                                            'status',
-                                            $deliveries_status,
-                                            'scheduled'
-                                        );
-                            ?>
-                        </div>
-
-                                    <!-- Form Actions -->
-                                    <div class="flex gap-3 pt-4">
-                                        <button type="submit" id="save-delivery-btn"
-                                                class="btn-primary flex-1">
-                                            Save Delivery
-                                        </button>
-                                        <button type="button" id="cancel-edit" 
-                                                class="btn-secondary hidden">
-                                            Cancel
-                                        </button>
-                                    </div>
-                                </form>
+                <!-- Tab 2: Add Delivery -->
+                <div id="tab-content-add-delivery" class="tab-content hidden">
+                    <div class="max-w-2xl mx-auto">
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                            <div class="mb-6">
+                                <h2 class="text-xl font-semibold text-gray-900">Add New Delivery</h2>
+                                <p class="text-sm text-gray-600 mt-1">Create a new delivery entry</p>
                             </div>
+
+                            <form id="delivery-form" class="space-y-6">
+                                <input type="hidden" name="action" value="kit_deliveries_crud">
+                                <input type="hidden" name="delivery_id" id="delivery_id" value="0">
+                                <?php wp_nonce_field('get_waybills_nonce', 'nonce'); ?>
+
+                                <!-- Reference Number -->
+                                <div class="form-field">
+                                    <label for="delivery_reference" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Reference Number
+                                    </label>
+                                    <input type="text" name="delivery_reference" id="delivery_reference"
+                                        readonly value="<?= KIT_Deliveries::generateDeliveryRef() ?>"
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50">
+                                </div>
+
+                                <!-- Origin -->
+                                <div class="form-field">
+                                    <label for="origin_country_select" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Origin Country
+                                    </label>
+                                    <?php echo KIT_Deliveries::CountrySelect('origin_country', 'origin_country_select', null, true); ?>
+                                </div>
+
+                                <div class="form-field">
+                                    <label for="origin_city_select" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Origin City
+                                    </label>
+                                    <select name="origin_city" id="origin_city_select" required class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                        <option value="">Select City</option>
+                                    </select>
+                                </div>
+
+                                <!-- Destination -->
+                                <div class="form-field">
+                                    <label for="destination_country_select" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Destination Country
+                                    </label>
+                                    <?php echo KIT_Deliveries::CountrySelect('destination_country', 'destination_country_select', null, true); ?>
+                                </div>
+
+                                <div class="form-field">
+                                    <label for="destination_city_select" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Destination City
+                                    </label>
+                                    <select name="destination_city" id="destination_city_select" required class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                        <option value="">Select City</option>
+                                    </select>
+                                </div>
+
+                                <!-- Dispatch Date -->
+                                <div class="form-field">
+                                    <label for="dispatch_date" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Dispatch Date
+                                    </label>
+                                    <input type="date" name="dispatch_date" id="dispatch_date" required
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                </div>
+
+                                <!-- Truck Number -->
+                                <div class="form-field">
+                                    <label for="truck_number" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Truck Number
+                                    </label>
+                                    <input type="text" name="truck_number" id="truck_number" required
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="Enter truck number">
+                                </div>
+
+                                <!-- Status -->
+                                <div class="form-field">
+                                    <label for="status" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Delivery Status
+                                    </label>
+                                    <?php
+                                    $deliveries_status = [
+                                        'scheduled' => 'Scheduled',
+                                        'in_transit' => 'In Transit',
+                                        'delivered' => 'Delivered'
+                                    ];
+                                    echo KIT_Commons::simpleSelect(
+                                        '',
+                                        'status',
+                                        'status',
+                                        $deliveries_status,
+                                        'scheduled'
+                                    );
+                                    ?>
+                                </div>
+
+                                <!-- Form Actions -->
+                                <div class="flex gap-3 pt-4">
+                                    <button type="submit" id="save-delivery-btn"
+                                        class="btn-primary flex-1">
+                                        Save Delivery
+                                    </button>
+                                    <button type="button" id="cancel-edit"
+                                        class="btn-secondary hidden">
+                                        Cancel
+                                    </button>
+
+                                </div>
+                            </form>
                         </div>
                     </div>
                 </div>
             </div>
+
 
             <!-- Quick Actions Section - Bottom of Page -->
             <div class="mt-8">
@@ -1086,13 +1485,61 @@ class KIT_Deliveries
                                 <h4 class="font-medium text-gray-900">Warehouse</h4>
                                 <p class="text-sm text-gray-600">Manage warehouse waybills</p>
                             </div>
-                </a>
+                        </a>
+                    </div>
+                </div>
             </div>
         </div>
+
+        <style>
+            .tab-content {
+                display: none;
+            }
+
+            .tab-content.active {
+                display: block !important;
+            }
+
+            .tab-button {
+                cursor: pointer;
+                transition: all 0.2s ease;
+            }
+
+            .tab-button.active {
+                border-bottom-color: #3b82f6 !important;
+                color: #2563eb !important;
+            }
+        </style>
+
+        <!-- Edit Delivery Modal -->
+        <div id="edit-delivery-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 hidden flex items-center justify-center p-4" style="display: none;">
+            <div class="relative mx-auto w-11/12 md:w-3/4 lg:w-1/2 shadow-xl rounded-xl bg-white max-h-[90vh] overflow-y-auto">
+                <!-- Header -->
+                <div class="flex items-center justify-between p-6 border-b border-gray-200">
+                    <h3 class="text-xl font-semibold text-gray-900" id="modal-title">Edit Delivery</h3>
+                    <button id="close-modal" class="text-gray-400 hover:text-gray-600 transition-colors p-2 rounded-lg hover:bg-gray-100">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+                
+                <!-- Content -->
+                <div class="p-6">
+                    <div id="modal-content" class="overflow-y-auto">
+                        <!-- Modal content will be loaded here -->
+                        <div class="flex items-center justify-center py-12">
+                            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
         <script>
+            // Define ajaxurl for WordPress admin
+            var ajaxurl = '<?php echo admin_url('admin-ajax.php'); ?>';
+            
             // Tab functionality
             document.addEventListener('DOMContentLoaded', function() {
                 const tabButtons = document.querySelectorAll('.tab-button');
@@ -1101,6 +1548,7 @@ class KIT_Deliveries
                 function switchTab(tabId) {
                     // Hide all tab contents
                     tabContents.forEach(content => {
+                        content.style.display = 'none';
                         content.classList.add('hidden');
                         content.classList.remove('active');
                     });
@@ -1114,6 +1562,7 @@ class KIT_Deliveries
                     // Show selected tab content
                     const selectedContent = document.getElementById('tab-content-' + tabId);
                     if (selectedContent) {
+                        selectedContent.style.display = 'block';
                         selectedContent.classList.remove('hidden');
                         selectedContent.classList.add('active');
                     }
@@ -1136,48 +1585,13 @@ class KIT_Deliveries
 
                 // Initialize with first tab active
                 switchTab('all-deliveries');
+
+                // Debug: Log tab elements to console
+                console.log('Tab buttons found:', tabButtons.length);
+                console.log('Tab contents found:', tabContents.length);
             });
 
-            // Global function for handling country changes
-            function handleCountryChange(countryId, type) {
-                if (!countryId) return;
-                
-                const citySelectId = type === 'origin' ? 'origin_city_select' : 'destination_city_select';
-                const citySelect = document.getElementById(citySelectId);
-                
-                // Show loading state
-                citySelect.innerHTML = '<option value="">Loading cities...</option>';
-                citySelect.disabled = true;
-                
-                // Fetch cities for the selected country
-                jQuery.ajax({
-                    url: ajaxurl,
-                    type: 'POST',
-                    data: {
-                        action: 'handle_get_cities_for_country',
-                        country_id: countryId,
-                        nonce: jQuery('#nonce').val()
-                    },
-                    success: function(response) {
-                        if (response.success && response.data) {
-                            citySelect.innerHTML = '<option value="">Select City</option>';
-                            response.data.forEach(function(city) {
-                                const option = document.createElement('option');
-                                option.value = city.id;
-                                option.textContent = city.city_name;
-                                citySelect.appendChild(option);
-                            });
-                        } else {
-                            citySelect.innerHTML = '<option value="">No cities found</option>';
-                        }
-                        citySelect.disabled = false;
-                    },
-                    error: function() {
-                        citySelect.innerHTML = '<option value="">Error loading cities</option>';
-                        citySelect.disabled = false;
-                    }
-                });
-            }
+            
 
             jQuery(document).ready(function($) {
                 // Set minimum date for dispatch date
@@ -1188,11 +1602,11 @@ class KIT_Deliveries
                 // Handle form submission
                 $('#delivery-form').on('submit', function(e) {
                     e.preventDefault();
-                    
+
                     // Basic form validation
                     const requiredFields = ['origin_country', 'destination_country', 'dispatch_date', 'truck_number'];
                     let isValid = true;
-                    
+
                     requiredFields.forEach(function(fieldName) {
                         const field = document.querySelector(`[name="${fieldName}"]`);
                         if (!field.value.trim()) {
@@ -1202,12 +1616,12 @@ class KIT_Deliveries
                             field.classList.remove('border-red-500');
                         }
                     });
-                    
+
                     if (!isValid) {
                         alert('Please fill in all required fields.');
                         return;
                     }
-                    
+
                     const formData = $(this).serializeArray();
                     formData.push({
                         name: 'task',
@@ -1227,8 +1641,10 @@ class KIT_Deliveries
                                 const successMsg = $('<div class="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50">Delivery saved successfully!</div>');
                                 $('body').append(successMsg);
                                 setTimeout(function() {
-                                    successMsg.fadeOut(function() { $(this).remove(); });
-                                location.reload();
+                                    successMsg.fadeOut(function() {
+                                        $(this).remove();
+                                    });
+                                    location.reload();
                                 }, 2000);
                             } else {
                                 alert('Error: ' + (response.data || 'Unknown error occurred'));
@@ -1250,11 +1666,305 @@ class KIT_Deliveries
                     $('#delivery-form input:first').focus();
                 });
 
+                // Test country change functionality
+                $('#test-country-change').on('click', function() {
+                    console.log('Testing country change...');
+                    const originCountrySelect = document.getElementById('origin_country_select');
+                    if (originCountrySelect && originCountrySelect.value) {
+                        handleCountryChange(originCountrySelect.value, 'origin');
+                    } else {
+                        alert('Please select a country first');
+                    }
+                });
+
                 // Handle edit delivery
                 window.editDelivery = function(deliveryId) {
-                    // TODO: Implement edit functionality
-                    alert('Edit functionality will be implemented');
+                    console.log('Opening modal for delivery ID:', deliveryId);
+                    
+                    // Show modal
+                    $('#edit-delivery-modal').removeClass('hidden').show();
+                    
+                    // Get the AJAX URL - try multiple sources
+                    const ajaxUrl = window.ajaxurl || (window.myPluginAjax && window.myPluginAjax.ajax_url) || '/wp-admin/admin-ajax.php';
+                    console.log('Using AJAX URL:', ajaxUrl);
+                    
+                    // Load delivery data via AJAX
+                    $.ajax({
+                        url: ajaxUrl,
+                        type: 'POST',
+                        data: {
+                            action: 'kit_deliveries_crud',
+                            task: 'get_delivery',
+                            id: deliveryId,
+                            nonce: $('#delivery-form input[name="nonce"]').val()
+                        },
+                        success: function(response) {
+                            console.log('AJAX response:', response);
+                            if (response.success) {
+                                // Load the delivery form in the modal
+                                loadDeliveryFormInModal(response.data, deliveryId);
+                            } else {
+                                alert('Error loading delivery data: ' + (response.data || 'Unknown error'));
+                                $('#edit-delivery-modal').addClass('hidden').hide();
+                            }
+                        },
+                        error: function(xhr, status, error) {
+                            console.error('AJAX error:', error);
+                            console.error('Status:', status);
+                            console.error('Response:', xhr.responseText);
+                            console.error('XHR:', xhr);
+                            alert('Network error occurred while loading delivery data. Please check the console for details.');
+                            $('#edit-delivery-modal').addClass('hidden').hide();
+                        }
+                    });
                 };
+
+                // Function to load delivery form in modal
+                function loadDeliveryFormInModal(delivery, deliveryId) {
+                    // Create form HTML
+                    const formHtml = `
+                        <form id="modal-delivery-form" class="space-y-8">
+                            <input type="hidden" name="action" value="kit_deliveries_crud">
+                            <input type="hidden" name="delivery_id" value="${deliveryId}">
+                            <input type="hidden" name="nonce" value="${$('#delivery-form input[name="nonce"]').val()}">
+
+                            <!-- Reference Number -->
+                            <div class="form-field">
+                                <label class="block text-sm font-medium text-gray-700 mb-3">
+                                    <span class="flex items-center">
+                                        <svg class="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                        </svg>
+                                        Reference Number
+                                    </span>
+                                </label>
+                                <input type="text" name="delivery_reference" value="${delivery.delivery_reference || ''}" 
+                                       class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50 text-gray-700 font-mono text-sm" readonly>
+                                <p class="mt-2 text-xs text-gray-500">Auto-generated reference number</p>
+                            </div>
+
+                            <!-- Route Information -->
+                            <div class="bg-gray-50 rounded-xl p-6 border border-gray-200">
+                                <h3 class="text-base font-semibold text-gray-800 mb-6 flex items-center">
+                                    <svg class="w-5 h-5 mr-3 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                    </svg>
+                                    Route Information
+                                </h3>
+                                
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <!-- Origin -->
+                                    <div class="form-field">
+                                        <label class="block text-sm font-medium text-gray-700 mb-3">
+                                            <span class="flex items-center">
+                                                <svg class="w-4 h-4 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                                </svg>
+                                                Origin Country
+                                            </span>
+                                        </label>
+                                        <select name="origin_country" class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white">
+                                            <option value="">Select Origin Country</option>
+                                            <option value="1" ${delivery.origin_country_id == 1 ? 'selected' : ''}>South Africa</option>
+                                            <option value="2" ${delivery.origin_country_id == 2 ? 'selected' : ''}>Zimbabwe</option>
+                                            <option value="3" ${delivery.origin_country_id == 3 ? 'selected' : ''}>Zambia</option>
+                                        </select>
+                                    </div>
+
+                                    <!-- Destination -->
+                                    <div class="form-field">
+                                        <label class="block text-sm font-medium text-gray-700 mb-3">
+                                            <span class="flex items-center">
+                                                <svg class="w-4 h-4 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                                </svg>
+                                                Destination Country
+                                            </span>
+                                        </label>
+                                        <select name="destination_country" onchange="handleCountryChange(this.value, 'destination')" class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white">
+                                            <option value="">Select Destination Country</option>
+                                            <option value="1" ${delivery.destination_country_id == 1 ? 'selected' : ''}>South Africa</option>
+                                            <option value="2" ${delivery.destination_country_id == 2 ? 'selected' : ''}>Zimbabwe</option>
+                                            <option value="3" ${delivery.destination_country_id == 3 ? 'selected' : ''}>Zambia</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                
+                                <!-- Destination City -->
+                                <div class="form-field mt-4">
+                                    <label class="block text-sm font-medium text-gray-700 mb-3">
+                                        <span class="flex items-center">
+                                            <svg class="w-4 h-4 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                            </svg>
+                                            Destination City
+                                        </span>
+                                    </label>
+                                    <select name="destination_city" id="destination_city_select" class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white">
+                                        <option value="">Select Destination City</option>
+                                        <!-- Cities will be loaded dynamically based on selected country -->
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Delivery Details -->
+                            <div class="bg-gray-50 rounded-xl p-6 border border-gray-200">
+                                <h3 class="text-base font-semibold text-gray-800 mb-6 flex items-center">
+                                    <svg class="w-5 h-5 mr-3 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    Delivery Details
+                                </h3>
+                                
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <!-- Dispatch Date -->
+                                    <div class="form-field">
+                                        <label class="block text-sm font-medium text-gray-700 mb-3">
+                                            <span class="flex items-center">
+                                                <svg class="w-4 h-4 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                                </svg>
+                                                Dispatch Date
+                                            </span>
+                                        </label>
+                                        <input type="date" name="dispatch_date" value="${delivery.dispatch_date || ''}" required
+                                               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white">
+                                    </div>
+
+                                    <!-- Truck Number -->
+                                    <div class="form-field">
+                                        <label class="block text-sm font-medium text-gray-700 mb-3">
+                                            <span class="flex items-center">
+                                                <svg class="w-4 h-4 mr-2 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                                </svg>
+                                                Truck Number
+                                            </span>
+                                        </label>
+                                        <input type="text" name="truck_number" value="${delivery.truck_number || ''}" required
+                                               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white"
+                                               placeholder="Enter truck number">
+                                    </div>
+                                </div>
+
+                                <!-- Status -->
+                                <div class="form-field mt-6">
+                                    <label class="block text-sm font-medium text-gray-700 mb-3">
+                                        <span class="flex items-center">
+                                            <svg class="w-4 h-4 mr-2 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                            </svg>
+                                            Delivery Status
+                                        </span>
+                                    </label>
+                                    <select name="status" class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white">
+                                        <option value="scheduled" ${delivery.status === 'scheduled' ? 'selected' : ''}>Scheduled</option>
+                                        <option value="in_transit" ${delivery.status === 'in_transit' ? 'selected' : ''}>In Transit</option>
+                                        <option value="delivered" ${delivery.status === 'delivered' ? 'selected' : ''}>Delivered</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Form Actions -->
+                            <div class="flex gap-4 pt-8 border-t border-gray-200">
+                                <button type="submit" id="modal-save-btn"
+                                    class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-6 py-4 rounded-lg font-medium transition-colors duration-200 flex items-center justify-center space-x-3 disabled:opacity-50 disabled:cursor-not-allowed">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                    </svg>
+                                    <span>Update Delivery</span>
+                                </button>
+                                <button type="button" id="modal-cancel-btn"
+                                    class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-4 rounded-lg font-medium transition-colors duration-200 flex items-center justify-center space-x-3">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                    </svg>
+                                    <span>Cancel</span>
+                                </button>
+                            </div>
+                        </form>
+                    `;
+                    
+                    $('#modal-content').html(formHtml);
+                    
+                    // Handle modal form submission
+                    $('#modal-delivery-form').on('submit', function(e) {
+                        e.preventDefault();
+                        
+                        const formData = $(this).serializeArray();
+                        formData.push({
+                            name: 'task',
+                            value: 'update_delivery'
+                        });
+
+                        // Show loading state
+                        const $btn = $('#modal-save-btn');
+                        const originalText = $btn.find('span').text();
+                        $btn.prop('disabled', true).find('span').text('Saving...');
+                        
+                        // Get the AJAX URL - try multiple sources
+                        const ajaxUrl = window.ajaxurl || (window.myPluginAjax && window.myPluginAjax.ajax_url) || '/wp-admin/admin-ajax.php';
+                        console.log('Using AJAX URL for form submission:', ajaxUrl);
+                        
+                        $.ajax({
+                            url: ajaxUrl,
+                            type: 'POST',
+                            data: $.param(formData),
+                            success: function(response) {
+                                console.log('Form submission response:', response);
+                                if (response.success) {
+                                    // Show success message
+                                    const successMsg = $('<div class="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2">' +
+                                        '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
+                                        '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>' +
+                                        '</svg>' +
+                                        '<span>Delivery updated successfully!</span>' +
+                                        '</div>');
+                                    $('body').append(successMsg);
+                                    
+                                    setTimeout(function() {
+                                        successMsg.fadeOut(function() {
+                                            $(this).remove();
+                                            $('#edit-delivery-modal').addClass('hidden').hide();
+                                            location.reload();
+                                        });
+                                    }, 2000);
+                                } else {
+                                    alert('Error: ' + (response.data || 'Unknown error occurred'));
+                                }
+                            },
+                            error: function(xhr, status, error) {
+                                console.error('Form submission AJAX error:', error);
+                                console.error('Status:', status);
+                                console.error('Response:', xhr.responseText);
+                                alert('Network error occurred. Please try again. Check console for details.');
+                            },
+                            complete: function() {
+                                $btn.prop('disabled', false).find('span').text(originalText);
+                            }
+                        });
+                    });
+                    
+                    // Handle cancel button
+                    $('#modal-cancel-btn').on('click', function() {
+                        $('#edit-delivery-modal').addClass('hidden').hide();
+                    });
+                }
+
+                // Handle modal close
+                $('#close-modal').on('click', function() {
+                    $('#edit-delivery-modal').addClass('hidden').hide();
+                });
+
+                // Close modal when clicking outside
+                $('#edit-delivery-modal').on('click', function(e) {
+                    if (e.target === this) {
+                        $(this).addClass('hidden').hide();
+                    }
+                });
 
                 // Handle delete delivery
                 window.deleteDelivery = function(deliveryId) {
@@ -1295,7 +2005,7 @@ class KIT_Deliveries
 
 
 
-        check_ajax_referer('kit_deliveries_nonce', 'nonce');
+        check_ajax_referer('get_waybills_nonce', 'nonce');
 
 
         if (!current_user_can('edit_pages')) {
@@ -1498,20 +2208,20 @@ class KIT_Deliveries
     public static function create_direction($origin_country_id, $destination_country_id)
     {
         global $wpdb;
-    
+
         $table = $wpdb->prefix . 'kit_shipping_directions';
         $countries_table = $wpdb->prefix . 'kit_operating_countries';
-    
+
         // Fetch country names
         $origin_country_name = KIT_Routes::get_country_name_by_id($origin_country_id);
         $destination_country_name = KIT_Routes::get_country_name_by_id($destination_country_id);
-    
+
         // 🔁 Activate origin country if inactive
         $origin_active = $wpdb->get_var($wpdb->prepare(
             "SELECT is_active FROM $countries_table WHERE id = %d",
             $origin_country_id
         ));
-    
+
         if ($origin_active !== null && intval($origin_active) === 0) {
             $wpdb->update(
                 $countries_table,
@@ -1521,13 +2231,13 @@ class KIT_Deliveries
                 ['%d']
             );
         }
-    
+
         // 🔁 Activate destination country if inactive
         $destination_active = $wpdb->get_var($wpdb->prepare(
             "SELECT is_active FROM $countries_table WHERE id = %d",
             $destination_country_id
         ));
-    
+
         if ($destination_active !== null && intval($destination_active) === 0) {
             $wpdb->update(
                 $countries_table,
@@ -1537,14 +2247,14 @@ class KIT_Deliveries
                 ['%d']
             );
         }
-    
+
         // Insert route/direction
         $wpdb->insert($table, [
             'origin_country_id' => $origin_country_id,
             'destination_country_id' => $destination_country_id,
             'description' => $origin_country_name . ' to ' . $destination_country_name
         ]);
-    
+
         return $wpdb->insert_id;
     }
 
@@ -1563,7 +2273,7 @@ class KIT_Deliveries
         $delivery_data = [
             'delivery_reference' => sanitize_text_field($data['delivery_reference']),
             'direction_id' => (int) $direction_id,
-            'destination_city_id' => sanitize_text_field($data['destination_city']),
+            'destination_city_id' => isset($data['destination_city']) ? sanitize_text_field($data['destination_city']) : 1, // Default to first city if not provided
             'dispatch_date' => sanitize_text_field($data['dispatch_date']),
             'truck_number' => sanitize_text_field($data['truck_number']),
             'status' => in_array($data['status'], ['scheduled', 'in_transit', 'delivered'])
@@ -1600,13 +2310,12 @@ class KIT_Deliveries
     {
         $countries = self::getAllCountries();
         ob_start();
-
     ?>
-        <select class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
-                name="<?php echo esc_attr($name); ?>" 
-                id="<?php echo esc_attr($id); ?>" 
-                <?php echo $required; ?> 
-                onchange="handleCountryChange(this.value, '<?php echo $type; ?>')">
+        <select class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            name="<?php echo esc_attr($name); ?>"
+            id="<?php echo esc_attr($id); ?>"
+            <?php echo $required; ?>
+            onchange="handleCountryChange(this.value, '<?php echo $type; ?>')">
             <option value="">Select Country</option>
             <?php foreach ($countries as $country): ?>
                 <option value="<?php echo esc_attr($country->id); ?>" <?php echo ($country_id == $country->id) ? 'selected' : ''; ?>>
@@ -1621,33 +2330,65 @@ class KIT_Deliveries
     public static function selectAllCitiesByCountry($name, $id, $country_id, $city_id, $required = true)
     {
         ob_start();
-        $cities = KIT_Deliveries::get_Cities_forCountry($country_id);
+
+        // If no country is selected, show empty dropdown
+        if (!$country_id) {
+            $cities = [];
+        } else {
+            $cities = KIT_Deliveries::get_Cities_forCountry($country_id);
+        }
     ?>
-        <select class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
-                name="<?php echo esc_attr($name); ?>" 
-                id="<?php echo esc_attr($id); ?>" 
-                <?php echo $required; ?>>
+        <select class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            name="<?php echo esc_attr($name); ?>"
+            id="<?php echo esc_attr($id); ?>"
+            <?php echo $required; ?>>
             <option value="">Select City</option>
-            <?php foreach ($cities as $city): ?>
-                <option value="<?php echo esc_attr($city->id); ?>" <?php echo ($city_id == $city->id) ? 'selected' : ''; ?>>
-                    <?php echo esc_html($city->city_name); ?>
-                </option>
-            <?php endforeach; ?>
+            <?php if ($cities && is_array($cities)): ?>
+                <?php foreach ($cities as $city): ?>
+                    <option value="<?php echo esc_attr($city->id); ?>" <?php echo ($city_id == $city->id) ? 'selected' : ''; ?>>
+                        <?php echo esc_html($city->city_name); ?>
+                    </option>
+                <?php endforeach; ?>
+            <?php endif; ?>
         </select>
 <?php
         return ob_get_clean();
     }
 
-    function handle_get_cities_for_country_callback()
+    public static function handle_get_cities_for_country_callback()
     {
-        check_ajax_referer('kit_deliveries_nonce', 'nonce');
+        // Debug: Log the POST data
+        error_log('AJAX request received: ' . print_r($_POST, true));
+
+        // Verify nonce
+        if (!isset($_POST['nonce'])) {
+            error_log('Nonce not found in POST data');
+            wp_send_json_error('Nonce not found');
+        }
+
+        if (!wp_verify_nonce($_POST['nonce'], 'get_waybills_nonce')) {
+            error_log('Nonce verification failed. Received: ' . $_POST['nonce']);
+            wp_send_json_error('Invalid security token');
+        }
+
+        if (!isset($_POST['country_id'])) {
+            wp_send_json_error('Country ID is required');
+        }
 
         $country_id = intval($_POST['country_id']);
-        $cities = KIT_Deliveries::get_Cities_forCountry($country_id); // You need to implement this
 
-        $cities_dropdown = KIT_Deliveries::selectAllCitiesByCountry('origin_city', 'origin_city_select', $cities, null, true);
+        if (!$country_id) {
+            wp_send_json_error('Invalid country ID');
+        }
 
-        wp_send_json_success($cities_dropdown);
+        // Get cities for the country
+        $cities = KIT_Deliveries::get_Cities_forCountry($country_id);
+
+        if ($cities && is_array($cities) && count($cities) > 0) {
+            wp_send_json_success($cities);
+        } else {
+            wp_send_json_error('No cities found for this country');
+        }
     }
 }
 

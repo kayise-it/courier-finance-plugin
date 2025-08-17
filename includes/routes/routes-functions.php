@@ -320,6 +320,9 @@ class KIT_Routes
             document.getElementById('overview-tab').addEventListener('click', () => switchTab('overview'));
             document.getElementById('create-tab').addEventListener('click', () => switchTab('create'));
             document.getElementById('manage-tab').addEventListener('click', () => switchTab('manage'));
+
+            // Initialize with first tab active
+            switchTab('overview-tab');
         });
 
         function editRoute(routeId) {

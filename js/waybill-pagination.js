@@ -16,97 +16,78 @@ function initItemsPerPage() {
 }
 
 // Country change handler
-function handleCountryChange(value) {
-    console.log('Selected country:', value);
+// Global function for handling country changes (using working implementation from waybill)
+function handleCountryChange(countryId, fieldName) {
+    console.log('handleCountryChange called with:', countryId, 'field:', fieldName);
+    if (!countryId) return;
 
-    jQuery('#countrydestination_id').val(value);
+    // Determine which city dropdown to update based on the field name
+    let citySelectId = '';
+    let isOrigin = false;
 
-    // 1️⃣ Get Cities
+    if (fieldName === 'origin' || fieldName === 'origin_country') {
+        citySelectId = 'origin_city_select';
+        isOrigin = true;
+    } else if (fieldName === 'destination' || fieldName === 'destination_country') {
+        citySelectId = 'destination_city_select';
+        isOrigin = false;
+    } else {
+        console.error('Unknown field name:', fieldName);
+        return;
+    }
+
+    const citySelect = document.getElementById(citySelectId);
+
+    if (!citySelect) {
+        console.error('City select element not found:', citySelectId);
+        return;
+    }
+
+    // Show loading state
+    citySelect.innerHTML = '<option value="">Loading cities...</option>';
+    citySelect.disabled = true;
+
+    // Use the same approach as the working waybill implementation
+    const ajaxUrl = window.ajaxurl || (window.myPluginAjax && window.myPluginAjax.ajax_url);
+    const nonce = window.myPluginAjax && window.myPluginAjax.nonces ? window.myPluginAjax.nonces.get_waybills_nonce : '';
+
+    console.log('Using AJAX URL:', ajaxUrl);
+    console.log('Using nonce:', nonce);
+    console.log('Making AJAX request for', isOrigin ? 'origin' : 'destination', 'cities');
+
+    // Fetch cities for the selected country
     jQuery.ajax({
-        url: myPluginAjax.ajax_url,
+        url: ajaxUrl,
         type: 'POST',
         dataType: 'json',
         data: {
             action: 'handle_get_cities_for_country',
-            country_id: value,
-            nonce: myPluginAjax.nonces.get_waybills_nonce
+            country_id: countryId,
+            nonce: nonce
         },
-        success: function (response) {
+        success: function(response) {
+            console.log('Cities response:', response);
             if (response.success && Array.isArray(response.data)) {
-                const citySelect = document.getElementById('destination_city');
-                const origin_country = document.getElementById('origin_country');
-                if (citySelect) {
-                    citySelect.innerHTML = '';
-
-
-                    const defaultOption = document.createElement('option');
-                    defaultOption.value = '';
-                    defaultOption.textContent = 'Select City';
-                    citySelect.appendChild(defaultOption);
-
-                    response.data.forEach(function (city, index) {
-                        const option = document.createElement('option');
-                        option.value = city.id;
-                        option.textContent = city.city_name;
-                        if (index === 0) option.selected = true;
-                        citySelect.appendChild(option);
-                    });
-                    
-                    // Trigger validation after populating cities
-                    if (typeof validateDestinationSelection === 'function') {
-                        validateDestinationSelection();
-                    }
-                }
-            }
-        },
-        error: function (xhr) {
-            console.error('City AJAX Error:', xhr.responseText);
-        }
-    });
-
-    // 2️⃣ Get Deliveries
-    jQuery.ajax({
-        url: myPluginAjax.ajax_url,
-        type: 'POST',
-        dataType: 'json',
-        data: {
-            action: 'handle_get_countryDeliveries',
-            country_id: value,
-            nonce: myPluginAjax.nonces.get_waybills_nonce
-        },
-        success: function (response) {
-            if (response.success && Array.isArray(response.data)) {
-                const deliveryList = document.getElementById('scheduled-deliveries-list');
-                if (deliveryList) {
-                    deliveryList.innerHTML = ''; // Clear existing
-
-                    response.data.forEach(function (delivery, index) {
-                        const label = document.createElement('label');
-                        label.setAttribute('for', `direction_${delivery.direction_id}`);
-                        label.className = "deliveryBtn bg-white w-[100px] h-[100px] rounded-[5px] border-2 border-gray-300 cursor-pointer relative flex items-center justify-center text-center text-[11px] font-medium leading-tight hover:shadow-md transition-all duration-200 ";
-                        if (index === 0) label.classList.add("border-blue-500", "bg-blue-100", "shadow-lg");
-
-                        console.log('Delivery:', delivery); // Debug
-
-                        label.innerHTML = `
-                            <input type="hidden" name="delivery_id" id="delivery_${delivery.delivery_id}" value="${delivery.delivery_id}">
-                            <input type="radio" name="direction_id" id="direction_${delivery.direction_id}" value="${delivery.direction_id}" class="sr-only peer" ${index === 0 ? 'checked' : ''}>
-                            <div>
-                                <div class="font-bold text-[12px]">${delivery.dispatch_date}</div>
-                                <div class="text-gray-500">${delivery.status}</div>
-                                <div class="text-gray-600 mt-1">${delivery.origin_country} → ${delivery.destination_country}</div>
-                            </div>
-                        `;
-
-                        deliveryList.appendChild(label);
-                    });
-                }
+                citySelect.innerHTML = '<option value="">Select City</option>';
+                response.data.forEach(function(city) {
+                    const option = document.createElement('option');
+                    option.value = city.id;
+                    option.textContent = city.city_name;
+                    citySelect.appendChild(option);
+                });
+                console.log('Cities loaded successfully:', response.data.length, 'cities');
             } else {
-                console.log('No deliveries or invalid response:', response);
+                console.log('No cities found or invalid response');
+                citySelect.innerHTML = '<option value="">No cities found</option>';
             }
+            citySelect.disabled = false;
         },
-        error: function (xhr) {
-            console.error('Deliveries AJAX Error:', xhr.responseText);
+        error: function(xhr, status, error) {
+            console.error('AJAX error:', error);
+            console.error('Status:', status);
+            console.error('Response:', xhr.responseText);
+            citySelect.innerHTML = '<option value="">Error loading cities</option>';
+            citySelect.disabled = false;
         }
     });
 }

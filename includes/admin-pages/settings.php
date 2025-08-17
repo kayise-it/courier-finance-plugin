@@ -3,47 +3,56 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-// Check if current user is authorized (Thando, Mel, or Patricia)
-$current_user = wp_get_current_user();
-$authorized_users = ['thando', 'mel', 'patricia']; // Add their usernames here
-$is_authorized = in_array(strtolower($current_user->user_login), $authorized_users);
+// Check if current user has admin capabilities
+$wpdb_global_was_set = true; // marker
+global $wpdb;
 
-if (!$is_authorized) {
-    wp_die('Access denied. This page is only available to authorized administrators.');
+if (!current_user_can('manage_options')) {
+    wp_die('Access denied. This page is only available to administrators.');
 }
 
 // Handle form submissions
 if ($_POST && isset($_POST['action'])) {
     if (wp_verify_nonce($_POST['settings_nonce'], 'save_settings')) {
-        switch ($_POST['action']) {
-            case 'save_banking':
-                update_option('kit_bank_name', sanitize_text_field($_POST['bank_name']));
-                update_option('kit_account_number', sanitize_text_field($_POST['account_number']));
-                update_option('kit_branch_code', sanitize_text_field($_POST['branch_code']));
-                update_option('kit_account_type', sanitize_text_field($_POST['account_type']));
-                update_option('kit_account_holder', sanitize_text_field($_POST['account_holder']));
-                update_option('kit_swift_code', sanitize_text_field($_POST['swift_code']));
-                update_option('kit_iban', sanitize_text_field($_POST['iban']));
-                $message = 'Banking details saved successfully!';
-                break;
-                
-            case 'save_company':
-                update_option('kit_company_name', sanitize_text_field($_POST['company_name']));
-                update_option('kit_company_address', sanitize_textarea_field($_POST['company_address']));
-                update_option('kit_company_email', sanitize_email($_POST['company_email']));
-                update_option('kit_company_phone', sanitize_text_field($_POST['company_phone']));
-                update_option('kit_company_website', esc_url_raw($_POST['company_website']));
-                update_option('kit_company_registration', sanitize_text_field($_POST['company_registration']));
-                update_option('kit_company_vat_number', sanitize_text_field($_POST['company_vat_number']));
-                $message = 'Company details saved successfully!';
-                break;
-                
-            case 'save_charges':
-                update_option('kit_vat_percentage', floatval($_POST['vat_percentage']));
-                update_option('kit_sadc_charge', floatval($_POST['sadc_charge']));
-                update_option('kit_sad500_charge', floatval($_POST['sad500_charge']));
-                $message = 'Charges and VAT settings saved successfully!';
-                break;
+        global $wpdb; 
+        $table = $wpdb->prefix . 'kit_company_details';
+        // Only update columns that were posted to avoid wiping existing values
+        $sanitizers = [
+            'company_name' => function($v){ return sanitize_text_field($v); },
+            'company_address' => function($v){ return sanitize_textarea_field($v); },
+            'company_email' => function($v){ return sanitize_email($v); },
+            'company_phone' => function($v){ return sanitize_text_field($v); },
+            'company_website' => function($v){ return esc_url_raw($v); },
+            'company_registration' => function($v){ return sanitize_text_field($v); },
+            'company_vat_number' => function($v){ return sanitize_text_field($v); },
+            'bank_name' => function($v){ return sanitize_text_field($v); },
+            'account_number' => function($v){ return sanitize_text_field($v); },
+            'branch_code' => function($v){ return sanitize_text_field($v); },
+            'account_type' => function($v){ return sanitize_text_field($v); },
+            'account_holder' => function($v){ return sanitize_text_field($v); },
+            'swift_code' => function($v){ return sanitize_text_field($v); },
+            'iban' => function($v){ return sanitize_text_field($v); },
+            'vat_percentage' => function($v){ return (float)$v; },
+            'sadc_charge' => function($v){ return (float)$v; },
+            'sad500_charge' => function($v){ return (float)$v; },
+        ];
+        $fields = [];
+        foreach ($sanitizers as $key => $fn) {
+            if (array_key_exists($key, $_POST)) {
+                $fields[$key] = $fn($_POST[$key]);
+            }
+        }
+        // If nothing to update, do nothing
+        if (!empty($fields)) {
+            // Maintain a single-row table
+            $exists = $wpdb->get_var("SELECT id FROM $table ORDER BY id ASC LIMIT 1");
+            if ($exists) {
+                $wpdb->update($table, $fields, ['id' => intval($exists)]);
+                $message = 'Settings updated successfully.';
+            } else {
+                $wpdb->insert($table, $fields);
+                $message = 'Settings saved successfully.';
+            }
         }
     }
 }
@@ -55,11 +64,10 @@ if ($_POST && isset($_POST['action'])) {
         <p class="text-gray-600">Manage your company settings, banking details, and system charges</p>
         </div>
 
-    <?php if (isset($message)): ?>
-        <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg mb-6">
-            <span class="font-medium">Success!</span> <?php echo esc_html($message); ?>
-        </div>
-    <?php endif; ?>
+    <?php if (isset($message)) { 
+        require_once plugin_dir_path(__FILE__) . '../components/toast.php';
+        echo KIT_Toast::success($message);
+    } ?>
 
     <!-- Tab Navigation -->
     <div class="border-b border-gray-200 mb-8">
@@ -86,7 +94,7 @@ if ($_POST && isset($_POST['action'])) {
     </div>
 
     <!-- Tab Content -->
-    <div class="tab-content">
+    <div class="tab-contents">
         <!-- Banking Details Tab -->
         <div id="content-banking" class="tab-panel active">
             <div class="bg-white rounded-xl shadow-sm border border-gray-200">
@@ -104,21 +112,21 @@ if ($_POST && isset($_POST['action'])) {
                             <div class="form-group">
                                 <label for="bank_name" class="block text-sm font-medium text-gray-700 mb-2">Bank Name</label>
                                 <input type="text" id="bank_name" name="bank_name" 
-                                       value="<?php echo esc_attr(get_option('kit_bank_name', '')); ?>" 
+                                       value="<?php echo esc_attr($wpdb->get_var('SELECT bank_name FROM ' . $wpdb->prefix . 'kit_company_details LIMIT 1')); ?>" 
                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                             </div>
                             
                             <div class="form-group">
                                 <label for="account_number" class="block text-sm font-medium text-gray-700 mb-2">Account Number</label>
                                 <input type="text" id="account_number" name="account_number" 
-                                       value="<?php echo esc_attr(get_option('kit_account_number', '')); ?>" 
+                                       value="<?php echo esc_attr($wpdb->get_var('SELECT account_number FROM ' . $wpdb->prefix . 'kit_company_details LIMIT 1')); ?>" 
                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                 </div>
                 
                             <div class="form-group">
                                 <label for="branch_code" class="block text-sm font-medium text-gray-700 mb-2">Branch Code</label>
                                 <input type="text" id="branch_code" name="branch_code" 
-                                       value="<?php echo esc_attr(get_option('kit_branch_code', '')); ?>" 
+                                       value="<?php echo esc_attr($wpdb->get_var('SELECT branch_code FROM ' . $wpdb->prefix . 'kit_company_details LIMIT 1')); ?>" 
                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                 </div>
                 
@@ -126,30 +134,31 @@ if ($_POST && isset($_POST['action'])) {
                                 <label for="account_type" class="block text-sm font-medium text-gray-700 mb-2">Account Type</label>
                                 <select id="account_type" name="account_type" 
                                         class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="savings" <?php selected(get_option('kit_account_type'), 'savings'); ?>>Savings Account</option>
-                                    <option value="current" <?php selected(get_option('kit_account_type'), 'current'); ?>>Current Account</option>
-                                    <option value="business" <?php selected(get_option('kit_account_type'), 'business'); ?>>Business Account</option>
+                                    <?php $acct = $wpdb->get_var('SELECT account_type FROM ' . $wpdb->prefix . 'kit_company_details LIMIT 1'); ?>
+                                    <option value="savings" <?php selected($acct, 'savings'); ?>>Savings Account</option>
+                                    <option value="current" <?php selected($acct, 'current'); ?>>Current Account</option>
+                                    <option value="business" <?php selected($acct, 'business'); ?>>Business Account</option>
                     </select>
                             </div>
                             
                             <div class="form-group">
                                 <label for="account_holder" class="block text-sm font-medium text-gray-700 mb-2">Account Holder Name</label>
                                 <input type="text" id="account_holder" name="account_holder" 
-                                       value="<?php echo esc_attr(get_option('kit_account_holder', '')); ?>" 
+                                       value="<?php echo esc_attr($wpdb->get_var('SELECT account_holder FROM ' . $wpdb->prefix . 'kit_company_details LIMIT 1')); ?>" 
                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                             </div>
                             
                             <div class="form-group">
                                 <label for="swift_code" class="block text-sm font-medium text-gray-700 mb-2">Swift Code</label>
                                 <input type="text" id="swift_code" name="swift_code" 
-                                       value="<?php echo esc_attr(get_option('kit_swift_code', '')); ?>" 
+                                       value="<?php echo esc_attr($wpdb->get_var('SELECT swift_code FROM ' . $wpdb->prefix . 'kit_company_details LIMIT 1')); ?>" 
                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                             </div>
                             
                             <div class="form-group md:col-span-2">
                                 <label for="iban" class="block text-sm font-medium text-gray-700 mb-2">IBAN (International Bank Account Number)</label>
                                 <input type="text" id="iban" name="iban" 
-                                       value="<?php echo esc_attr(get_option('kit_iban', '')); ?>" 
+                                       value="<?php echo esc_attr($wpdb->get_var('SELECT iban FROM ' . $wpdb->prefix . 'kit_company_details LIMIT 1')); ?>" 
                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                             </div>
                         </div>
@@ -181,48 +190,48 @@ if ($_POST && isset($_POST['action'])) {
                             <div class="form-group md:col-span-2">
                                 <label for="company_name" class="block text-sm font-medium text-gray-700 mb-2">Company Name</label>
                                 <input type="text" id="company_name" name="company_name" 
-                                       value="<?php echo esc_attr(get_option('kit_company_name', '')); ?>" 
+                                       value="<?php echo esc_attr($wpdb->get_var('SELECT company_name FROM ' . $wpdb->prefix . 'kit_company_details LIMIT 1')); ?>" 
                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                             </div>
                             
                             <div class="form-group md:col-span-2">
                                 <label for="company_address" class="block text-sm font-medium text-gray-700 mb-2">Company Address</label>
                                 <textarea id="company_address" name="company_address" rows="3" 
-                                          class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"><?php echo esc_textarea(get_option('kit_company_address', '')); ?></textarea>
+                                          class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"><?php echo esc_textarea($wpdb->get_var('SELECT company_address FROM ' . $wpdb->prefix . 'kit_company_details LIMIT 1')); ?></textarea>
                             </div>
                             
                             <div class="form-group">
                                 <label for="company_email" class="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
                                 <input type="email" id="company_email" name="company_email" 
-                                       value="<?php echo esc_attr(get_option('kit_company_email', '')); ?>" 
+                                       value="<?php echo esc_attr($wpdb->get_var('SELECT company_email FROM ' . $wpdb->prefix . 'kit_company_details LIMIT 1')); ?>" 
                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                             </div>
                             
                             <div class="form-group">
                                 <label for="company_phone" class="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
                                 <input type="tel" id="company_phone" name="company_phone" 
-                                       value="<?php echo esc_attr(get_option('kit_company_phone', '')); ?>" 
+                                       value="<?php echo esc_attr($wpdb->get_var('SELECT company_phone FROM ' . $wpdb->prefix . 'kit_company_details LIMIT 1')); ?>" 
                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                             </div>
                             
                             <div class="form-group">
                                 <label for="company_website" class="block text-sm font-medium text-gray-700 mb-2">Website</label>
                                 <input type="url" id="company_website" name="company_website" 
-                                       value="<?php echo esc_attr(get_option('kit_company_website', '')); ?>" 
+                                       value="<?php echo esc_attr($wpdb->get_var('SELECT company_website FROM ' . $wpdb->prefix . 'kit_company_details LIMIT 1')); ?>" 
                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                             </div>
                             
                             <div class="form-group">
                                 <label for="company_registration" class="block text-sm font-medium text-gray-700 mb-2">Company Registration Number</label>
                                 <input type="text" id="company_registration" name="company_registration" 
-                                       value="<?php echo esc_attr(get_option('kit_company_registration', '')); ?>" 
+                                       value="<?php echo esc_attr($wpdb->get_var('SELECT company_registration FROM ' . $wpdb->prefix . 'kit_company_details LIMIT 1')); ?>" 
                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                             </div>
                             
                             <div class="form-group">
                                 <label for="company_vat_number" class="block text-sm font-medium text-gray-700 mb-2">VAT Registration Number</label>
                                 <input type="text" id="company_vat_number" name="company_vat_number" 
-                                       value="<?php echo esc_attr(get_option('kit_company_vat_number', '')); ?>" 
+                                       value="<?php echo esc_attr($wpdb->get_var('SELECT company_vat_number FROM ' . $wpdb->prefix . 'kit_company_details LIMIT 1')); ?>" 
                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                 </div>
             </div>
@@ -257,7 +266,7 @@ if ($_POST && isset($_POST['action'])) {
                                 </label>
                                 <div class="relative">
                                     <input type="number" id="vat_percentage" name="vat_percentage" 
-                                           value="<?php echo esc_attr(get_option('kit_vat_percentage', '15')); ?>" 
+                                            value="<?php echo esc_attr(KIT_Waybills::vatRate()); ?>" 
                                            step="0.01" min="0" max="100"
                                            class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                     <div class="absolute inset-y-0 right-0 flex items-center pr-3">
@@ -272,8 +281,9 @@ if ($_POST && isset($_POST['action'])) {
                                     SADC Charge (R)
                                 </label>
                                 <div class="relative">
+                                    
                                     <input type="number" id="sadc_charge" name="sadc_charge" 
-                                           value="<?php echo esc_attr(get_option('kit_sadc_charge', '0')); ?>" 
+                                            value="<?php echo esc_attr(KIT_Waybills::sad()); ?>" 
                                            step="0.01" min="0"
                                            class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                     <div class="absolute inset-y-0 right-0 flex items-center pr-3">
@@ -289,7 +299,7 @@ if ($_POST && isset($_POST['action'])) {
                                 </label>
                                 <div class="relative">
                                     <input type="number" id="sad500_charge" name="sad500_charge" 
-                                           value="<?php echo esc_attr(get_option('kit_sad500_charge', '0')); ?>" 
+                                            value="<?php echo esc_attr(KIT_Waybills::sadc_certificate()); ?>" 
                                            step="0.01" min="0"
                                            class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                     <div class="absolute inset-y-0 right-0 flex items-center pr-3">

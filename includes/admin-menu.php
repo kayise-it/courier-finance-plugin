@@ -131,8 +131,17 @@ function plugin_add_menu()
         'route-create',
         ['KIT_Routes', 'route_create_page']
     );
+    
+    add_submenu_page(
+        null, // No parent menu
+        'View Delivery',
+        'View Delivery',
+        'edit_pages',
+        'view-deliveries',
+        ['KIT_Deliveries', 'view_deliveries_page']
+    );
 
-    // Note: Other hidden pages (View Delivery, Create Route, Edit Customer, etc.)
+    // Note: Other hidden pages (Create Route, Edit Customer, etc.)
     // are accessed via direct URLs and don't need to be registered as submenu items
     // This prevents blank spaces in the menu structure
 

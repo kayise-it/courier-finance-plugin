@@ -1,3 +1,4 @@
+<?php if (!defined('ABSPATH')) { exit; } ?>
 <div class="bg-white md:bg-transparent shadow md:shadow-transparent rounded-lg md:rounded-none space-y-4 md:space-y-0 md:grid md:grid-cols-2 md:gap-6">
     <div class="space-y-4 md:bg-white md:shadow rounded-lg md:p-6">
         <div class="md:bg-white rounded-lg">

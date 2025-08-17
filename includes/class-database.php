@@ -554,6 +554,48 @@ class Database
         dbDelta($sql);
     }
 
+    public static function create_company_details_table()
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'kit_company_details';
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE $table_name (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            company_name VARCHAR(255) NOT NULL,
+            company_address TEXT NULL,
+            company_email VARCHAR(255) NULL,
+            company_phone VARCHAR(50) NULL,
+            company_website VARCHAR(255) NULL,
+            company_registration VARCHAR(100) NULL,
+            company_vat_number VARCHAR(100) NULL,
+            bank_name VARCHAR(100) NULL,
+            account_number VARCHAR(100) NULL,
+            branch_code VARCHAR(50) NULL,
+            account_type VARCHAR(50) NULL,
+            account_holder VARCHAR(150) NULL,
+            swift_code VARCHAR(100) NULL,
+            iban VARCHAR(100) NULL,
+            vat_percentage DECIMAL(5,2) DEFAULT 15.00,
+            sadc_charge DECIMAL(10,2) DEFAULT 0.00,
+            sad500_charge DECIMAL(10,2) DEFAULT 0.00,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id)
+        ) $charset_collate;";
+
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+
+        // Ensure there is at least one row
+        $exists = $wpdb->get_var("SELECT COUNT(*) FROM $table_name");
+        if (!$exists) {
+            $wpdb->insert($table_name, [
+                'company_name' => get_bloginfo('name')
+            ]);
+        }
+    }
+
     public static function create_warehouse_tracking_table()
     {
         global $wpdb;
@@ -608,6 +650,7 @@ class Database
         // Quotations table creation removed
         self::create_invoices_table();
         self::create_discounts_table();
+        self::create_company_details_table();
         self::create_warehouse_tracking_table();
     }
     public static function deactivate()

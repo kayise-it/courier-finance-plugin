@@ -514,14 +514,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 const el = document.getElementById(id);
                 return el ? el.value : '';
             };
-            formData.append('name', safeVal('customer_name'));
-            formData.append('surname', safeVal('customer_surname'));
+            formData.append('name', safeVal('name'));
+            formData.append('surname', safeVal('surname'));
             formData.append('cell', safeVal('cell'));
             formData.append('email_address', safeVal('email_address'));
             formData.append('address', safeVal('address'));
             formData.append('company_name', safeVal('company_name'));
             formData.append('country_id', safeVal('country_id'));
             formData.append('city_id', safeVal('city_id'));
+            formData.append('vat_number', safeVal('vat_number'));
+            
+            // Debug: Log form data
+            console.log('Submitting customer form with data:', Object.fromEntries(formData));
             
             // Submit via AJAX
             fetch(ajaxurl || '/wp-admin/admin-ajax.php', {
@@ -537,9 +541,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     // Reset form
                     inlineCustomerForm.reset();
                     
-                    // Switch to overview tab after 2 seconds
+                    // Switch to manage-customers tab after 2 seconds
                     setTimeout(() => {
-                        switchCustomerTab('overview');
+                        switchCustomerTab('manage-customers');
                         messagesDiv.innerHTML = '';
                     }, 2000);
                 } else {
@@ -599,4 +603,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+    
+    // Set default active tab to manage-customers
+    switchCustomerTab('manage-customers');
 });

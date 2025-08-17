@@ -1,4 +1,3 @@
-<!-- // File: includes/components/modal.php-->
 <?php
 if (! defined('ABSPATH')) {
     exit;
