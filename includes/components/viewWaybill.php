@@ -546,3 +546,27 @@ if (!function_exists('maybe_unserialize')) {
     }
 }
 ?>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Auto-hide success/error messages after 10 seconds
+    const messages = [
+        'approval-success-message',
+        'invoice-status-message', 
+        'approval-error-message'
+    ];
+    
+    messages.forEach(function(messageId) {
+        const message = document.getElementById(messageId);
+        if (message) {
+            setTimeout(function() {
+                message.style.transition = 'opacity 0.5s ease-out';
+                message.style.opacity = '0';
+                setTimeout(function() {
+                    message.remove();
+                }, 500); // Wait for fade out animation
+            }, 10000); // 10 seconds
+        }
+    });
+});
+</script>
