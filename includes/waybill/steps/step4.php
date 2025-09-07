@@ -28,14 +28,17 @@
     <!-- Scheduled Deliveries Container -->
     <?php require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/scheduledDeliveries.php'); ?>
     <div class="flex justify-between mt-8">
-        <button type="button" class="md:hidden prev-step px-4 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400">
+        <button type="button" class="md:hidden prev-step px-4 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400" data-target="step-3">
             Back
         </button>
         <button type="button" class="hidden md:block prev-step px-4 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400" data-target="step-3">
             Back
         </button>
-        <button type="button" disabled id="specialDeliveryBtn" class="specialbtn next-step px-4 py-2 bg-gray-300 text-gray-500 rounded-md hover:bg-gray-400">
-            Next: Chassrges & Fees
-        </button>
+        <?php echo KIT_Commons::renderButton('Next: Charges & Fees', 'secondary', 'md', [
+            'id' => 'step4NextBtn',
+            'disabled' => true,
+            'data-target' => 'step-5',
+            'classes' => 'next-step'
+        ]); ?>
     </div>
 </div>

@@ -83,7 +83,7 @@
                                                     echo '<div class="misc-item" style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
                                                             <input type="text" name="misc_item[]" value="' . esc_attr($item['name'] ?? '') . '" placeholder="Item description" style="flex: 2; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                                                             <input type="number" name="misc_price[]" value="' . esc_attr($item['price'] ?? '') . '" placeholder="Amount" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-                                                            <button type="button" class="remove-misc-btn" style="background-color: #ef4444; color: white; padding: 8px; border-radius: 4px; border: none; cursor: pointer;">×</button>
+                                                            <button type="button" class="remove-misc-btn bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-sm font-medium transition-colors duration-200">×</button>
                                                         </div>';
                                                 }
                                             }
@@ -100,11 +100,16 @@
      </div>
 
      <div class="flex justify-between mt-8">
-         <button data-target="step-4" type="button" class="prev-step px-4 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400">
-             Back
-         </button>
-         <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">
-             <?php echo $is_edit_mode ? 'Update Waybill' : 'Create Waybill'; ?>
-         </button>
+         <?php echo KIT_Commons::renderButton('Back', 'secondary', 'md', [
+             'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 17l-5-5m0 0l5-5m-5 5h12" />',
+             'iconPosition' => 'left',
+             'data-target' => 'step-4',
+             'classes' => 'prev-step'
+         ]); ?>
+         <?php echo KIT_Commons::renderButton($is_edit_mode ? 'Update Waybill' : 'Create Waybill', 'success', 'md', [
+             'type' => 'submit',
+             'classes' => 'submit-btn',
+             'gradient' => true
+         ]); ?>
      </div>
  </div>

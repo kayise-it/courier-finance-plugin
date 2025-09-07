@@ -2,6 +2,10 @@
 if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly.
 }
+
+// Include user roles for permission checking
+require_once plugin_dir_path(__FILE__) . '../user-roles.php';
+
 class KIT_Customers
 {
     public static function init()
@@ -32,6 +36,9 @@ class KIT_Customers
     {
         global $wpdb;
         $table_name = $wpdb->prefix . 'kit_customers';
+        
+        // Debug: Log customer data
+        error_log('save_customer called with data: ' . print_r($cust, true));
 
         // First check if customer already exists
         $existing_customer = $wpdb->get_row(
@@ -64,13 +71,18 @@ class KIT_Customers
 
         // Insert into DB
         $inserted = $wpdb->insert($table_name, $cust_data);
-
+        
+        // Debug: Log insert result
+        error_log('Database insert result: ' . ($inserted ? 'SUCCESS' : 'FAILED'));
+        if ($inserted === false) {
+            error_log('Database error: ' . $wpdb->last_error);
+        }
 
         if ($inserted === false) {
             return false; // Insert failed
         }
 
-
+        error_log('Customer saved successfully with ID: ' . $cust_data['cust_id']);
         return $cust_data['cust_id']; // Return the new customer ID
     }
 
@@ -483,7 +495,7 @@ class KIT_Customers
         }
         $output .= '<h3>Bulk Upload Customers (CSV or Excel)</h3>';
         $output .= '<input type="file" name="customers_file" accept=".csv,.xlsx,.xls" required> ';
-        $output .= '<button type="submit" class="button button-primary">Upload</button>';
+        $output .= '<?php echo KIT_Commons::renderButton("Upload", "primary", "md", ["type" => "submit", "gradient" => true]); ?>';
         $output .= '</form>';
         return $output;
     }
@@ -590,16 +602,20 @@ function customer_dashboard()
     echo '<div class="wrap" style="max-width: 100%; margin-bottom: 80px;">';
     echo KIT_Commons::showingHeader([
         'title' => 'Customer Dashboard',
-        'desc'  => 'Manage customers and their waybills',
+        'desc'  => KIT_Commons::renderButton('Add Customer', 'primary', 'md', ['href' => admin_url('admin.php?page=08600-add-customer'), 'gradient' => true]),
     ]);
     echo '<hr class="wp-header-end">';
+
+    // Show success message if customer was just added
+    if (isset($_GET['customer_added']) && $_GET['customer_added'] == '1') {
+        echo '<div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">Customer added successfully! 🎉</div>';
+    }
 
     // Tabs
     echo '<div class="customer-tabs mb-6">';
     echo '  <div class="flex bg-gray-100 p-1 rounded-md w-fit">';
-    echo '    <button id="overview-tab" class="tab-btn px-4 py-2 text-sm font-medium rounded-md border border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition">Overview</button>';
-    echo '    <button id="add-customer-tab" class="tab-btn px-4 py-2 text-sm font-medium rounded-md border border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition">Add Customer</button>';
-    echo '    <button id="manage-customers-tab" class="tab-btn active px-4 py-2 text-sm font-medium rounded-md border border-gray-200 bg-white text-gray-900 shadow hover:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition">Manage Customers</button>';
+    echo '    ' . KIT_Commons::renderButton('Overview', 'ghost', 'sm', ['id' => 'overview-tab', 'classes' => 'tab-btn']) . '';
+    echo '    ' . KIT_Commons::renderButton('Manage Customers', 'ghost', 'sm', ['id' => 'manage-customers-tab', 'classes' => 'tab-btn active']) . '';
     echo '  </div>';
     echo '</div>';
 
@@ -642,8 +658,8 @@ function customer_dashboard()
     echo '    <div><label class="block text-sm text-gray-700 mb-2">VAT Number</label><input type="text" name="vat_number" id="vat_number" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="VAT registration number"></div>';
     echo '  </div>';
     echo '  <div class="flex justify-end gap-2 pt-4">';
-    echo '    <button type="button" class="px-4 py-2 border rounded-md" onclick="switchCustomerTab(\'manage-customers\')">Cancel</button>';
-    echo '    <button type="submit" id="saveCustomerBtn" class="px-5 py-2 bg-blue-600 text-white rounded-md">Save Customer</button>';
+    echo '    ' . KIT_Commons::renderButton('Cancel', 'secondary', 'md', ['type' => 'button', 'onclick' => 'switchCustomerTab(\'manage-customers\')']) . '';
+    echo '    ' . KIT_Commons::renderButton('Save Customer', 'primary', 'md', ['type' => 'submit', 'id' => 'saveCustomerBtn', 'gradient' => true]) . '';
     echo '  </div>';
     echo '</form>';
     echo '</div>';
@@ -681,7 +697,7 @@ function customer_dashboard()
         'itemsPerPage' => 10,
         'currentPage'  => $_GET['paged'] ?? 1,
         'tableClass'   => 'w-full text-left text-xs text-gray-700',
-        'emptyMessage' => 'No customers found. <a href="#" onclick="switchCustomerTab(\'add-customer\'); return false;">Add your first customer</a>',
+        'emptyMessage' => 'No customers found. <a href="#" onclick="showAddCustomerForm(); return false;">Add your first customer</a>',
         'id'           => 'customerTable',
         'role'         => 'customers',
         'filterOverride' => 'country',
@@ -724,7 +740,7 @@ function customer_dashboard()
     echo '<script>';
     echo 'document.addEventListener("DOMContentLoaded", function(){';
     echo '  function activateTab(name){';
-    echo '    const tabs = ["overview","add-customer","manage-customers"];';
+    echo '    const tabs = ["overview","manage-customers"];';
     echo '    tabs.forEach(function(t){';
     echo '      var btn = document.getElementById(t+"-tab"); var panel = document.getElementById(t+"-content");';
     echo '      if(!btn||!panel) return;';
@@ -744,10 +760,10 @@ function customer_dashboard()
     echo '  function getInitialTab(){';
     echo '    var params = new URLSearchParams(window.location.search);';
     echo '    var tab = params.get("tab") || (window.location.hash ? window.location.hash.replace("#","") : "");';
-    echo '    var allowed = {"overview":1,"add-customer":1,"manage-customers":1};';
+    echo '    var allowed = {"overview":1,"manage-customers":1};';
     echo '    return allowed[tab]?tab:"manage-customers";';
     echo '  }';
-    echo '  ["overview","add-customer","manage-customers"].forEach(function(t){';
+    echo '  ["overview","manage-customers"].forEach(function(t){';
     echo '    var btn = document.getElementById(t+"-tab"); if(btn){ btn.addEventListener("click", function(){ activateTab(t); history.replaceState(null, "", window.location.pathname+"?page=08600-customers&tab="+t); }); }';
     echo '  });';
     echo '  activateTab(getInitialTab());';
@@ -786,16 +802,10 @@ function customer_dashboard()
 
         <!-- Tab Navigation -->
         <div class="customer-tabs" style="margin-bottom: 30px;">
-            <div style="display: flex; background: #f3f4f6; padding: 4px; border-radius: 8px; width: fit-content;">
-                <button id="overview-tab" class="tab-btn ">
-                    Overview
-                </button>
-                <button id="add-customer-tab" class="tab-btn">
-                    Add Customer
-                </button>
-                <button id="manage-customers-tab" class="tab-btn active">
-                    Manage Customers
-                </button>
+            <div class="flex bg-gray-100 p-1 rounded-lg w-fit">
+                <?php echo KIT_Commons::renderButton('Overview', 'ghost', 'sm', ['id' => 'overview-tab', 'classes' => 'tab-btn']); ?>
+                <?php echo KIT_Commons::renderButton('Add Customer', 'ghost', 'sm', ['id' => 'add-customer-tab', 'classes' => 'tab-btn']); ?>
+                <?php echo KIT_Commons::renderButton('Manage Customers', 'ghost', 'sm', ['id' => 'manage-customers-tab', 'classes' => 'tab-btn active']); ?>
             </div>
         </div>
 
@@ -805,7 +815,7 @@ function customer_dashboard()
 
         <!-- Add Customer Tab Content -->
         <div id="add-customer-content" class="tab-content">
-            <div style="background: white; padding: 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #e5e7eb;">
+            <div class="bg-white p-6 rounded-xl shadow-md border border-gray-200">
                 <h3 style="font-size: 18px; font-weight: 600; color: #111827; margin: 0 0 20px 0;">Add New Customer</h3>
 
                 <form method="post" class="space-y-6" id="inlineCustomerForm" action="">
@@ -872,12 +882,8 @@ function customer_dashboard()
 
                     <!-- Submit Button -->
                     <div class="flex justify-end space-x-3 pt-6 border-t border-gray-200">
-                        <button type="button" onclick="switchCustomerTab('manage-customers')" class="px-4 py-2 text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 transition-colors">
-                            Cancel
-                        </button>
-                        <button type="submit" id="saveCustomerBtn" class="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
-                            Save Customer
-                        </button>
+                        <?php echo KIT_Commons::renderButton('Cancel', 'secondary', 'md', ['type' => 'button', 'onclick' => 'switchCustomerTab(\'manage-customers\')']); ?>
+                        <?php echo KIT_Commons::renderButton('Save Customer', 'primary', 'md', ['type' => 'submit', 'id' => 'saveCustomerBtn', 'gradient' => true]); ?>
                     </div>
                 </form>
 
@@ -896,7 +902,7 @@ function customer_dashboard()
                     'itemsPerPage' => 10,
                     'currentPage' => $_GET['paged'] ?? 1,
                     'tableClass' => 'w-full text-left text-xs text-gray-700',
-                    'emptyMessage' => 'No customers found. <a href="#" onclick="switchCustomerTab(\'add-customer\'); return false;">Add your first customer</a>',
+                    'emptyMessage' => 'No customers found. <a href="#" onclick="showAddCustomerForm(); return false;">Add your first customer</a>',
                     'id' => 'customerTable',
                     'role' => 'customers',
                     'bulk_actions' => [
@@ -975,6 +981,23 @@ function customer_dashboard()
     </div>
 
     <script>
+        // Function to show add customer form
+        function showAddCustomerForm() {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(function(panel) {
+                panel.style.display = 'none';
+            });
+            // Show add customer form
+            var addCustomerPanel = document.getElementById('add-customer-content');
+            if (addCustomerPanel) {
+                addCustomerPanel.style.display = 'block';
+            }
+            // Deactivate all tab buttons
+            document.querySelectorAll('.customer-tabs .tab-btn').forEach(function(btn) {
+                btn.classList.remove('active');
+            });
+        }
+
         // Robust tab handler (no inline styles required)
         document.addEventListener('DOMContentLoaded', function() {
             function switchCustomerTab(name) {
@@ -1007,8 +1030,12 @@ function customer_dashboard()
             }
 
             // Initialize to whichever tab is marked active, else manage-customers
+            // If customer_added=1 is in URL, switch to manage-customers tab
+            var urlParams = new URLSearchParams(window.location.search);
+            var customerAdded = urlParams.get('customer_added');
+            
             var activeBtn = document.querySelector('.customer-tabs .tab-btn.active');
-            var initial = activeBtn ? activeBtn.id.replace('-tab', '') : 'manage-customers';
+            var initial = (customerAdded === '1') ? 'manage-customers' : (activeBtn ? activeBtn.id.replace('-tab', '') : 'manage-customers');
             switchCustomerTab(initial);
         });
     </script>
@@ -1086,10 +1113,7 @@ function customer_button_with_modal()
 ?>
     <div class="p-6">
         <!-- Trigger Button -->
-        <button onclick="document.getElementById('thaboModal').classList.remove('hidden')"
-            class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl shadow">
-            Open Modal
-        </button>
+        <?php echo KIT_Commons::renderButton('Open Modal', 'success', 'md', ['onclick' => 'document.getElementById(\'thaboModal\').classList.remove(\'hidden\')', 'gradient' => true]); ?>
 
         <!-- Modal Overlay -->
         <div id="thaboModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
@@ -1097,10 +1121,7 @@ function customer_button_with_modal()
             <div class="bg-white p-6 rounded-xl shadow-xl w-96 text-center">
                 <h2 class="text-xl font-semibold mb-4">Hey Thabo 👋</h2>
                 <p class="mb-6">Welcome to the modal!</p>
-                <button onclick="document.getElementById('thaboModal').classList.add('hidden')"
-                    class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded-lg">
-                    Close
-                </button>
+                <?php echo KIT_Commons::renderButton('Close', 'secondary', 'md', ['onclick' => 'document.getElementById(\'thaboModal\').classList.add(\'hidden\')']); ?>
             </div>
         </div>
     </div>
@@ -1226,9 +1247,7 @@ function customer_form()
         <div id="customerModal" class="fixed hidden inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div class="bg-white p-6 rounded-xl w-full max-w-xl relative">
                 <!-- Close Button -->
-                <button id="customerModalClose" class="absolute top-3 right-4 text-gray-600 hover:text-black text-xl">
-                    &times;
-                </button>
+                <?php echo KIT_Commons::renderButton('×', 'ghost', 'sm', ['id' => 'customerModalClose', 'classes' => 'absolute top-3 right-4 text-gray-600 hover:text-black text-xl']); ?>
 
                 <h2 class="text-xl font-bold mb-4"><?= $is_edit ? 'Edit Customer' : 'Add Customer' ?></h2>
                 <div class="">
@@ -1242,14 +1261,8 @@ function customer_form()
                         </div>
 
                         <div class="flex justify-end space-x-2">
-                            <button type="button" id="customerModalCloseBtn"
-                                class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded">
-                                Cancel
-                            </button>
-                            <button type="submit" name="customer_submit" id="customerSubmitBtn"
-                                class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">
-                                <?= $is_edit ? 'Update' : 'Save' ?>
-                            </button>
+                            <?php echo KIT_Commons::renderButton('Cancel', 'secondary', 'md', ['type' => 'button', 'id' => 'customerModalCloseBtn']); ?>
+                            <?php echo KIT_Commons::renderButton($is_edit ? 'Update' : 'Save', 'success', 'md', ['type' => 'submit', 'name' => 'customer_submit', 'id' => 'customerSubmitBtn', 'gradient' => true]); ?>
                         </div>
                     </form>
                 </div>
@@ -1435,7 +1448,7 @@ function customer_detail_view($customer_id)
             <div class="col-span-2 bg-white shadow rounded-lg p-6 mb-6">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-xl font-semibold text-gray-900">Customer Information</h2>
-                    <a href="?page=08600-customers&edit_customer=<?php echo $customer_id; ?>" class="button button-primary">Edit Customer</a>
+                    <?php echo KIT_Commons::renderButton('Edit Customer', 'primary', 'md', ['href' => '?page=08600-customers&edit_customer=' . $customer_id, 'gradient' => true]); ?>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
@@ -1485,7 +1498,7 @@ function customer_detail_view($customer_id)
         <div class="col-span-3 bg-white shadow rounded-lg p-6">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-xl font-semibold text-gray-900">Waybills (<?php echo count($waybills); ?>)</h2>
-                    <a href="?page=08600-waybills&customer_id=<?php echo $customer_id; ?>" class="button button-primary">View All Waybills</a>
+                    <?php echo KIT_Commons::renderButton('View All Waybills', 'primary', 'md', ['href' => '?page=08600-waybills&customer_id=' . $customer_id, 'gradient' => true]); ?>
                 </div>
 
                 <?php if (!empty($waybills)): ?>
@@ -1534,7 +1547,7 @@ function customer_detail_view($customer_id)
                 <?php else: ?>
                     <div class="text-center py-8">
                         <p class="text-gray-500">No waybills found for this customer.</p>
-                        <a href="?page=08600-waybill-create&customer_id=<?php echo $customer_id; ?>" class="button button-primary mt-2">Create First Waybill</a>
+                        <?php echo KIT_Commons::renderButton('Create First Waybill', 'primary', 'md', ['href' => '?page=08600-waybill-create&customer_id=' . $customer_id, 'classes' => 'mt-2', 'gradient' => true]); ?>
                     </div>
                 <?php endif; ?>
             </div>
@@ -1649,7 +1662,14 @@ function get_customer_details($customer_id)
         $customer_id
     );
 
-    $customer = $wpdb->get_row($query);
+    $customer = $wpdb->get_row($query, ARRAY_A);
+
+    // Convert null values to empty strings to prevent deprecation warnings
+    if ($customer) {
+        $customer = array_map(function($value) {
+            return $value === null ? '' : $value;
+        }, $customer);
+    }
     // Return false if no customer found
     if (empty($customer)) {
         return false;
@@ -1661,7 +1681,14 @@ function edit_customer_form($customer_id)
 {
     global $wpdb;
     $table_name = $wpdb->prefix . 'kit_customers';
-    $customer = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_name WHERE cust_id = %d", $customer_id));
+    $customer = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_name WHERE cust_id = %d", $customer_id), ARRAY_A);
+
+    // Convert null values to empty strings to prevent deprecation warnings
+    if ($customer) {
+        $customer = array_map(function($value) {
+            return $value === null ? '' : $value;
+        }, $customer);
+    }
 
     if (!$customer) {
         wp_die('Customer not found');
@@ -1686,10 +1713,8 @@ function edit_customer_form($customer_id)
                 <input type="hidden" name="customer_id" value="<?php echo $customer_id; ?>" />
                 <?php theForm($customer); ?>
                 <div class="flex justify-end gap-2">
-                    <a href="<?php echo admin_url('admin.php?page=08600-customers&view_customer=' . $customer_id); ?>" class="button button-secondary">Cancel</a>
-                    <button type="submit" name="customer_submit" class="button button-primary">
-                        Update Customer
-                    </button>
+                    <?php echo KIT_Commons::renderButton('Cancel', 'secondary', 'md', ['href' => admin_url('admin.php?page=08600-customers&view_customer=' . $customer_id)]); ?>
+                    <?php echo KIT_Commons::renderButton('Update Customer', 'primary', 'md', ['type' => 'submit', 'name' => 'customer_submit', 'gradient' => true]); ?>
                 </div>
             </form>
         </div>
@@ -1929,7 +1954,7 @@ function view_customer_waybills()
                             }
                             if ($key === 'total') {
                                 //total is the sum of the product_invoice_amount and the miscellaneous
-                                if (KIT_Commons::isAdmin()) {
+                                if (KIT_User_Roles::can_see_prices()) {
                                     return KIT_Commons::currency() . ' ' . ((int)$row->product_invoice_amount + ((int)$row->miscellaneous ?? 0));
                                 } else {
                                     return '***';

@@ -2,8 +2,9 @@
 /**
  * Custom User Roles for 08600 Waybill Plugin
  * 
- * Data Capturer Role: Can view waybills, view past trips, and access specific fields
- * Manager Role: Can see what Data Capturer captured, update data, and view past trips
+ * Administrator: Super user with full access to everything
+ * Data Capturer: Can input data but cannot see prices
+ * Manager: Can approve and invoice but cannot see prices
  */
 
 if (!defined('ABSPATH')) {
@@ -19,13 +20,34 @@ class KIT_User_Roles {
         add_action('init', array(__CLASS__, 'create_custom_roles'));
         add_action('admin_init', array(__CLASS__, 'check_user_permissions'));
         add_filter('user_contactmethods', array(__CLASS__, 'add_custom_user_fields'));
+        add_action('admin_init', array(__CLASS__, 'remove_unwanted_roles'));
+    }
+    
+    /**
+     * Remove unwanted roles from the system
+     */
+    public static function remove_unwanted_roles() {
+        // Remove roles we don't want
+        $unwanted_roles = array(
+            'editor',
+            'author', 
+            'contributor',
+            'subscriber',
+            'customer',
+            'delivery_driver',
+            'shop_manager'
+        );
+        
+        foreach ($unwanted_roles as $role) {
+            remove_role($role);
+        }
     }
     
     /**
      * Create custom user roles
      */
     public static function create_custom_roles() {
-        // Data Capturer Role
+        // Data Capturer Role - Can input data but cannot see prices
         add_role('data_capturer', 'Data Capturer', array(
             'read' => true,
             'edit_posts' => false,
@@ -49,9 +71,15 @@ class KIT_User_Roles {
             'kit_access_sad500' => true,
             'kit_access_sadc_certificate' => true,
             'kit_access_vat' => true,
+            'kit_update_data' => true,
+            'kit_can_approve' => false,
+            'kit_can_invoice' => false,
+            'kit_can_see_prices' => false,
+            'kit_edit_waybills' => true, // Allow editing waybills
+            'kit_view_waybill_details' => true, // Allow viewing waybill details
         ));
         
-        // Manager Role
+        // Manager Role - Can approve and invoice but cannot see prices
         add_role('manager', 'Manager', array(
             'read' => true,
             'edit_posts' => true,
@@ -76,6 +104,11 @@ class KIT_User_Roles {
             'kit_access_sad500' => true,
             'kit_access_sadc_certificate' => true,
             'kit_access_vat' => true,
+            'kit_can_approve' => true,
+            'kit_can_invoice' => true,
+            'kit_can_see_prices' => false,
+            'kit_edit_waybills' => true, // Allow editing waybills
+            'kit_view_waybill_details' => true, // Allow viewing waybill details
         ));
     }
     
@@ -86,31 +119,64 @@ class KIT_User_Roles {
         $current_user = wp_get_current_user();
         $user_roles = $current_user->roles;
         
-        // Add custom capabilities to existing roles
+        // Add custom capabilities to administrator role only
         if (in_array('administrator', $user_roles)) {
             $admin_role = get_role('administrator');
-            $admin_role->add_cap('kit_view_waybills');
-            $admin_role->add_cap('kit_view_past_trips');
-            $admin_role->add_cap('kit_update_data');
-            $admin_role->add_cap('kit_access_description');
-            $admin_role->add_cap('kit_access_weight');
-            $admin_role->add_cap('kit_access_dimensions');
-            $admin_role->add_cap('kit_access_sad500');
-            $admin_role->add_cap('kit_access_sadc_certificate');
-            $admin_role->add_cap('kit_access_vat');
+            if ($admin_role) {
+                $admin_role->add_cap('kit_view_waybills');
+                $admin_role->add_cap('kit_view_past_trips');
+                $admin_role->add_cap('kit_update_data');
+                $admin_role->add_cap('kit_access_description');
+                $admin_role->add_cap('kit_access_weight');
+                $admin_role->add_cap('kit_access_dimensions');
+                $admin_role->add_cap('kit_access_sad500');
+                $admin_role->add_cap('kit_access_sadc_certificate');
+                $admin_role->add_cap('kit_access_vat');
+                $admin_role->add_cap('kit_can_approve');
+                $admin_role->add_cap('kit_can_invoice');
+                $admin_role->add_cap('kit_can_see_prices');
+                $admin_role->add_cap('kit_access_settings');
+                $admin_role->add_cap('kit_edit_waybills'); // Allow editing waybills
+                $admin_role->add_cap('kit_view_waybill_details'); // Allow viewing waybill details
+            }
         }
-        
-        if (in_array('editor', $user_roles)) {
-            $editor_role = get_role('editor');
-            $editor_role->add_cap('kit_view_waybills');
-            $editor_role->add_cap('kit_view_past_trips');
-            $editor_role->add_cap('kit_update_data');
-            $editor_role->add_cap('kit_access_description');
-            $editor_role->add_cap('kit_access_weight');
-            $editor_role->add_cap('kit_access_dimensions');
-            $editor_role->add_cap('kit_access_sad500');
-            $editor_role->add_cap('kit_access_sadc_certificate');
-            $editor_role->add_cap('kit_access_vat');
+
+        // Ensure Data Capturer role has required caps (handles existing sites)
+        $dc_role = get_role('data_capturer');
+        if ($dc_role) {
+            $dc_role->add_cap('kit_view_waybills');
+            $dc_role->add_cap('kit_view_past_trips');
+            $dc_role->add_cap('kit_update_data');
+            $dc_role->add_cap('kit_access_description');
+            $dc_role->add_cap('kit_access_weight');
+            $dc_role->add_cap('kit_access_dimensions');
+            $dc_role->add_cap('kit_access_sad500');
+            $dc_role->add_cap('kit_access_sadc_certificate');
+            $dc_role->add_cap('kit_access_vat');
+            $dc_role->add_cap('kit_edit_waybills'); // Allow editing waybills
+            $dc_role->add_cap('kit_view_waybill_details'); // Allow viewing waybill details
+            // Explicitly ensure no price access
+            $dc_role->remove_cap('kit_can_see_prices');
+        }
+
+        // Ensure Manager role has required caps (handles existing sites)
+        $mgr_role = get_role('manager');
+        if ($mgr_role) {
+            $mgr_role->add_cap('kit_view_waybills');
+            $mgr_role->add_cap('kit_view_past_trips');
+            $mgr_role->add_cap('kit_update_data');
+            $mgr_role->add_cap('kit_access_description');
+            $mgr_role->add_cap('kit_access_weight');
+            $mgr_role->add_cap('kit_access_dimensions');
+            $mgr_role->add_cap('kit_access_sad500');
+            $mgr_role->add_cap('kit_access_sadc_certificate');
+            $mgr_role->add_cap('kit_access_vat');
+            $mgr_role->add_cap('kit_can_approve');
+            $mgr_role->add_cap('kit_can_invoice');
+            $mgr_role->add_cap('kit_edit_waybills'); // Allow editing waybills
+            $mgr_role->add_cap('kit_view_waybill_details'); // Allow viewing waybill details
+            // Explicitly ensure no price access
+            $mgr_role->remove_cap('kit_can_see_prices');
         }
     }
     
@@ -130,8 +196,8 @@ class KIT_User_Roles {
     public static function can_access_field($field_name) {
         $current_user = wp_get_current_user();
         
-        // Administrators and editors have full access
-        if (in_array('administrator', $current_user->roles) || in_array('editor', $current_user->roles)) {
+        // Administrators have full access
+        if (in_array('administrator', $current_user->roles)) {
             return true;
         }
         
@@ -176,6 +242,62 @@ class KIT_User_Roles {
     }
     
     /**
+     * Check if user can approve waybills
+     */
+    public static function can_approve() {
+        return current_user_can('kit_can_approve') || current_user_can('manage_options');
+    }
+    
+    /**
+     * Check if user can create invoices
+     */
+    public static function can_invoice() {
+        return current_user_can('kit_can_invoice') || current_user_can('manage_options');
+    }
+    
+    /**
+     * Check if user can see prices.
+     * Hard-lock to Administrators only to avoid stray caps or escalations.
+     */
+    public static function can_see_prices() {
+        $user = wp_get_current_user();
+        return in_array('administrator', (array) $user->roles, true);
+    }
+    
+    /**
+     * Check if user is one of the specific authorized administrators for settings
+     * STRICT ACCESS: Only Thando, Mel, and Patricia can access settings
+     */
+    public static function can_access_settings() {
+        $allowed_users = ['thando', 'mel', 'patricia'];
+        $current_user = wp_get_current_user();
+        $current_username = strtolower($current_user->user_login);
+        
+        return in_array($current_username, $allowed_users);
+    }
+    
+    /**
+     * Check if current user is admin
+     */
+    public static function is_admin() {
+        return current_user_can('manage_options') || in_array('administrator', wp_get_current_user()->roles);
+    }
+    
+    /**
+     * Check if current user is data capturer
+     */
+    public static function is_data_capturer() {
+        return in_array('data_capturer', wp_get_current_user()->roles);
+    }
+    
+    /**
+     * Check if current user is manager
+     */
+    public static function is_manager() {
+        return in_array('manager', wp_get_current_user()->roles);
+    }
+    
+    /**
      * Get user role display name
      */
     public static function get_user_role_display_name() {
@@ -183,13 +305,11 @@ class KIT_User_Roles {
         $roles = $current_user->roles;
         
         if (in_array('administrator', $roles)) {
-            return 'Administrator';
+            
         } elseif (in_array('manager', $roles)) {
             return 'Manager';
         } elseif (in_array('data_capturer', $roles)) {
             return 'Data Capturer';
-        } elseif (in_array('editor', $roles)) {
-            return 'Editor';
         } else {
             return 'User';
         }

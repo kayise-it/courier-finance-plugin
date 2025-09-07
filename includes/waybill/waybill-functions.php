@@ -39,7 +39,10 @@ class KIT_Waybills
         add_action('admin_post_nopriv_update_destinationCountry', [self::class, 'update_destination']);
         add_action('admin_post_getDestinationCountry', [self::class, 'getDestinationCountry']);
         add_action('admin_post_nopriv_getDestinationCountry', [self::class, 'getDestinationCountry']);
+
+        // PDF generation ajax endpoint removed – legacy pdf-generator.php handles output
     }
+    // generate_pdf handler removed – use legacy pdf-generator.php file
 
     public static function chargeGroup($country_id)
     {
@@ -62,9 +65,19 @@ class KIT_Waybills
     {
         global $wpdb;
 
-        $waybillid = intval($_POST['waybillid']);
-        $waybillno = sanitize_text_field($_POST['waybillno']);
-        $status    = sanitize_text_field($_POST['status']);
+        // Check if user can invoice waybills
+        if (!KIT_User_Roles::can_invoice()) {
+            wp_die('You do not have permission to update waybill status.');
+        }
+
+        // Verify nonce for security
+        if (!isset($_POST['_wpnonce']) || !wp_verify_nonce($_POST['_wpnonce'], 'update_waybill_approval_nonce')) {
+            wp_die('Security check failed.');
+        }
+
+        $waybillid = intval($_POST['waybillid'] ?? 0);
+        $waybillno = sanitize_text_field($_POST['waybillno'] ?? '');
+        $status    = sanitize_text_field($_POST['status'] ?? '');
         $userId    = get_current_user_id();
 
         $table = $wpdb->prefix . 'kit_waybills';
@@ -104,29 +117,63 @@ class KIT_Waybills
     {
         global $wpdb;
 
-        $waybillid = intval($_POST['waybillid']);
-        $waybillno = sanitize_text_field($_POST['waybillno']);
-        $status = sanitize_text_field($_POST['status']);
+        // Check if user can approve waybills
+        if (!KIT_User_Roles::can_approve()) {
+            wp_die('You do not have permission to approve waybills.');
+        }
+
+        // Verify nonce for security
+        if (!isset($_POST['_wpnonce']) || !wp_verify_nonce($_POST['_wpnonce'], 'update_waybill_approval_nonce')) {
+            wp_die('Security check failed.');
+        }
+
+        $waybillid = intval($_POST['waybillid'] ?? 0);
+        $waybillno = sanitize_text_field($_POST['waybillno'] ?? '');
+        $status = sanitize_text_field($_POST['status'] ?? '');
         $userId = get_current_user_id();
 
         $table = $wpdb->prefix . 'kit_waybills';
 
+        // Get current approval status to check if we need to update invoice status
+        $current_waybill = $wpdb->get_row($wpdb->prepare(
+            "SELECT approval, status FROM $table WHERE id = %d AND waybill_no = %s",
+            $waybillid,
+            $waybillno
+        ));
+
+        $update_data = [
+            'approval' => $status,
+            'approval_userid' => $userId,
+        ];
+
+        // If changing from "Approved" or "Completed" to something else, set invoice status to "pending"
+        if ($current_waybill && 
+            in_array($current_waybill->approval, ['approved', 'completed']) && 
+            !in_array($status, ['approved', 'completed'])) {
+            $update_data['status'] = 'pending';
+            error_log("Approval status changed from '{$current_waybill->approval}' to '{$status}' - setting invoice status to 'pending' for waybill {$waybillno}");
+        }
+
         $updated = $wpdb->update(
             $table,
-            [
-                'approval' => $status,
-                'approval_userid' => $userId,
-            ],
+            $update_data,
             [
                 'id' => $waybillid,
                 'waybill_no' => $waybillno,
             ],
-            ['%s', '%d'],
+            array_fill(0, count($update_data), '%s'),
             ['%d', '%s']
         );
 
         if ($updated !== false) {
-            wp_redirect(add_query_arg('approval_updated', '1', wp_get_referer()));
+            $redirect_args = ['approval_updated' => '1'];
+            
+            // If we also updated the invoice status, add a flag to show a message
+            if (isset($update_data['status'])) {
+                $redirect_args['invoice_status_updated'] = '1';
+            }
+            
+            wp_redirect(add_query_arg($redirect_args, wp_get_referer()));
         } else {
             wp_redirect(add_query_arg('approval_error', '1', wp_get_referer()));
         }
@@ -271,11 +318,11 @@ class KIT_Waybills
         $grouped_waybills = [];
         $current_user = wp_get_current_user();
         foreach ($waybills as $waybill) {
-            $waybill_id = $waybill->id;
+            $waybill_id = $waybill['id'];
 
             if (!isset($grouped_waybills[$waybill_id])) {
                 // Get items for this waybill
-                $items = KIT_Waybills::get_waybill_items($waybill->waybill_no);
+                $items = KIT_Waybills::get_waybill_items($waybill['waybill_no']);
 
                 // Prepare waybill data
                 $main_waybill = clone $waybill;
@@ -313,37 +360,38 @@ class KIT_Waybills
                     ?>
                         <tr class="hover:bg-gray-50">
                             <td class="px-4 py-3 whitespace-nowrap">
-                                <div class="font-medium text-blue-600"><?= esc_html($waybill->waybill_no) ?></div>
-                                <div class="text-xs text-gray-500"><?= date('M d, Y', strtotime($waybill->created_at)) ?></div>
+                                <div class="font-medium text-blue-600"><?= esc_html($waybill['waybill_no']) ?></div>
+                                <div class="text-xs text-gray-500"><?= date('M d, Y', strtotime($waybill['created_at'])) ?></div>
                             </td>
                             <td class="px-4 py-3 whitespace-nowrap">
-                                <div><?= esc_html($waybill->customer_id) ?></div>
-                                <div class="text-xs text-gray-500 truncate max-w-xs"><?= esc_html($waybill->customer_name ?? '') ?>
+                                <div><?= esc_html($waybill['customer_id']) ?></div>
+                                <div class="text-xs text-gray-500 truncate max-w-xs"><?= esc_html($waybill['customer_name'] ?? '') ?>
                                 </div>
                             </td>
                             <td class="px-4 py-3 whitespace-nowrap">
-                                R<?= ($waybill->product_invoice_amount) ?>
+                                <?php if (KIT_User_Roles::can_see_prices()): ?>
+                                    R<?= ($waybill['product_invoice_amount']) ?>
+                                <?php else: ?>
+                                    ***
+                                <?php endif; ?>
                             </td>
                             <td class="px-4 py-3 whitespace-nowrap">
                                 <span
-                                    class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?= ($waybill->status === 'pending') ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800' ?>">
-                                    <?= ucfirst($waybill->status) ?>
+                                    class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?= ($waybill['status'] === 'pending') ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800' ?>">
+                                    <?= ucfirst($waybill['status']) ?>
                                 </span>
                             </td>
                             <td class="px-4 py-3 whitespace-nowrap">
-                                <button class="toggle-items text-blue-600 hover:text-blue-800 flex items-center"
-                                    data-waybill-id="<?= $waybill_id ?>">
-                                    <?= $item_count ?> item<?= ($item_count !== 1) ? 's' : '' ?>
-                                    <svg class="w-4 h-4 ml-1 transition-transform" fill="none" stroke="currentColor"
-                                        viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7">
-                                        </path>
-                                    </svg>
-                                </button>
+                                <?php echo KIT_Commons::renderButton($item_count . ' item' . (($item_count !== 1) ? 's' : ''), 'ghost-primary', 'sm', [
+                                    'classes' => 'toggle-items flex items-center',
+                                    'data-waybill-id' => $waybill_id,
+                                    'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>',
+                                    'iconPosition' => 'right'
+                                ]); ?>
                             </td>
                             <td class="px-4 py-3 whitespace-nowrap">
                                 <div class="flex space-x-2">
-                                    <a href="<?php echo admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . $waybill->id . '&waybill_atts=view_waybill'); ?>"
+                                    <a href="<?php echo admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . $waybill['id'] . '&waybill_atts=view_waybill'); ?>"
                                         class="text-blue-600 hover:text-blue-900" title="View">
                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
                                             stroke="currentColor">
@@ -353,7 +401,7 @@ class KIT_Waybills
                                                 d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                                         </svg>
                                     </a>
-                                    <?= KIT_Commons::deleteWaybillGlobal($waybill->id, $waybill->waybill_no, $waybill->delivery_id, $current_user->ID); ?>
+                                    <?= KIT_Commons::deleteWaybillGlobal($waybill['id'], $waybill['waybill_no'], $waybill['delivery_id'], $current_user->ID); ?>
                                 </div>
                             </td>
                         </tr>
@@ -395,7 +443,11 @@ class KIT_Waybills
                                                 'cell_class' => KIT_Commons::tcolClasses(),
                                                 'custom_cell_render' => function ($key, $item, $index) {
                                                     if ($key === 'unit_price') {
-                                                        return '<span class="text-right">R' . number_format($item->unit_price, 2) . '</span>';
+                                                        if (KIT_User_Roles::can_see_prices()) {
+                                                            return '<span class="text-right">R' . number_format($item->unit_price, 2) . '</span>';
+                                                        } else {
+                                                            return '<span class="text-right">***</span>';
+                                                        }
                                                     }
                                                     if ($key === 'quantity') {
                                                         return '<span class="text-right">' . esc_html($item->quantity) . '</span>';
@@ -438,7 +490,9 @@ class KIT_Waybills
     {
         wp_enqueue_style('kit-tailwind');
         // Quotations CSS removed
-        wp_enqueue_script('kit-scripts');
+        // Ensure our city loader script is available on waybill page
+        wp_enqueue_script('kitscript', plugin_dir_url(__FILE__) . '../../js/kitscript.js', ['jquery'], null, true);
+        wp_enqueue_script('waybill-pagination', plugin_dir_url(__FILE__) . '../../js/waybill-pagination.js', ['jquery'], null, true);
 
         ob_start();
         include plugin_dir_path(__FILE__) . 'waybill-form.php';
@@ -464,8 +518,8 @@ class KIT_Waybills
             }
         }
 
-        // Check permissions
-        if (!current_user_can('manage_options') && !current_user_can('edit_pages')) {
+        // Check permissions (allow plugin-specific capability)
+        if (!current_user_can('kit_update_data') && !current_user_can('manage_options') && !current_user_can('edit_pages')) {
             if ($is_ajax) {
                 wp_send_json_error('Unauthorized', 403);
             } else {
@@ -478,13 +532,49 @@ class KIT_Waybills
             // Debug: Log the POST data
             error_log('Waybill form submission: ' . print_r($_POST, true));
             
-            // Check if we have the minimum required data
-            if (!isset($_POST['customer_name']) && !isset($_POST['cust_id'])) {
-                $error_msg = 'Customer information is required';
+            // Enhanced validation with field-specific errors
+            $errors = [];
+            
+            // Check customer information
+            if (empty($_POST['customer_name']) && empty($_POST['cust_id'])) {
+                $errors[] = [
+                    'field' => 'customer_name',
+                    'message' => 'Customer information is required'
+                ];
+            }
+            
+            // Check destination information for non-warehoused items
+            if (!isset($_POST['warehoused']) || $_POST['warehoused'] != 1) {
+                if (empty($_POST['destination_country'])) {
+                    $errors[] = [
+                        'field' => 'destination_country',
+                        'message' => 'Destination country is required for non-warehoused items'
+                    ];
+                }
+                if (empty($_POST['destination_city'])) {
+                    $errors[] = [
+                        'field' => 'destination_city',
+                        'message' => 'Destination city is required for non-warehoused items'
+                    ];
+                }
+            }
+            
+            // If there are validation errors, return them
+            if (!empty($errors)) {
                 if ($is_ajax) {
-                    wp_send_json_error(['message' => $error_msg]);
+                    wp_send_json_error([
+                        'message' => 'Please fix the validation errors below.',
+                        'errors' => $errors
+                    ]);
                 } else {
-                    wp_die($error_msg);
+                    // Redirect back to the form with encoded errors for inline display
+                    $referer = wp_get_referer();
+                    if (!$referer) {
+                        $referer = admin_url('admin.php?page=08600-Waybill');
+                    }
+                    $encoded_errors = base64_encode(wp_json_encode($errors));
+                    $redirect_url = add_query_arg('form_errors', rawurlencode($encoded_errors), $referer);
+                    wp_redirect($redirect_url);
                 }
                 return;
             }
@@ -494,10 +584,24 @@ class KIT_Waybills
             if (is_wp_error($result)) {
                 // Handle the error gracefully
                 $error_message = $result->get_error_message();
+                $error_code = $result->get_error_code();
                 error_log('Waybill save error: ' . $error_message);
                 
                 if ($is_ajax) {
-                    wp_send_json_error(['message' => 'Error saving waybill: ' . $error_message]);
+                    // Return field-specific error if available
+                    if ($error_code === 'validation_error') {
+                        wp_send_json_error([
+                            'message' => 'Please fix the validation errors below.',
+                            'errors' => [
+                                [
+                                    'field' => 'general',
+                                    'message' => $error_message
+                                ]
+                            ]
+                        ]);
+                    } else {
+                        wp_send_json_error(['message' => 'Error saving waybill: ' . $error_message]);
+                    }
                 } else {
                     wp_redirect(add_query_arg('error', urlencode($error_message), wp_get_referer()));
                 }
@@ -511,10 +615,12 @@ class KIT_Waybills
                     'waybill_id' => $result['id'] ?? $result
                 ]);
             } else {
+                // Redirect back to create waybill page with success message
                 $redirect_url = add_query_arg([
-                    'page'         => '08600-Waybill-view',
-                    'waybill_id'   => $result['id'] ?? $result,
-                    'waybill_atts' => 'view_waybill',
+                    'page' => '08600-waybill-create',
+                    'success' => '1',
+                    'waybill_no' => $result['waybill_no'] ?? '',
+                    'message' => 'Waybill created successfully!'
                 ], admin_url('admin.php'));
 
                 wp_redirect($redirect_url);
@@ -559,12 +665,12 @@ class KIT_Waybills
 
         if ($country) {
             // If called as AJAX action, return JSON
-            if (! is_null($delivery_id) && isset($_REQUEST['action']) && strpos($_REQUEST['action'], 'getDestinationCountry') !== false) {
+            if (! is_null($delivery_id) && isset($_REQUEST['action']) && $_REQUEST['action'] !== '' && strpos($_REQUEST['action'], 'getDestinationCountry') !== false) {
                 wp_send_json_success(['destination_country' => $country]);
             }
             return esc_html($country);
         } else {
-            if (! is_null($delivery_id) && isset($_REQUEST['action']) && strpos($_REQUEST['action'], 'getDestinationCountry') !== false) {
+            if (! is_null($delivery_id) && isset($_REQUEST['action']) && $_REQUEST['action'] !== '' && strpos($_REQUEST['action'], 'getDestinationCountry') !== false) {
                 wp_send_json_error('Destination country not found.');
             }
             return '<span class="text-red-500">Not set</span>';
@@ -587,11 +693,21 @@ class KIT_Waybills
 
         // Calculate VAT only if VAT is included AND there are waybill items
         $vatCharge = 0;
-        if (isset($_POST['vat_include']) && $_POST['vat_include'] == 1 && $waybillItemsTotal > 0) {
+        $internationalPrice = 0;
+        
+        if ((isset($_POST['vat_include']) && $_POST['vat_include'] == 1) && $waybillItemsTotal > 0) {
             $vatCharge = self::vatCharge($waybillItemsTotal);
-        } elseif (isset($_POST['vat_include']) && $_POST['vat_include'] == 1 && $waybillItemsTotal == 0) {
+        } elseif ((isset($_POST['vat_include']) && $_POST['vat_include'] == 1) && $waybillItemsTotal == 0) {
             // VAT is checked but no items - this will be handled by warning in the calling function
             $vatCharge = 0;
+        } else {
+            // If VAT is not selected, add international price (converted to Rands)
+            // Prefer snapshot if provided through $ttt
+            if (is_array($ttt) && isset($ttt['international_price_rands']) && is_numeric($ttt['international_price_rands'])) {
+                $internationalPrice = floatval($ttt['international_price_rands']);
+            } else {
+                $internationalPrice = self::international_price_in_rands();
+            }
         }
         $better_charge = 0;
 
@@ -604,7 +720,7 @@ class KIT_Waybills
             $better_charge = $volume_charge;
         }
 
-        $additionalCharges = $misc_total + $include_sad500 + $include_sadc + $vatCharge;
+        $additionalCharges = $misc_total + $include_sad500 + $include_sadc + $vatCharge + $internationalPrice;
         // Calculate total
         $total = $better_charge + $additionalCharges;
         return number_format($total, 2, '.', '');
@@ -728,19 +844,20 @@ class KIT_Waybills
     //others
     public static function vatRate()
     {
-        global $wpdb;
-        $wpdprefix = $wpdb->prefix;
-        $company_table = $wpdprefix . 'kit_company_details';
-        $vat_rate = $wpdb->get_var("SELECT vat_percentage FROM $company_table LIMIT 1");
-        if ($vat_rate !== null && is_numeric($vat_rate)) {
-            return floatval($vat_rate);
-        }
-        return $vat_rate / 100;
+        // Consolidated VAT configuration: fixed at 10% across the system
+        // Returns a percentage value for display (10 == 10%)
+        return 10.0;
     }
     public static function vatCharge($itemsTotal)
     {
-        $vatCharge = ($itemsTotal * self::vatRate());
-        return $vatCharge;
+        // vatRate() returns a percentage value (e.g., 15 for 15%) for the settings UI
+        // Convert to decimal for calculation, but guard if it's already in decimal form
+        $rate = self::vatRate();
+        $rate = is_numeric($rate) ? floatval($rate) : 0.0;
+        if ($rate > 1) {
+            $rate = $rate / 100.0; // convert 15 -> 0.15
+        }
+        return $itemsTotal * $rate;
     }
 
     /**
@@ -769,6 +886,39 @@ class KIT_Waybills
         if ($sad500_charge !== null && is_numeric($sad500_charge)) {
             return floatval($sad500_charge);
         }
+    }
+    
+    public static function international_price()
+    {
+        global $wpdb;
+        $wpdprefix = $wpdb->prefix;
+        $company_table = $wpdprefix . 'kit_company_details';
+        $international_price = $wpdb->get_var("SELECT international_price FROM $company_table LIMIT 1");
+        if ($international_price !== null && is_numeric($international_price)) {
+            return floatval($international_price);
+        }
+        // Default value if not set
+        return 100.00;
+    }
+    
+    public static function international_price_in_rands()
+    {
+        // Live USD->ZAR with transient caching (fallback to 18.50)
+        $usd_price = self::international_price();
+        $cache_key = 'kit_usd_zar_rate';
+        $rate = get_transient($cache_key);
+        if ($rate === false) {
+            $rate = 18.50; // fallback
+            $response = wp_remote_get('https://open.er-api.com/v6/latest/USD', [ 'timeout' => 6 ]);
+            if (!is_wp_error($response) && (int) wp_remote_retrieve_response_code($response) === 200) {
+                $data = json_decode(wp_remote_retrieve_body($response), true);
+                if (isset($data['rates']['ZAR']) && is_numeric($data['rates']['ZAR'])) {
+                    $rate = floatval($data['rates']['ZAR']);
+                }
+            }
+            set_transient($cache_key, $rate, 10 * MINUTE_IN_SECONDS);
+        }
+        return $usd_price * floatval($rate);
     }
     public static function prepareMiscCharges($data)
     {
@@ -819,7 +969,17 @@ class KIT_Waybills
         }
 
         if ($has_vat) {
-            $waybillItemsTotal = (!empty($_POST['custom_items']) && is_array($_POST['custom_items'])) ? self::updateWaybillItems($_POST['custom_items'], null) : 0;
+            // 🔒 FIX: Calculate items total without inserting to database (waybill not created yet)
+            $waybillItemsTotal = 0;
+            if (!empty($_POST['custom_items']) && is_array($_POST['custom_items'])) {
+                foreach ($_POST['custom_items'] as $item) {
+                    if (!empty($item['item_name']) && isset($item['quantity']) && isset($item['unit_price'])) {
+                        $quantity = intval($item['quantity']);
+                        $unit_price = floatval($item['unit_price']);
+                        $waybillItemsTotal += $quantity * $unit_price;
+                    }
+                }
+            }
 
             // Only VAT, remove SAD500 and waybill fee if present
             unset($data['include_sad500'], $data['include_sadc']);
@@ -834,6 +994,11 @@ class KIT_Waybills
             }, ARRAY_FILTER_USE_KEY);
             if ($has_sad500) $others['include_sad500'] = self::sad();
             if ($has_waybill_fee) $others['include_sadc'] = self::sadc_certificate();
+        } else {
+            // If no VAT is selected, snapshot live exchange conversion
+            $rate_used = self::international_price_in_rands() / max(1.0, self::international_price());
+            $others['usd_to_zar_rate_used'] = $rate_used;
+            $others['international_price_rands'] = self::international_price_in_rands();
         }
 
         return [
@@ -917,7 +1082,7 @@ class KIT_Waybills
         }
 
         // 💰 Charge Details
-        $mass_charge = isset($_POST['mass_charge']) ? floatval(str_replace(',', '.', $_POST['mass_charge'])) : 0;
+        $mass_charge = isset($_POST['mass_charge']) ? floatval(str_replace(',', '.', $_POST['mass_charge'] ?: '')) : 0;
 
         if (isset($_POST['enable_price_manipulator'], $_POST['new_mass_rate']) && floatval($_POST['new_mass_rate']) > 0) {
             $mass_charge = floatval($_POST['new_mass_rate']);
@@ -973,7 +1138,17 @@ class KIT_Waybills
         // Generate waybill number if not provided
         $waybill_no = self::generate_waybill_number();
 
-        $waybillItemsTotal = (!empty($_POST['custom_items']) && is_array($_POST['custom_items'])) ? self::updateWaybillItems($_POST['custom_items'], null) : 0;
+        // 🔒 FIX: Calculate items total without inserting to database (waybill not created yet)
+        $waybillItemsTotal = 0;
+        if (!empty($_POST['custom_items']) && is_array($_POST['custom_items'])) {
+            foreach ($_POST['custom_items'] as $item) {
+                if (!empty($item['item_name']) && isset($item['quantity']) && isset($item['unit_price'])) {
+                    $quantity = intval($item['quantity']);
+                    $unit_price = floatval($item['unit_price']);
+                    $waybillItemsTotal += $quantity * $unit_price;
+                }
+            }
+        }
         $waybillTotal = self::calculate_total($mass_charge, $volume_charge, $misc_total, $waybillItemsTotal, $charge_basis);
 
         $include_sad500 = isset($_POST['include_sad500']) ? 1 : 0;
@@ -994,6 +1169,25 @@ class KIT_Waybills
         echo '</br>';
         print_r($waybillTotal); */
 
+
+        // Determine snapshot international price used (avoids undefined notice)
+        $internationalPrice = 0.0;
+        if (empty($vat)) {
+            // Prefer snapshot from prepared misc others if present
+            if (isset($final_misc_data['others']['international_price_rands']) && is_numeric($final_misc_data['others']['international_price_rands'])) {
+                $internationalPrice = floatval($final_misc_data['others']['international_price_rands']);
+            } else {
+                $internationalPrice = self::international_price_in_rands();
+            }
+        }
+
+        // Double-check the total before saving
+        $calculatedTotal = self::DoubleCheckTotal($mass_charge, $volume_charge, $misc_total, $include_sad500, $include_sadc, $vat, $internationalPrice, $charge_basis);
+
+        // If the calculated total doesn't match, use the correct one
+        if ($calculatedTotal !== $waybillTotal) {
+            $waybillTotal = $calculatedTotal;
+        }
 
         // Prepare waybill data
         $waybill_data = [
@@ -1366,8 +1560,8 @@ class KIT_Waybills
                     'current' => $current_page,
                     'total' => $total_pages,
                     'prev_next' => true,
-                    'prev_text' => '<span class="px-3 py-1 rounded border-gray-300 bg-white text-gray-700 hover:bg-gray-50">&laquo; Previous</span>',
-                    'next_text' => '<span class="px-3 py-1 rounded border-gray-300 bg-white text-gray-700 hover:bg-gray-50">Next &raquo;</span>',
+                    'prev_text' => '<span class="px-4 py-2 rounded border-gray-300 bg-white text-gray-700 hover:bg-gray-50">&laquo; Previous</span>',
+                    'next_text' => '<span class="px-4 py-2 rounded border-gray-300 bg-white text-gray-700 hover:bg-gray-50">Next &raquo;</span>',
                     'add_args' => ['items_per_page' => $items_per_page],
                     'type' => 'array'
                 ];
@@ -1377,11 +1571,13 @@ class KIT_Waybills
                 if ($pagination_links) {
                     foreach ($pagination_links as $link) {
                         // Add styling to current page
-                        if (strpos($link, 'current') !== false) {
-                            $link = str_replace('page-numbers current', 'page-numbers current px-3 py-1 rounded border bg-blue-50 border-blue-500 text-blue-600', $link);
-                        } else {
-                            $link = str_replace('page-numbers', 'page-numbers px-3 py-1 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50', $link);
-                        }
+                                // Ensure link is not null before using string functions
+        $link = $link ?? '';
+        if ($link && strpos($link, 'current') !== false) {
+            $link = str_replace('page-numbers current', 'page-numbers current px-4 py-2 rounded border bg-blue-50 border-blue-500 text-blue-600', $link);
+        } else if ($link) {
+            $link = str_replace('page-numbers', 'page-numbers px-4 py-2 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50', $link);
+        }
                         echo $link;
                     }
                 }
@@ -1397,7 +1593,7 @@ class KIT_Waybills
                     <?php foreach ($args['fields'] as $field): ?>
                         <?php if ($field !== 'customer_surname'): ?>
                             <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                <?php echo esc_html(ucfirst(str_replace('_', ' ', $field))); ?>
+                                <?php echo esc_html(ucfirst(str_replace('_', ' ', $field ?: ''))); ?>
                             </th>
                         <?php endif; ?>
                     <?php endforeach; ?>
@@ -1407,7 +1603,7 @@ class KIT_Waybills
                     <?php endif; ?>
                 </tr>
             </thead>
-            <tbody>
+            <tbody class="divide-y divide-gray-200">
                 <?php foreach ($paginated_data as $item):
 
 
@@ -1474,7 +1670,7 @@ class KIT_Waybills
                                                 d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                                         </svg>
                                     </a>
-                                    <a href="<?php echo admin_url('admin-ajax.php?action=generate_pdf&quotation_id=' . $quotation->id . '&security_nonce=' . wp_create_nonce('pdf_nonce')); ?>"
+                                    <a href="<?php echo plugin_dir_url(__FILE__) . '../pdf-generator.php?waybill_no=' . $quotation->id . '&pdf_nonce=' . wp_create_nonce('pdf_nonce'); ?>"
                                         target="_blank" class="text-indigo-600 hover:text-indigo-900" title="Print" target="_blank">
                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
                                             stroke="currentColor">
@@ -1484,15 +1680,13 @@ class KIT_Waybills
                                     </a>
                                     <?php if (current_user_can('administrator') || current_user_can('manager')): ?>
                                         <?php if ($args['show_create_quotation']): ?>
-                                            <button class="create-quotation text-green-600 hover:text-green-900" title="Create Quotation"
-                                                data-waybill-id="<?php echo esc_attr($quotation->id); ?>">
-                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
-                                                    stroke="currentColor">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                        d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                                </svg>
-                                                Quote
-                                            </button>
+                                            <?php echo KIT_Commons::renderButton('Quote', 'success', 'sm', [
+                                                'title' => 'Create Quotation',
+                                                'data-waybill-id' => $quotation->id,
+                                                'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />',
+                                                'iconPosition' => 'left',
+                                                'gradient' => true
+                                            ]); ?>
                                         <?php endif; ?>
                                     <?php endif; ?>
 
@@ -1632,7 +1826,7 @@ class KIT_Waybills
                     <tr>
                         <?php foreach ($args['fields'] as $field): ?>
                             <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                <?php echo esc_html(ucfirst(str_replace('_', ' ', $field))); ?>
+                                <?php echo esc_html(ucfirst(str_replace('_', ' ', $field ?: ''))); ?>
                             </th>
                         <?php endforeach; ?>
                         <?php if ($args['actions']): ?>
@@ -1688,7 +1882,7 @@ class KIT_Waybills
                                             </a>
 
                                         <?php else: ?>
-                                            <a href="<?php echo admin_url('admin-ajax.php?action=generate_pdf&quotation_id=' . $quotation->id . '&security_nonce=' . wp_create_nonce('pdf_nonce')); ?>"
+                                            <a href="<?php echo plugin_dir_url(__FILE__) . '../pdf-generator.php?waybill_no=' . $quotation->id . '&pdf_nonce=' . wp_create_nonce('pdf_nonce'); ?>"
                                                 target="_blank"
                                                 class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2">
                                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
@@ -1708,15 +1902,13 @@ class KIT_Waybills
                                             </svg>
                                         </a> -->
                                         <?php if ($args['show_create_quotation']): ?>
-                                            <button class="create-quotation text-green-600 hover:text-green-900" title="Create Quotation"
-                                                data-waybill-id="<?php echo esc_attr($quotation->id); ?>">
-                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
-                                                    stroke="currentColor">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                        d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                                </svg>
-                                                asdfafsd
-                                            </button>
+                                            <?php echo KIT_Commons::renderButton('Quote', 'success', 'sm', [
+                                                'title' => 'Create Quotation',
+                                                'data-waybill-id' => $quotation->id,
+                                                'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />',
+                                                'iconPosition' => 'left',
+                                                'gradient' => true
+                                            ]); ?>
                                         <?php endif; ?>
                                     </div>
                                 </td>
@@ -1835,6 +2027,8 @@ class KIT_Waybills
         }
 
         // Ensure all string fields have default values to prevent null deprecation warnings
+        // Convert object to array first, then handle null values
+        $waybill_data = (array) $waybill_data;
         $waybill_data = array_map(function ($value) {
             return $value === null ? '' : $value;
         }, $waybill_data);
@@ -1861,7 +2055,30 @@ class KIT_Waybills
 
         // Unserialize miscellaneous items before returning
         if (!empty($waybill_data['miscellaneous'])) {
-            $waybill_data['miscellaneous'] = maybe_unserialize($waybill_data['miscellaneous']);
+            $misc_data = maybe_unserialize($waybill_data['miscellaneous']);
+            // Ensure nested arrays have safe defaults
+            if (is_array($misc_data)) {
+                if (isset($misc_data['others']) && is_array($misc_data['others'])) {
+                    $misc_data['others'] = array_map(function($value) {
+                        return $value === null ? '' : $value;
+                    }, $misc_data['others']);
+                }
+                if (isset($misc_data['misc_items']) && is_array($misc_data['misc_items'])) {
+                    $misc_data['misc_items'] = array_map(function($item) {
+                        if (is_array($item)) {
+                            return array_map(function($value) {
+                                return $value === null ? '' : $value;
+                            }, $item);
+                        }
+                        return $item;
+                    }, $misc_data['misc_items']);
+                }
+                // Ensure misc_total has a safe default
+                if (!isset($misc_data['misc_total']) || $misc_data['misc_total'] === null) {
+                    $misc_data['misc_total'] = 0.0;
+                }
+            }
+            $waybill_data['miscellaneous'] = $misc_data;
         }
 
 
@@ -1972,7 +2189,14 @@ class KIT_Waybills
                              LEFT JOIN {$wpdb->users} AS u ON w.approval_userid = u.ID
                              WHERE w.id = %d",
                 $waybill_id
-            ));
+            ), ARRAY_A);
+
+            // Convert null values to empty strings to prevent deprecation warnings
+            if ($waybill) {
+                $waybill = array_map(function($value) {
+                    return $value === null ? '' : $value;
+                }, $waybill);
+            }
 
 
             if ($is_view_mode) {
@@ -1981,35 +2205,35 @@ class KIT_Waybills
 
                 // Header section
                 echo '<div class="flex justify-between items-center mb-6 border-b pb-4">';
-                echo '<h2 class="text-2xl font-bold text-gray-800">Waybil33l #' . esc_html($waybill->waybill_no) . '</h2>';
+                echo '<h2 class="text-2xl font-bold text-gray-800">Waybil33l #' . esc_html($waybill['waybill_no']) . '</h2>';
                 echo '<div class="flex space-x-3">';
                 // If already approved, show the approver
-                if (! empty($waybill->approved_by_username)) {
+                if (! empty($waybill['approved_by_username'])) {
                     echo '<div class="flex flex-col">';
                     echo '<p class="text-gray-600">Approved by:</p>';
-                    echo '<div class="bg-slate-300 hover:bg-slate-700 rounded block text-gray text-center align-middle px-6 py-3">' . esc_html($waybill->approved_by_username) . '</div>';
+                    echo '<div class="bg-slate-300 hover:bg-slate-700 rounded block text-gray text-center align-middle px-6 py-3">' . esc_html($waybill['approved_by_username']) . '</div>';
                     echo '</div>';
                 }
                 // If not approved, and user is Admin or Manager, show button
                 elseif (in_array('administrator', $roles) || in_array('manager', $roles)) {
                     echo '<form method="POST" id="approvalBtn" action="' . esc_url(admin_url('admin-post.php')) . '">';
                     echo '<input type="hidden" name="action" value="approve_waybill">';
-                    echo '<input type="hidden" name="waybill_id" value="' . esc_attr($waybill->id) . '">';
-                    echo '<input type="hidden" name="delivery_id" value="' . esc_attr($waybill->delivery_id) . '">';
+                    echo '<input type="hidden" name="waybill_id" value="' . esc_attr($waybill['id']) . '">';
+                    echo '<input type="hidden" name="delivery_id" value="' . esc_attr($waybill['delivery_id']) . '">';
                     echo '<input type="hidden" name="user_id" value="' . esc_attr($current_user->ID) . '">';
-                    echo '<button type="submit" class="bg-blue-500 hover:bg-blue-700 rounded block text-white text-center align-middle px-6 py-3">Approve Now</button>';
+                    echo KIT_Commons::renderButton('Approve Now', 'primary', 'lg', ['type' => 'submit', 'gradient' => true]);
                     echo '</form>';
                 }
                 // Else show 'Not Approved'
                 else {
                     echo 'Not Approved';
                 }
-                echo '<button id="editWaybillBtn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center">';
-                echo '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
-                            </svg>';
-                echo 'Edit';
-                echo '</button>';
+                echo KIT_Commons::renderButton('Edit', 'primary', 'md', [
+                    'id' => 'editWaybillBtn',
+                    'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>',
+                    'iconPosition' => 'left',
+                    'gradient' => true
+                ]);
                 echo '<a href="' . admin_url('admin.php?page=08600-Waybill') . '" class="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors">Back to List</a>';
                 echo '</div></div>';
 
@@ -2020,9 +2244,9 @@ class KIT_Waybills
                 echo '<div class="bg-gray-50 p-4 rounded-lg">';
                 echo '<h3 class="text-lg font-semibold text-gray-700 mb-3 border-b pb-2">Basic Information</h3>';
                 echo '<div class="space-y-3">';
-                echo self::render_detail_row('Waybill Number', $waybill->waybill_no);
-                echo self::render_detail_row('Invoice Number', $waybill->product_invoice_number);
-                echo self::render_detail_row('Customer ID', $waybill->customer_id);
+                echo self::render_detail_row('Waybill Number', $waybill['waybill_no']);
+                echo self::render_detail_row('Invoice Number', $waybill['product_invoice_number']);
+                echo self::render_detail_row('Customer ID', $waybill['customer_id']);
                 echo '</div>';
                 echo '</div>';
 
@@ -2030,11 +2254,11 @@ class KIT_Waybills
                 echo '<div class="bg-gray-50 p-4 rounded-lg">';
                 echo '<h3 class="text-lg font-semibold text-gray-700 mb-3 border-b pb-2">Dimensions</h3>';
                 echo '<div class="grid grid-cols-2 gap-3">';
-                echo self::render_detail_row('Length (cm)', $waybill->item_length);
-                echo self::render_detail_row('Width (cm)', $waybill->item_width);
-                echo self::render_detail_row('Height (cm)', $waybill->item_height);
-                //echo self::render_detail_row('Total Volume', $waybill->total_volume);
-                echo self::render_detail_row('Total Mass (kg)', $waybill->total_mass_kg);
+                echo self::render_detail_row('Length (cm)', $waybill['item_length']);
+                echo self::render_detail_row('Width (cm)', $waybill['item_width']);
+                echo self::render_detail_row('Height (cm)', $waybill['item_height']);
+                //echo self::render_detail_row('Total Volume', $waybill['total_volume']);
+                echo self::render_detail_row('Total Mass (kg)', $waybill['total_mass_kg']);
                 echo '</div>';
                 echo '</div>';
 
@@ -2042,10 +2266,10 @@ class KIT_Waybills
                 echo '<div class="bg-gray-50 p-4 rounded-lg">';
                 echo '<h3 class="text-lg font-semibold text-gray-700 mb-3 border-b pb-2">Charges</h3>';
                 echo '<div class="grid grid-cols-1 gap-3">';
-                echo self::render_detail_row('Charge Basis', $waybill->charge_basis);
-                echo (isset($waybill->mass_rate)) ? self::render_detail_row('Mass Rate', KIT_Commons::currency() . number_format($waybill->mass_rate, 2)) : '';
-                echo (isset($waybill->mass_charge)) ? self::render_detail_row('Mass Charge', KIT_Commons::currency() . number_format($waybill->mass_charge, 2)) : '';
-                echo (isset($waybill->volume_charge)) ? self::render_detail_row('Volume Charge', KIT_Commons::currency() . number_format($waybill->volume_charge, 2)) : '';
+                echo self::render_detail_row('Charge Basis', $waybill['charge_basis']);
+                echo (isset($waybill['mass_rate'])) ? self::render_detail_row('Mass Rate', KIT_Commons::currency() . number_format($waybill['mass_rate'], 2)) : '';
+                echo (isset($waybill['mass_charge'])) ? self::render_detail_row('Mass Charge', KIT_Commons::currency() . number_format($waybill['mass_charge'], 2)) : '';
+                echo (isset($waybill['volume_charge'])) ? self::render_detail_row('Volume Charge', KIT_Commons::currency() . number_format($waybill['volume_charge'], 2)) : '';
                 echo '</div>';
                 echo '</div>';
 
@@ -2053,10 +2277,10 @@ class KIT_Waybills
                 echo '<div class="bg-gray-50 p-4 rounded-lg">';
                 echo '<h3 class="text-lg font-semibold text-gray-700 mb-3 border-b pb-2">Miscellaneous Charges</h3>';
                 echo '<div class="grid grid-cols-2 gap-3">';
-                //$waybill->miscellaneous unserialize and display name + Price
+                //$waybill['miscellaneous'] unserialize and display name + Price
                 $miscData = null;
-                if (!empty($waybill->miscellaneous)) {
-                    $miscData = unserialize($waybill->miscellaneous);
+                if (!empty($waybill['miscellaneous'])) {
+                    $miscData = maybe_unserialize($waybill['miscellaneous']);
                 }
 
                 if ($miscData && isset($miscData['misc_item'], $miscData['misc_price'])) {
@@ -2081,7 +2305,7 @@ class KIT_Waybills
                 include plugin_dir_path(__FILE__) . 'waybill-form.php';
                 echo '<div class="mt-4 flex justify-end space-x-3">';
                 echo '<a
-                            href="' . admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . $waybill->id . '&waybill_atts=view_waybill') . '"
+                            href="' . admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . $waybill['id'] . '&waybill_atts=view_waybill') . '"
                             class="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors">Cancel</a>';
                 echo '</div>';
                 echo '</div>';
@@ -2104,7 +2328,7 @@ class KIT_Waybills
                 include plugin_dir_path(__FILE__) . 'waybill-form.php';
                 echo '<div class="mt-4 flex justify-end space-x-3">';
                 echo '<a
-                        href="' . admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . $waybill->id . '&waybill_atts=view_waybill') . '"
+                        href="' . admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . $waybill['id'] . '&waybill_atts=view_waybill') . '"
                         class="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors">Cancel</a>';
                 echo '</div>';
                 echo '</div>';
@@ -2293,6 +2517,7 @@ class KIT_Waybills
         return $finalTotal;
     }
 
+
     public static function vatValidate($vat, $sad, $sad500)
     {
         $validate = [
@@ -2369,6 +2594,12 @@ class KIT_Waybills
         $items_table = $wpdb->prefix . 'kit_waybill_items';
         $total = 0;
 
+        // 🔒 CRITICAL FIX: Prevent NULL waybillno database errors
+        if ($waybill_no === null || empty($waybill_no)) {
+            error_log("updateWaybillItems: waybill_no is null or empty - skipping item insertion");
+            return 0;
+        }
+
         if ($waybill_no != null) {
             // ✅ Delete previous waybill items
             $wpdb->delete($items_table, ['waybillno' => $waybill_no]);
@@ -2406,7 +2637,8 @@ class KIT_Waybills
             wp_die('Security check failed.');
         }
 
-        if (!current_user_can('edit_posts')) {
+        // Allow Data Capturers/Managers via plugin cap (avoid WP core caps)
+        if (!current_user_can('kit_update_data')) {
             wp_die('You do not have sufficient permissions to access this page.');
         }
 
@@ -2463,13 +2695,8 @@ class KIT_Waybills
             $misc_total = self::get_waybill_items_total($_POST['misc']);
         }
 
-        $waybillItemsTotal = (!empty($_POST['custom_items']) && is_array($_POST['custom_items'])) ? self::updateWaybillItems($_POST['custom_items'], $waybill_no) : 0;
-
-        //if $_POST['custom_items'] empty, this means delete all the $_POST['custom_items']
-        if (empty($_POST['custom_items'])) {
-            //Search the waybillItems Table and delete by waybill_no
-            self::deleteWaybillItems($waybill_no);
-        }
+        // Always update waybill items - this will delete existing items and insert new ones
+        $waybillItemsTotal = self::updateWaybillItems($_POST['custom_items'] ?? [], $waybill_no);
 
         $vat_include = $_POST['vat_include'] ?? 0;
 
@@ -2545,13 +2772,13 @@ class KIT_Waybills
 
         $grand_total = 0;
         foreach ($waybills as $waybill) {
-            $mass = floatval($waybill->mass_charge);
-            $volume = floatval($waybill->volume_charge);
+            $mass = floatval($waybill['mass_charge']);
+            $volume = floatval($waybill['volume_charge']);
 
             // Unserialize misc and get misc_total
             $misc_total = 0;
-            if (!empty($waybill->miscellaneous)) {
-                $misc = maybe_unserialize($waybill->miscellaneous);
+            if (!empty($waybill['miscellaneous'])) {
+                $misc = maybe_unserialize($waybill['miscellaneous']);
                 if (is_array($misc) && isset($misc['misc_total'])) {
                     $misc_total = floatval($misc['misc_total']);
                 }
@@ -2638,14 +2865,14 @@ class KIT_Waybills
                     ucfirst($value) . '</span>';
 
             case 'approval':
-                $current_user = wp_get_current_user();
-                $roles = (array) $current_user->roles;
+                // Check if current user can approve (administrator or manager)
+                $can_approve = KIT_User_Roles::can_approve();
 
-                // If user is administrator, show waybillApprovalStatus
-                if (in_array('administrator', $roles)) {
+                // If user can approve, show waybillApprovalStatus
+                if ($can_approve) {
                     return  KIT_Commons::waybillApprovalStatus($item->waybill_no, $item->id, 'quoted', $item->approval, 'select');
                 } else {
-                    // For non-administrators, show approval status
+                    // For users who cannot approve, show approval status badge only
                     $approval = strtolower($item->approval ?? 'pending');
                     switch ($approval) {
                         case 'approved':
@@ -2670,11 +2897,12 @@ class KIT_Waybills
 
             case 'items':
                 $item_count = is_array($value) ? count($value) : (int)$value;
-                return '<button class="toggle-items text-blue-600 hover:text-blue-800 flex items-center" data-item-id="' . ($item->id ?? '') . '">' .
-                    $item_count . ' item' . ($item_count !== 1 ? 's' : '') .
-                    '<svg class="w-4 h-4 ml-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">' .
-                    '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>' .
-                    '</svg></button>';
+                return KIT_Commons::renderButton($item_count . ' item' . ($item_count !== 1 ? 's' : ''), 'ghost-primary', 'sm', [
+                    'classes' => 'toggle-items flex items-center',
+                    'data-item-id' => $item->id ?? '',
+                    'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>',
+                    'iconPosition' => 'right'
+                ]);
 
             case 'actions':
                 return self::renderDefaultActions($item);
@@ -2882,6 +3110,27 @@ class KIT_Waybills
 <?php
         return ob_get_clean(true);
     }
+
+    public static function DoubleCheckTotal($mass_charge, $volume_charge, $misc_total, $include_sad500, $include_sadc, $vatCharge, $internationalPrice, $charge_basis = null) {
+        // Determine the better charge
+        $better_charge = 0;
+        if ($charge_basis == null) {
+            $better_charge = max($mass_charge, $volume_charge);
+        } elseif ($charge_basis == 'mass' || $charge_basis == 'weight') {
+            $better_charge = $mass_charge;
+        } else if ($charge_basis == 'volume') {
+            $better_charge = $volume_charge;
+        }
+
+        // Calculate additional charges
+        $additionalCharges = $misc_total + $include_sad500 + $include_sadc + $vatCharge + $internationalPrice;
+
+        // Calculate total
+        $total = $better_charge + $additionalCharges;
+
+        // Return formatted total
+        return number_format($total, 2, '.', '');
+    }
 }
 
 // Initialize
@@ -2955,32 +3204,32 @@ function render_waybill_row($waybill, $columns, $current_user = null)
     foreach ($columns as $col) {
         switch ($col) {
             case 'waybill_no':
-                echo '<td>' . esc_html($waybill->waybill_no) . '</td>';
+                echo '<td>' . esc_html($waybill['waybill_no']) . '</td>';
                 break;
             case 'customer':
-                echo '<td>' . esc_html($waybill->customer_name) . '</td>';
+                echo '<td>' . esc_html($waybill['customer_name']) . '</td>';
                 break;
             case 'dispatch_date':
-                echo '<td>' . (!empty($waybill->dispatch_date) ? date('M j, Y', strtotime($waybill->dispatch_date)) : '-') . '</td>';
+                echo '<td>' . (!empty($waybill['dispatch_date']) ? date('M j, Y', strtotime($waybill['dispatch_date'])) : '-') . '</td>';
                 break;
             // ... add more columns as needed ...
             case 'actions':
                 echo '<td>';
                 // View action (everyone)
-                echo '<a href="' . admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . $waybill->id) . '" class="btn btn-sm btn-primary">View</a> ';
+                echo KIT_Commons::renderButton('View', 'primary', 'sm', ['href' => admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . $waybill['id']), 'gradient' => true]) . ' ';
                 // Generate Quotation (admin only)
                 if (in_array('administrator', $roles)) {
-                    echo '<a href="' . admin_url('admin.php?page=generate-quotation&waybill_id=' . $waybill->id) . '" class="btn btn-sm btn-success">Generate Quotation</a> ';
+                    echo KIT_Commons::renderButton('Generate Quotation', 'success', 'sm', ['href' => admin_url('admin.php?page=generate-quotation&waybill_id=' . $waybill['id']), 'gradient' => true]) . ' ';
                 }
                 // Delete (admin only)
                 if (in_array('administrator', $roles)) {
-                    echo '<a href="' . admin_url('admin-post.php?action=delete_waybill&waybill_id=' . $waybill->id) . '" class="btn btn-sm btn-danger" onclick="return confirm(\'Are you sure?\')">Delete</a>';
+                    echo KIT_Commons::renderButton('Delete', 'danger', 'sm', ['href' => admin_url('admin-post.php?action=delete_waybill&waybill_id=' . $waybill['id']), 'onclick' => 'return confirm(\'Are you sure?\')', 'gradient' => true]);
                 }
                 echo '</td>';
                 break;
             default:
                 // fallback for any other column
-                echo '<td>' . (isset($waybill->$col) ? esc_html($waybill->$col) : '-') . '</td>';
+                echo '<td>' . (isset($waybill[$col]) ? esc_html($waybill[$col]) : '-') . '</td>';
         }
     }
     echo '</tr>';

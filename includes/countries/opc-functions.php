@@ -9,8 +9,8 @@ class KIT_OPCCountries
     {
         add_action('wp_ajax_kit_get_countries', [__CLASS__, 'get_countries']);
         add_action('wp_ajax_nopriv_kit_get_countries', [__CLASS__, 'get_countries']);
-        //Insert the countries into the database if not already present
-        add_action('init', [__CLASS__, 'insert_countries']);
+        //Insert the countries into the database if not already present - TEMPORARILY DISABLED FOR DEBUGGING
+        // add_action('init', [__CLASS__, 'insert_countries']);
         add_action('wp_ajax_kit_add_country', [__CLASS__, 'add_country']);
         add_action('wp_ajax_kit_get_country_options', [__CLASS__, 'kit_get_country_options']);
     }

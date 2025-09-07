@@ -29,9 +29,39 @@ function kit_render_waybill_multiform($atts)
     } else {
         $waybill = json_decode(stripslashes((string)$waybill_raw), true);
     }
+    
+    // Load waybill items if in edit mode
+    $waybill_items = [];
+    if ($is_edit_mode && !empty($waybill['waybill_no'])) {
+        global $wpdb;
+        $items_table = $wpdb->prefix . 'kit_waybill_items';
+        $items_sql = $wpdb->prepare("SELECT * FROM $items_table WHERE waybillno = %d", $waybill['waybill_no']);
+        $waybill_items = $wpdb->get_results($items_sql, ARRAY_A);
+    }
+    
+    // Make waybill_items available globally for included files
+    global $waybill_items;
+    
     $customer = $atts['customer'];
 
     ob_start(); ?>
+    <style>
+        /* Inline validation styles for immediate use */
+        .border-red-500 { border-color: #ef4444 !important; }
+        .bg-red-50 { background-color: #fef2f2 !important; }
+        .text-red-600 { color: #dc2626 !important; }
+        .text-red-800 { color: #991b1b !important; }
+        .text-green-600 { color: #059669 !important; }
+        .text-green-800 { color: #166534 !important; }
+        .bg-green-50 { background-color: #f0fdf4 !important; }
+        .border-green-200 { border-color: #bbf7d0 !important; }
+        .border-red-200 { border-color: #fecaca !important; }
+        .text-red-400 { color: #f87171 !important; }
+        .text-green-400 { color: #4ade80 !important; }
+        .animate-spin { animation: spin 1s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    </style>
+    
     <form method="POST" action="<?php echo esc_attr($form_action); ?>" class="" id="multi-step-waybill-form" data-ajax-url="<?php echo admin_url('admin-ajax.php'); ?>">
         <?php if ($is_edit_mode): ?>
             <input type="hidden" name="waybill_id" value="<?php echo esc_attr($waybill_id); ?>">
@@ -40,6 +70,41 @@ function kit_render_waybill_multiform($atts)
             <input type="hidden" name="exsitingCust" value="<?php echo esc_attr($is_existing_customer); ?>">
         <?php endif; ?>
         <?php wp_nonce_field($is_edit_mode ? 'update_waybill_nonce' : 'add_waybill_nonce'); ?>
+        
+        <!-- Error Display Container -->
+        <div id="form-errors" class="hidden mb-4 p-4 bg-red-50 border border-red-200 rounded-md">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                    </svg>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-red-800">Please fix the following errors:</h3>
+                    <div id="error-list" class="mt-2 text-sm text-red-700">
+                        <!-- Error messages will be inserted here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Success Display Container -->
+        <div id="form-success" class="hidden mb-4 p-4 bg-green-50 border border-green-200 rounded-md">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                    </svg>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-green-800">Success!</h3>
+                    <div id="success-message" class="mt-2 text-sm text-green-700">
+                        <!-- Success message will be inserted here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Step 1: Waybill Header -->
         <div class="step step-1 active" id="step-1" style="min-width: 500px;">
             <?php require __DIR__ . '/waybill/steps/step1.php'; ?>
@@ -61,6 +126,255 @@ function kit_render_waybill_multiform($atts)
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // Error handling and validation system
+            const form = document.getElementById('multi-step-waybill-form');
+            const errorContainer = document.getElementById('form-errors');
+            const errorList = document.getElementById('error-list');
+            const successContainer = document.getElementById('form-success');
+            const successMessage = document.getElementById('success-message');
+
+            // Display server-provided errors when redirected from non-AJAX submit
+            (function hydrateServerErrors() {
+                try {
+                    const params = new URLSearchParams(window.location.search);
+                    const encoded = params.get('form_errors');
+                    if (encoded) {
+                        const decoded = JSON.parse(atob(decodeURIComponent(encoded)));
+                        if (Array.isArray(decoded) && decoded.length) {
+                            decoded.forEach(err => {
+                                showError(err.message, err.field || null);
+                            });
+                        }
+                        // Clean the URL to avoid re-showing on refresh
+                        params.delete('form_errors');
+                        const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+                        window.history.replaceState({}, document.title, newUrl);
+                    }
+                } catch (e) {
+                    // ignore URL decoding errors
+                }
+            })();
+
+            // Validation rules
+            const validationRules = {
+                'customer_name': {
+                    required: true,
+                    message: 'Customer name is required'
+                },
+                'customer_surname': {
+                    required: true,
+                    message: 'Customer surname is required'
+                },
+                'cell': {
+                    required: true,
+                    message: 'Cell phone number is required'
+                },
+                'address': {
+                    required: true,
+                    message: 'Address is required'
+                },
+                'destination_country': {
+                    required: function() {
+                        return !document.getElementById('warehoused_option')?.checked;
+                    },
+                    message: 'Destination country is required for non-warehoused items'
+                },
+                'destination_city': {
+                    required: function() {
+                        return !document.getElementById('warehoused_option')?.checked;
+                    },
+                    message: 'Destination city is required for non-warehoused items'
+                }
+            };
+
+            // Show error message
+            function showError(message, fieldId = null) {
+                errorContainer.classList.remove('hidden');
+                const errorItem = document.createElement('div');
+                errorItem.className = 'error-item';
+                if (fieldId) {
+                    errorItem.innerHTML = `<a href="javascript:void(0)" data-field="${fieldId}" class="error-link text-red-600 hover:text-red-800 underline cursor-pointer">${message}</a>`;
+                    highlightField(fieldId, true);
+                } else {
+                    errorItem.textContent = message;
+                }
+                errorList.appendChild(errorItem);
+                
+                // Scroll to error container
+                errorContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+
+            // Show success message
+            function showSuccess(message) {
+                successContainer.classList.remove('hidden');
+                successMessage.textContent = message;
+                successContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+
+            // Clear all errors
+            function clearErrors() {
+                errorContainer.classList.add('hidden');
+                errorList.innerHTML = '';
+                clearFieldHighlights();
+            }
+
+            // Clear success message
+            function clearSuccess() {
+                successContainer.classList.add('hidden');
+                successMessage.textContent = '';
+            }
+
+            // Highlight field with error
+            function highlightField(fieldId, hasError = false) {
+                const field = document.getElementById(fieldId);
+                if (field) {
+                    if (hasError) {
+                        field.classList.add('border-red-500', 'bg-red-50');
+                        field.classList.remove('border-gray-300', 'focus:border-blue-500');
+                    } else {
+                        field.classList.remove('border-red-500', 'bg-red-50');
+                        field.classList.add('border-gray-300', 'focus:border-blue-500');
+                    }
+                }
+            }
+
+            // Clear all field highlights
+            function clearFieldHighlights() {
+                document.querySelectorAll('.border-red-500').forEach(field => {
+                    field.classList.remove('border-red-500', 'bg-red-50');
+                    field.classList.add('border-gray-300', 'focus:border-blue-500');
+                });
+            }
+
+            // Validate a single field
+            function validateField(fieldId) {
+                const field = document.getElementById(fieldId);
+                if (!field) return true;
+
+                const rule = validationRules[fieldId];
+                if (!rule) return true;
+
+                let isRequired = rule.required;
+                if (typeof isRequired === 'function') {
+                    isRequired = isRequired();
+                }
+
+                if (isRequired && (!field.value || field.value.trim() === '')) {
+                    highlightField(fieldId, true);
+                    return false;
+                } else {
+                    highlightField(fieldId, false);
+                    return true;
+                }
+            }
+
+            // Validate all fields
+            function validateForm() {
+                clearErrors();
+                let isValid = true;
+                const errors = [];
+
+                // Validate each field
+                Object.keys(validationRules).forEach(fieldId => {
+                    if (!validateField(fieldId)) {
+                        isValid = false;
+                        errors.push({
+                            message: validationRules[fieldId].message,
+                            fieldId: fieldId
+                        });
+                    }
+                });
+
+                // Show errors if any
+                if (!isValid) {
+                    errors.forEach(error => {
+                        showError(error.message, error.fieldId);
+                    });
+                }
+
+                return isValid;
+            }
+
+            // Always run client-side validation before any submission (AJAX or non-AJAX)
+            const multiStepForm = document.getElementById('multi-step-waybill-form');
+            if (multiStepForm) {
+                multiStepForm.addEventListener('submit', function(e) {
+                    // If invalid, prevent navigation to admin-post and show inline errors
+                    if (!validateForm()) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return false;
+                    }
+                }, { capture: true });
+            }
+
+            // Real-time validation on field blur
+            Object.keys(validationRules).forEach(fieldId => {
+                const field = document.getElementById(fieldId);
+                if (field) {
+                    field.addEventListener('blur', () => {
+                        validateField(fieldId);
+                    });
+                    field.addEventListener('input', () => {
+                        if (field.classList.contains('border-red-500')) {
+                            validateField(fieldId);
+                        }
+                    });
+                }
+            });
+
+            // Error link click handler
+            document.addEventListener('click', function(e) {
+                if (e.target.classList.contains('error-link')) {
+                    e.preventDefault();
+                    const fieldId = e.target.getAttribute('data-field');
+                    if (fieldId) {
+                        scrollToField(fieldId);
+                    }
+                }
+            });
+
+            // Function to scroll to field and switch to correct step if needed
+            function scrollToField(fieldId) {
+                const field = document.getElementById(fieldId);
+                if (!field) return;
+
+                // Find which step contains this field
+                const step = field.closest('.step');
+                if (step && !step.classList.contains('active')) {
+                    // Switch to the step containing the field
+                    const currentStep = document.querySelector('.step.active');
+                    if (currentStep) {
+                        switchStep(currentStep, step);
+                    }
+                }
+
+                // Scroll to the field with a small delay to ensure step switch is complete
+                setTimeout(() => {
+                    field.scrollIntoView({ 
+                        behavior: 'smooth', 
+                        block: 'center',
+                        inline: 'nearest'
+                    });
+                    
+                    // Add a brief flash effect to draw attention
+                    field.style.transition = 'box-shadow 0.3s ease';
+                    field.style.boxShadow = '0 0 0 3px rgba(239, 68, 68, 0.3)';
+                    setTimeout(() => {
+                        field.style.boxShadow = '';
+                    }, 1000);
+                }, 100);
+            }
+
+            // Warehoused checkbox change handler
+            const warehousedCheckbox = document.getElementById('warehoused_option');
+            if (warehousedCheckbox) {
+                warehousedCheckbox.addEventListener('change', () => {
+                    // Re-validate destination fields when warehoused status changes
+                    validateField('destination_country');
+                    validateField('destination_city');
+                });
+            }
 
             // Accordion toggle
             const accordionToggle = document.querySelector('.customer-accordion-toggle');
@@ -175,16 +489,42 @@ function kit_render_waybill_multiform($atts)
                 button.addEventListener('click', function() {
                     const currentStep = document.querySelector('.step.active');
                     const targetId = this.getAttribute('data-target');
-                    //const prevStep = currentStep?.previousElementSibling;
-                    const targetStep = targetId ? document.getElementById(targetId) : currentStep?.nextElementSibling;
+                    const targetStep = targetId ? document.getElementById(targetId) : currentStep?.previousElementSibling;
 
                     switchStep(currentStep, targetStep);
                 });
             });
 
-            // Simple placeholder validation
+            // Enhanced step validation
             function validateStep(step) {
-                return true; // Replace with actual validation logic if needed
+                // Clear any previous errors
+                clearErrors();
+                
+                // Get all required fields in the current step
+                const requiredFields = step.querySelectorAll('[required], .required');
+                let isValid = true;
+                const errors = [];
+
+                requiredFields.forEach(field => {
+                    if (!field.value || field.value.trim() === '') {
+                        isValid = false;
+                        const fieldName = field.getAttribute('name') || field.getAttribute('id') || 'this field';
+                        errors.push({
+                            message: `${fieldName.charAt(0).toUpperCase() + fieldName.slice(1)} is required`,
+                            fieldId: field.getAttribute('id')
+                        });
+                    }
+                });
+
+                // Show errors if any
+                if (!isValid) {
+                    errors.forEach(error => {
+                        showError(error.message, error.fieldId);
+                    });
+                    return false;
+                }
+
+                return true;
             }
 
             // Progress bar / Step indicators
@@ -220,7 +560,7 @@ function kit_render_waybill_multiform($atts)
                     miscItemGroup.innerHTML = `
             <input type="text" name="misc_item[]" placeholder="Item description" style="flex: 2; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
             <input type="number" name="misc_price[]" placeholder="Amount" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-            <button type="button" class="remove-misc-btn" style="background-color: #ef4444; color: white; padding: 8px; border-radius: 4px; border: none; cursor: pointer;">×</button>`;
+            <button type="button" class="remove-misc-btn bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-sm font-medium transition-colors duration-200">×</button>`;
                     miscItemsContainer.appendChild(miscItemGroup);
                 });
             }
@@ -250,16 +590,26 @@ function kit_render_waybill_multiform($atts)
                     var $submitBtn = $form.find('button[type="submit"]');
                     var originalBtnText = $submitBtn.html();
 
+                    // Clear previous messages
+                    $('#form-errors').addClass('hidden');
+                    $('#form-success').addClass('hidden');
+                    $('.border-red-500').removeClass('border-red-500 bg-red-50').addClass('border-gray-300');
+
+                    // Client-side validation
+                    if (!validateForm()) {
+                        return false;
+                    }
+
                     // Show loading state
-                    $submitBtn.prop('disabled', true).html('Processing...');
+                    $submitBtn.prop('disabled', true).html('<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Processing...');
 
                     // Add the AJAX nonce to the form data
                     var formData = new FormData(this);
                     formData.append('action', 'process_waybill_form');
-                    formData.append('_ajax_nonce', myPluginAjax.nonces.add); // This matches what check_ajax_referer expects
+                    formData.append('_ajax_nonce', myPluginAjax.nonces.add);
 
                     $.ajax({
-                            url: myPluginAjax.ajax_url, // Make sure ajaxurl is defined
+                            url: myPluginAjax.ajax_url,
                             type: 'POST',
                             data: formData,
                             processData: false,
@@ -269,8 +619,10 @@ function kit_render_waybill_multiform($atts)
                         .done(function(response) {
                             if (response.success) {
                                 // Success handling
-                                alert(response.data.message);
+                                showSuccess(response.data.message);
+                                
                                 if (response.data.waybill_id) {
+                                    // Refresh the waybills table if it exists
                                     fetch(window.location.href, {
                                             method: 'GET',
                                             credentials: 'same-origin'
@@ -288,15 +640,47 @@ function kit_render_waybill_multiform($atts)
                                         })
                                         .catch(err => {
                                             console.error('Error refreshing table:', err);
-                                            alert('Waybill saved, but failed to refresh the table.');
+                                            showError('Waybill saved, but failed to refresh the table.');
                                         });
                                 }
+                                
+                                // Reset form after successful submission
+                                setTimeout(() => {
+                                    $form[0].reset();
+                                    clearErrors();
+                                    clearSuccess();
+                                    // Go back to step 1
+                                    $('.step').removeClass('active').addClass('hidden');
+                                    $('#step-1').removeClass('hidden').addClass('active');
+                                }, 3000);
                             } else {
-                                alert('Error: ' + response.data.message);
+                                // Error handling with field highlighting
+                                if (response.data && response.data.errors) {
+                                    // Handle field-specific errors
+                                    response.data.errors.forEach(function(error) {
+                                        showError(error.message, error.field);
+                                    });
+                                } else {
+                                    showError(response.data.message || 'An error occurred while saving the waybill.');
+                                }
                             }
                         })
                         .fail(function(xhr, status, error) {
-                            alert('An error occurred: ' + error);
+                            let errorMessage = 'An error occurred while processing your request.';
+                            
+                            // Try to parse error response
+                            if (xhr.responseJSON && xhr.responseJSON.data) {
+                                errorMessage = xhr.responseJSON.data.message || errorMessage;
+                            } else if (xhr.responseText) {
+                                try {
+                                    const response = JSON.parse(xhr.responseText);
+                                    errorMessage = response.data?.message || errorMessage;
+                                } catch (e) {
+                                    errorMessage = 'Network error: ' + error;
+                                }
+                            }
+                            
+                            showError(errorMessage);
                         })
                         .always(function() {
                             $submitBtn.html(originalBtnText).prop('disabled', false);
@@ -306,8 +690,6 @@ function kit_render_waybill_multiform($atts)
                 // Initialize variables
                 const ajaxurl = window.ajax_url || window.myPluginAjax?.ajax_url;
                 const adminurl = window.myPluginAjax?.admin_url || window.location.origin + '/wp-admin/';
-
-               
 
                 // Refresh waybills table
                 function refreshWaybillsTable(customerId) {
@@ -331,7 +713,7 @@ function kit_render_waybill_multiform($atts)
                             }
                         },
                         error: function(xhr, status, error) {
-                            alert('Error loading waybills: ' + error);
+                            showError('Error loading waybills: ' + error);
                         },
                         complete: function() {
                             $('#waybillsLoading').hide();
@@ -381,8 +763,8 @@ function kit_render_waybill_multiform($atts)
                            class="text-blue-600 hover:text-blue-900 mr-3">View</a>
                         <a href="${adminurl}admin.php?page=08600-Waybill-print&waybill_id=${waybill.waybill_id}" 
                            class="text-indigo-600 hover:text-indigo-900" target="_blank">Print</a>
-                        <button class="delete-waybill text-red-600 hover:text-red-900 ml-3" 
-                                data-waybill-id="${waybill.waybill_id}">Delesdsdte</button>
+                        <button class="delete-waybill bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm font-medium transition-colors duration-200 ml-3" 
+                                data-waybill-id="${waybill.waybill_id}">Delete</button>
                     </td>
                 </tr>`);
                     });

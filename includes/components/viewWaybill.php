@@ -8,6 +8,24 @@ $is_volume_greater = $volume_charge > $mass_charge;
 $is_equal = $mass_charge === $volume_charge;
 ?>
 <div class="max-w-6xl mx-auto p-6 md:space-y-6 bg-white rounded-lg shadow-md">
+    <?php if (isset($_GET['approval_updated']) && $_GET['approval_updated'] == '1'): ?>
+        <div id="approval-success-message" class="mb-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded">
+            <strong>Success!</strong> Approval status has been updated.
+        </div>
+    <?php endif; ?>
+    
+    <?php if (isset($_GET['invoice_status_updated']) && $_GET['invoice_status_updated'] == '1'): ?>
+        <div id="invoice-status-message" class="mb-4 p-4 bg-blue-100 border border-blue-400 text-blue-700 rounded">
+            <strong>Note:</strong> Invoice status has been automatically set to "Pending" because the approval status was changed from "Approved" or "Completed".
+        </div>
+    <?php endif; ?>
+    
+    <?php if (isset($_GET['approval_error']) && $_GET['approval_error'] == '1'): ?>
+        <div id="approval-error-message" class="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
+            <strong>Error!</strong> Failed to update approval status. Please try again.
+        </div>
+    <?php endif; ?>
+    
     <div class="flex flex-col space-y-6 justify-between items-start border-b pb-4">
         <div class="grid grid-cols-2 w-full">
             <div>
@@ -52,7 +70,7 @@ $is_equal = $mass_charge === $volume_charge;
             if (isset($pdfVerifier['soWhat']) && $pdfVerifier['soWhat']) { ?>
                 <div class="flex flex-col">
                     <span class="opacity-0 text-gray-600 font-bold">Invoice Status:</span>
-                    <a href="<?php echo admin_url('admin-ajax.php?action=generate_pdf&waybill_no=' . $waybill['waybill_no'] . '&pdf_nonce=' . wp_create_nonce("pdf_nonce")); ?>"
+                    <a href="<?php echo plugin_dir_url(__FILE__) . '../../pdf-generator.php?waybill_no=' . $waybill['waybill_no'] . '&pdf_nonce=' . wp_create_nonce("pdf_nonce"); ?>"
                         class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
                             stroke="currentColor">
@@ -67,11 +85,11 @@ $is_equal = $mass_charge === $volume_charge;
             ?>
             <div class="flex flex-col">
                 <label class="<?= KIT_Commons::labelClass() ?>">Invoice Status:</label>
-                <?= KIT_Commons::waybillQuoteStatus($waybill['waybill_no'], $waybill['id'], 'quoted', $waybill['approval'], 'select'); ?>
+                <?= KIT_Commons::waybillQuoteStatus(esc_attr($waybill['waybill_no']), esc_attr($waybill['id']), 'select'); ?>
             </div>
             <div class="flex flex-col">
                 <label class="<?= KIT_Commons::labelClass() ?>">Approval Status:</label>
-                <?= KIT_Commons::waybillApprovalStatus($waybill['waybill_no'], $waybill['id'], 'quoted', $waybill['approval'], 'select'); ?>
+                <?= KIT_Commons::waybillApprovalStatus(esc_attr($waybill['waybill_no']), esc_attr($waybill['id']), esc_attr($waybill['approval']), 'select'); ?>
             </div>
             <?php if ($waybill['warehouse']): ?>
                 <div class="flex flex-col">
@@ -101,7 +119,7 @@ $is_equal = $mass_charge === $volume_charge;
         <div class="grid grid-cols-2 w-full">
             <div class="ps">
                 <?= KIT_Commons::h2tag(['title' => 'Waybill Description', 'class' => '']) ?>
-                <p class="text xs"><?= $waybill['miscellaneous']['others']['waybill_description'] ?></p>
+                <p class="text xs"><?= esc_html($waybill['miscellaneous']['others']['waybill_description'] ?? '') ?></p>
             </div>
            
         </div>
@@ -146,7 +164,7 @@ $is_equal = $mass_charge === $volume_charge;
                 </div>
                 <div class="dddd">
                     <?= KIT_Commons::LText([
-                        'label' => "Waybill Amoundst:",
+                        'label' => "Waybill Amount:",
                         'value' => KIT_Commons::displayWaybillTotal($waybill['product_invoice_amount']),
                         'classlabel' => '',
                         'classP' => '',
@@ -215,11 +233,16 @@ $is_equal = $mass_charge === $volume_charge;
 
             <div class="space-y-3">
                 <?php
-                $mass_charge = floatval($mass_charge ?? 0);
-                $volume_charge = floatval($volume_charge ?? 0);
+                $mass_charge = floatval($waybill['mass_charge'] ?? 0);
+                $volume_charge = floatval($waybill['volume_charge'] ?? 0);
                 $total_mass_kg = floatval($waybill['total_mass_kg'] ?? 0);
-                $mass_rate = floatval($mass_rate ?? 0);
                 $total_volume = floatval($waybill['miscellaneous']['others']['total_volume'] ?? 0);
+                
+                // Calculate mass rate if we have mass data
+                $mass_rate = ($total_mass_kg > 0) ? $mass_charge / $total_mass_kg : 0;
+                
+                // Determine preferred charge (the one actually being used)
+                $preferred_charge = ($mass_charge > $volume_charge) ? 'mass' : 'volume';
 
                 // Dynamically compare and label
                 if ($mass_charge > $volume_charge) {
@@ -235,13 +258,14 @@ $is_equal = $mass_charge === $volume_charge;
                 // MASS output (dynamic)
                 echo '<div class="flex gap-4">';
                 echo KIT_Commons::LText([
-                    'label' => "Total Mass32:",
-                    'value' => KIT_Commons::currency() . $mass_rate . ' x ' .
+                    'label' => "Total Mass:",
+                    'value' => KIT_Commons::currency() . number_format($mass_rate, 2) . ' x ' .
                         number_format($total_mass_kg, 2) . 'kg = ' .
                         KIT_Commons::currency() . number_format($mass_charge, 2) . $mass_label,
                     'classlabel' => '',
                     'classP' => '',
                     'onclick' => '',
+                    'allow_html' => true,
                 ]);
                 echo '</div>';
                 // VOLUME output (dynamic)
@@ -252,6 +276,7 @@ $is_equal = $mass_charge === $volume_charge;
                     'classlabel' => '',
                     'classP' => '',
                     'onclick' => '',
+                    'allow_html' => true,
                 ]);
                 echo '</div>';
 
@@ -259,18 +284,18 @@ $is_equal = $mass_charge === $volume_charge;
                 echo '<div class="flex gap-4">';
                 echo KIT_Commons::LText([
                     'label' => "Charge Basis:",
-                    'value' => ucfirst($waybill['charge_basis']),
+                    'value' => ucfirst($preferred_charge),
                     'classlabel' => '',
                     'classP' => '',
                     'onclick' => '',
                 ]);
                 echo '</div>';
 
-                //Waybill misc total:
+                //Waybill Amount (the actual charge being used):
                 echo '<div class="flex gap-2">';
                 echo KIT_Commons::LText([
-                    'label' => "Wayb3ill Amount:",
-                    'value' => ($prefferedCharge == 'mass') ? KIT_Commons::currency() . number_format($mass_charge, 2) : KIT_Commons::currency() . number_format($volume_charge, 2),
+                    'label' => "Waybill Amount:",
+                    'value' => ($preferred_charge == 'mass') ? KIT_Commons::currency() . number_format($mass_charge, 2) : KIT_Commons::currency() . number_format($volume_charge, 2),
                     'classlabel' => '',
                     'classP' => '',
                     'onclick' => '',

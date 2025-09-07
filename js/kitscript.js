@@ -9,42 +9,142 @@ function hello() {
 }
 
 function fetchRatePerKg() {
-    const total_mass_kg = parseFloat(jQuery('#total_mass_kg').val()) || 0;
-    const country_id = jQuery('#countrydestination_id').val(); // Hidden input or radio
-    let current_rate = jQuery('#current_rate').val();
+    // ✅ BULLETPROOF: Comprehensive input validation and sanitization
+    try {
+        const rawMass = jQuery('#total_mass_kg').val() || '';
+        const total_mass_kg = parseFloat(rawMass) || 0;
+        const direction_id = jQuery('#direction_id').val() || '';
+        const origin_country_id = jQuery('#countrydestination_id').val() || '';
+        let current_rate = jQuery('#current_rate').val() || '';
 
+        // ✅ BULLETPROOF: Comprehensive validation
+        if (rawMass !== '' && (isNaN(total_mass_kg) || total_mass_kg <= 0)) {
+            console.warn('Invalid mass value for rate fetch:', rawMass);
+            showRateFetchError('Invalid mass value. Please enter a positive number.');
+            return;
+        }
+        
+        if (total_mass_kg > 10000) {
+            console.warn('Mass exceeds maximum limit:', total_mass_kg);
+            showRateFetchError('Mass exceeds maximum limit of 10,000 kg.');
+            return;
+        }
+        
+        if (!direction_id) {
+            console.warn('Missing direction_id for rate fetch');
+            showRateFetchError('Missing direction information. Please refresh the page.');
+            return;
+        }
+        
+        if (!origin_country_id) {
+            console.warn('Missing origin_country_id for rate fetch');
+            showRateFetchError('Missing origin country information. Please refresh the page.');
+            return;
+        }
 
-    if (total_mass_kg > 0) {
-        jQuery.ajax({
-            url: myPluginAjax.ajax_url,
-            type: 'POST',
-            dataType: 'json',
-            data: {
-                action: 'handle_get_price_per_kg',
-                total_mass_kg: total_mass_kg,
-                origin_country_id: country_id,
-                nonce: myPluginAjax.nonces.get_waybills_nonce
-            },
-            success: function (response) {
+        // ✅ BULLETPROOF: Show loading indicator
+        const massInput = document.getElementById('total_mass_kg');
+        if (massInput) {
+            massInput.classList.add('loading');
+        }
 
-                if (response.success) {
-                    const rate = response.data.rate_per_kg;
+        if (total_mass_kg > 0 && direction_id && origin_country_id) {
+            jQuery.ajax({
+                url: myPluginAjax.ajax_url,
+                type: 'POST',
+                dataType: 'json',
+                timeout: 10000, // ✅ BULLETPROOF: 10 second timeout
+                data: {
+                    action: 'handle_get_price_per_kg',
+                    total_mass_kg: total_mass_kg,
+                    direction_id: direction_id,
+                    origin_country_id: origin_country_id, // ✅ BULLETPROOF: Include origin_country_id
+                    nonce: myPluginAjax.nonces.get_waybills_nonce
+                },
+                success: function (response) {
+                    // ✅ BULLETPROOF: Hide loading indicator
+                    if (massInput) {
+                        massInput.classList.remove('loading');
+                    }
+                    
+                    if (response && response.success && response.data) {
+                        const rate = parseFloat(response.data.rate_per_kg);
+                        const total_charge = parseFloat(response.data.total_charge);
+                        
+                        // ✅ BULLETPROOF: Validate response data
+                        if (!Number.isFinite(rate) || rate <= 0) {
+                            console.error('Invalid rate received:', response.data.rate_per_kg);
+                            showRateFetchError('Invalid rate received from server.');
+                            return;
+                        }
+                        
+                        if (!Number.isFinite(total_charge) || total_charge <= 0) {
+                            console.error('Invalid total charge received:', response.data.total_charge);
+                            showRateFetchError('Invalid charge calculation received from server.');
+                            return;
+                        }
 
-                    console.log('Rate per kg: R' + rate);
-                    current_rate = rate;
+                        console.log('Rate per kg: R' + rate);
+                        current_rate = rate;
 
-                    jQuery('#mass_charge_display').text(rate);
-                    jQuery('#mass_charge').val(rate * total_mass_kg);
-                    jQuery('#mass_rate').val(rate);
-                    jQuery('#current_rate').val(rate);
-                } else {
-                    console.warn(response.data.message);
+                        // ✅ BULLETPROOF: Update all relevant fields
+                        jQuery('#mass_charge_display').text(rate);
+                        jQuery('#mass_charge').val(total_charge.toFixed(2));
+                        jQuery('#mass_rate').val(rate.toFixed(2));
+                        jQuery('#base_rate').val(rate.toFixed(2));
+                        jQuery('#current_rate').val(rate.toFixed(2));
+                        jQuery('#mass_charge').attr('data-base-charge', total_charge.toFixed(2));
+                        
+                        // ✅ BULLETPROOF: Clear any previous errors
+                        jQuery('#rate-fetch-error').remove();
+                        
+                        // ✅ BULLETPROOF: Trigger recalculation if manipulator is active
+                        if (typeof calculateMassCharge === 'function') {
+                            calculateMassCharge();
+                        }
+                        
+                    } else {
+                        console.error('Rate fetch failed:', response);
+                        const errorMsg = (response && response.data && response.data.message) 
+                            ? response.data.message 
+                            : 'Unable to fetch rate from server.';
+                        showRateFetchError(errorMsg);
+                    }
+                },
+                error: function (xhr, status, error) {
+                    // ✅ BULLETPROOF: Hide loading indicator
+                    if (massInput) {
+                        massInput.classList.remove('loading');
+                    }
+                    
+                    console.error('AJAX Error:', {xhr, status, error});
+                    
+                    let errorMessage = 'Network error. Please check your connection and try again.';
+                    
+                    if (status === 'timeout') {
+                        errorMessage = 'Request timed out. Please try again.';
+                    } else if (xhr.status === 0) {
+                        errorMessage = 'Network connection lost. Please check your internet connection.';
+                    } else if (xhr.status >= 500) {
+                        errorMessage = 'Server error. Please try again later.';
+                    } else if (xhr.status === 403) {
+                        errorMessage = 'Access denied. Please refresh the page and try again.';
+                    }
+                    
+                    showRateFetchError(errorMessage);
                 }
-            },
-            error: function (xhr, status, error) {
-                console.error('AJAX Error:', error);
-            }
-        });
+            });
+        }
+        
+    } catch (error) {
+        // ✅ BULLETPROOF: Hide loading indicator
+        const massInput = document.getElementById('total_mass_kg');
+        if (massInput) {
+            massInput.classList.remove('loading');
+        }
+        
+        console.error('Rate fetch function error:', error);
+        showRateFetchError('An unexpected error occurred. Please try again.');
     }
 }
 
@@ -57,7 +157,38 @@ document.addEventListener('DOMContentLoaded', function () {
     let timeout;
     jQuery('#total_mass_kg').on('input', function () {
         clearTimeout(timeout);
-        timeout = setTimeout(fetchRatePerKg, 0); // Wait 500ms after user stops typing
+        timeout = setTimeout(fetchRatePerKg, 500); // Wait 500ms after user stops typing
+    });
+    
+    // ✅ BULLETPROOF: Auto-trigger rate fetch on page load if mass is present but rate is missing
+    jQuery(document).ready(function() {
+        setTimeout(function() {
+            const massValue = parseFloat(jQuery('#total_mass_kg').val()) || 0;
+            const rateValue = parseFloat(jQuery('#mass_rate').val()) || 0;
+            const directionId = jQuery('#direction_id').val();
+            const originCountryId = jQuery('#countrydestination_id').val();
+            
+            console.log('kitscript.js auto-trigger check:', {
+                mass: massValue,
+                rate: rateValue,
+                directionId: directionId,
+                originCountryId: originCountryId
+            });
+            
+            if (massValue > 0 && rateValue <= 0 && directionId) {
+                console.log('kitscript.js: Auto-triggering rate fetch on page load...');
+                fetchRatePerKg();
+            } else if (massValue > 0 && rateValue <= 0 && !directionId) {
+                console.warn('kitscript.js: Cannot auto-trigger - direction_id missing');
+                // Try to find direction_id from form
+                const formDirectionId = jQuery('input[name="direction_id"]').val();
+                if (formDirectionId) {
+                    console.log('kitscript.js: Found direction_id in form, updating...');
+                    jQuery('#direction_id').val(formDirectionId);
+                    fetchRatePerKg();
+                }
+            }
+        }, 1000); // 1 second delay to ensure all elements are loaded
     });
     // Dispatch date validation
     const dispatchDateInput = document.getElementById('dispatch_date');
@@ -215,10 +346,33 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
+    // Helpers for Step 4 next button styling
+    function setStep4NextState(enabled) {
+        const btn = document.getElementById('step4NextBtn');
+        if (!btn) return;
+        const active = [
+            'inline-flex','items-center','px-6','py-3','bg-gradient-to-r','from-blue-600','to-indigo-600',
+            'hover:from-blue-700','hover:to-indigo-700','text-white','font-semibold','rounded-xl','shadow-lg',
+            'hover:shadow-xl','transform','hover:-translate-y-0.5','transition-all','duration-200'
+        ];
+        const disabled = ['opacity-50','cursor-not-allowed','pointer-events-none','bg-blue-400','bg-gray-300','text-gray-500'];
+        if (enabled) {
+            btn.classList.add(...active);
+            btn.classList.remove(...disabled);
+            btn.disabled = false;
+            btn.setAttribute('aria-disabled','false');
+        } else {
+            btn.classList.remove(...active);
+            btn.classList.add(...disabled);
+            btn.disabled = true;
+            btn.setAttribute('aria-disabled','true');
+        }
+    }
+
     // Warehoused checkbox
     jQuery(document).on('change', '#warehoused_option', function () {
         const scheduledDeliveriesList = document.getElementById('scheduled-deliveries-list');
-        const specialDeliveryBtn = document.getElementById('specialDeliveryBtn');
+        const nextBtn = document.getElementById('step4NextBtn');
         const destinationCountry = document.getElementById('stepDestinationSelect');
         const destinationCity = document.getElementById('destination_city');
         const destinationCountryHelp = document.getElementById('destination-country-help');
@@ -229,9 +383,7 @@ document.addEventListener('DOMContentLoaded', function () {
             scheduledDeliveriesList.classList.add('hidden');
             
             // Enable the next button for warehoused items
-            specialDeliveryBtn.disabled = false;
-            specialDeliveryBtn.classList.remove('bg-gray-300', 'text-gray-500');
-            specialDeliveryBtn.classList.add('bg-blue-600', 'text-white');
+            setStep4NextState(true);
             
             // Clear destination fields for warehoused items
             if (destinationCountry) destinationCountry.value = '';
@@ -267,7 +419,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // Function to validate destination selection
     function validateDestinationSelection() {
         const warehousedCheckbox = document.getElementById('warehoused_option');
-        const specialDeliveryBtn = document.getElementById('specialDeliveryBtn');
+        const nextBtn = document.getElementById('step4NextBtn');
         const destinationCountry = document.getElementById('stepDestinationSelect');
         const destinationCity = document.getElementById('destination_city');
         const destinationCountryHelp = document.getElementById('destination-country-help');
@@ -275,9 +427,7 @@ document.addEventListener('DOMContentLoaded', function () {
         
         // If warehoused is checked, no validation needed
         if (warehousedCheckbox && warehousedCheckbox.checked) {
-            specialDeliveryBtn.disabled = false;
-            specialDeliveryBtn.classList.remove('bg-gray-300', 'text-gray-500');
-            specialDeliveryBtn.classList.add('bg-blue-600', 'text-white');
+            setStep4NextState(true);
             return;
         }
         
@@ -310,15 +460,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
         
-        if (countrySelected && citySelected) {
-            specialDeliveryBtn.disabled = false;
-            specialDeliveryBtn.classList.remove('bg-gray-300', 'text-gray-500');
-            specialDeliveryBtn.classList.add('bg-blue-600', 'text-white');
-        } else {
-            specialDeliveryBtn.disabled = true;
-            specialDeliveryBtn.classList.remove('bg-blue-600', 'text-white');
-            specialDeliveryBtn.classList.add('bg-gray-300', 'text-gray-500');
-        }
+        setStep4NextState(countrySelected && citySelected);
     }
     
     // Initialize validation on page load
@@ -337,49 +479,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    jQuery('#enable_price_manipulator').on('change', function () {
-        let current_rate = parseFloat(jQuery('#current_rate').val().replace(',', '.')) || 0;
-        if (this.checked) {
-            /* When mass_charge_manipulator is changed, then alert the value after 2 seconds */
-            jQuery('#mass_charge_manipulator').on('input', function () {
-                const manipulatorVal = parseFloat(jQuery('#mass_charge_manipulator').val()) || 0;
-                const rateVal = parseFloat(current_rate) || 0;
-                const sum = rateVal + manipulatorVal;
-                jQuery('#manipulated_mass_charge_display').text('+ R' + manipulatorVal + ' = ' + sum);
-
-                /* Now update the #mass_charge where we take now the new value 'sum' and multiply it by the total_mass_kg */
-                const total_mass_kg = parseFloat(jQuery('#total_mass_kg').val()) || 0;
-                const new_mass_charge = sum * total_mass_kg;
-                jQuery('#mass_charge').val(new_mass_charge);
-                jQuery('#mass_rate').val(sum);
-
-                // Take this new new_mass_charge and add create a hidden input called new_mass_rate to send via POST
-                // If the input doesn't exist, create it; otherwise, update its value
-                if (jQuery('#new_mass_rate').length === 0) {
-                    jQuery('<input>').attr({
-                        type: 'hidden',
-                        id: 'new_mass_rate',
-                        name: 'new_mass_rate',
-                        value: sum
-                    }).appendTo('form');
-                } else {
-                    jQuery('#new_mass_rate').val(sum);
-                }
-
-            });
-        } else {
-            
-
-            jQuery('#mass_charge_display').text(current_rate);
-            jQuery('#manipulated_mass_charge_display').text("");
-            jQuery('#mass_rate').val(current_rate);
-
-            // Optional: remove the hidden input if it exists
-            if (jQuery('#new_mass_rate').length > 0) {
-                jQuery('#new_mass_rate').remove();
-            }
-        }
-    });
+    // Remove legacy manipulator handler that overwrote rate; handled in weight.php now
 });
 
 // Global spinner management system
@@ -445,15 +545,15 @@ const SpinnerManager = {
 
 // Customer Dashboard Tab Functionality
 function switchCustomerTab(tabName) {
-    // Hide all tab contents
-    const tabContents = document.querySelectorAll('.tab-content');
-    tabContents.forEach(content => {
+    // Hide all customer tab contents only
+    const customerTabContents = document.querySelectorAll('.customer-tabs .tab-content');
+    customerTabContents.forEach(content => {
         content.style.display = 'none';
     });
 
-    // Remove active class from all tab buttons
-    const tabButtons = document.querySelectorAll('.tab-btn');
-    tabButtons.forEach(btn => {
+    // Remove active class from all customer tab buttons only
+    const customerTabButtons = document.querySelectorAll('.customer-tabs .tab-btn');
+    customerTabButtons.forEach(btn => {
         btn.classList.remove('active');
         btn.style.background = 'transparent';
         btn.style.color = '#6b7280';
@@ -541,11 +641,15 @@ document.addEventListener('DOMContentLoaded', function() {
                     // Reset form
                     inlineCustomerForm.reset();
                     
-                    // Switch to manage-customers tab after 2 seconds
+                    // Redirect to the manage-customers tab after 1.5 seconds
                     setTimeout(() => {
-                        switchCustomerTab('manage-customers');
                         messagesDiv.innerHTML = '';
-                    }, 2000);
+                        // Redirect to the manage-customers tab with a refresh parameter
+                        const currentUrl = new URL(window.location);
+                        currentUrl.searchParams.set('tab', 'manage-customers');
+                        currentUrl.searchParams.set('customer_added', '1');
+                        window.location.href = currentUrl.toString();
+                    }, 1500);
                 } else {
                     // Show error message
                     messagesDiv.innerHTML = '<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">Error: ' + (data.data || 'Unknown error occurred') + '</div>';
@@ -607,3 +711,20 @@ document.addEventListener('DOMContentLoaded', function() {
     // Set default active tab to manage-customers
     switchCustomerTab('manage-customers');
 });
+
+// ✅ ADD ERROR HANDLING FUNCTION
+function showRateFetchError(message) {
+    let errorDiv = jQuery('#rate-fetch-error');
+    if (errorDiv.length === 0) {
+        errorDiv = jQuery('<div id="rate-fetch-error" class="text-red-600 text-sm mt-2"></div>');
+        jQuery('#mass_rate').parent().append(errorDiv);
+    }
+    errorDiv.text(message);
+    
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+        errorDiv.fadeOut(500, function() {
+            jQuery(this).remove();
+        });
+    }, 5000);
+}

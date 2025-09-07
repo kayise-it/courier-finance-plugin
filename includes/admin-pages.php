@@ -1,13 +1,46 @@
 <?php
-ob_start(); // Start buffering the output
+// ob_start(); // Start buffering the output - REMOVED FOR DEBUGGING
 
 // Exit if accessed directly
 if (!defined('ABSPATH')) {
     exit;
 }
 
+// Include user roles for permission checking
+require_once plugin_dir_path(__FILE__) . 'user-roles.php';
+
 function waybill_page()
 {
+    // Show success toast if waybill was created
+    if (isset($_GET['success']) && $_GET['success'] == '1') {
+        $waybill_no = isset($_GET['waybill_no']) ? sanitize_text_field($_GET['waybill_no']) : '';
+        $message = isset($_GET['message']) ? sanitize_text_field($_GET['message']) : 'Waybill created successfully!';
+        
+        echo '<div class="notice notice-success is-dismissible" style="margin: 20px 0; padding: 15px; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 4px; color: #155724;">
+            <p style="margin: 0; font-size: 16px; font-weight: 600;">
+                <span style="color: #28a745;">✓</span> ' . esc_html($message);
+        if ($waybill_no) {
+            echo ' <strong>Waybill #: ' . esc_html($waybill_no) . '</strong>';
+        }
+        echo '</p>
+        </div>';
+        
+        // Add JavaScript to auto-dismiss the toast after 5 seconds
+        echo '<script>
+        setTimeout(function() {
+            var notice = document.querySelector(".notice-success");
+            if (notice) {
+                notice.style.opacity = "0";
+                notice.style.transition = "opacity 0.5s";
+                setTimeout(function() {
+                    if (notice && notice.parentNode) {
+                        notice.parentNode.removeChild(notice);
+                    }
+                }, 500);
+            }
+        }, 5000);
+        </script>';
+    }
 
     echo do_shortcode('[kit_waybill_form]');
 }
@@ -28,23 +61,6 @@ function plugin_Waybill_list_page()
         <?php echo do_shortcode('[showheader title="Waybill Dashboard" desc=""]'); ?>
 
         <div class="max-w-7xl mx-auto">
-            <!-- Bulk Invoice Section -->
-            <div class="bg-white shadow rounded-lg p-6 mb-6">
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-lg font-semibold text-gray-900">Bulk Invoice Generator</h3>
-                    <button id="select-all-waybills" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                        Select All
-                    </button>
-                </div>
-                <p class="text-sm text-gray-600 mb-4">Select waybills to generate a bulk invoice with waybill number, destination country, city, and grand total.</p>
-                <button id="generate-bulk-invoice" class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium transition-colors" disabled>
-                    <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                    </svg>
-                    Generate Bulk Invoice (<span id="selected-count">0</span> selected)
-                </button>
-            </div>
-
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <!-- Total Waybills Card -->
                 <div class="bg-white shadow rounded-lg p-4">
@@ -122,7 +138,7 @@ function plugin_Waybill_list_page()
                                 return $row->customer_name . ' ' . $row->customer_surname;
                             }
                             if ($key === 'total') {
-                                if (KIT_Commons::isAdmin()) {
+                                if (KIT_User_Roles::can_see_prices()) {
                                     return KIT_Commons::currency() . ' ' . ((int) $row->product_invoice_amount + (int) $row->miscellaneous);
                                 } else {
                                     return '***';
@@ -144,51 +160,7 @@ function plugin_Waybill_list_page()
                         ?>
                     </div>
                 </div>
-                <div>
-                    <?php
-
-                    $options = [
-                        'itemsPerPage' => 5,
-                        'currentPage' => $_GET['paged'] ?? 1,
-                        'tableClass' => 'min-w-full text-left text-xs text-gray-700',
-                        'emptyMessage' => 'No customers records found',
-                        'id' => 'customerTable',
-                        'role' => 'waybills',
-
-                    ];
-
-
-                    $columns = [
-                        'waybill_no' => ['label' => 'Waybill #', 'align' => 'text-left'],
-                        'customer_name' => ['label' => 'Name', 'align' => 'text-left'],
-                        'total' => ['label' => 'Total', 'align' => 'text-right'],
-                        'actions' => ['label' => 'Actions', 'align' => 'text-center'],
-                    ];
-
-                    $waybill_actions = function ($key, $row) {
-                        if ($key === 'customer_name') {
-                            return $row->customer_name . ' ' . $row->customer_surname;
-                        }
-                        if ($key === 'total') {
-                            if (KIT_Commons::isAdmin()) {
-                                return KIT_Commons::currency() . ' ' . ((int) $row->product_invoice_amount + (int) $row->miscellaneous);
-                            } else {
-                                return '***';
-                            }
-                        }
-
-                        if ($key === 'actions') {
-                            $html = '<a href="?page=08600-Waybill-view&waybill_id=' . $row->waybill_id . '" class="text-blue-600 hover:underline">View</a> ';
-                            $html .= '<a href="?page=waybill-dashboard&delete_waybill=' . $row->waybill_no . '" class="text-red-600 hover:underline" onclick="return confirm(\'Are you sure you want to delete this waybill?\');">Delete</a>';
-                            return $html;
-                        }
-                        return htmlspecialchars(($row->$key ?? '') ?: '');
-                    };
-                    $warehouseList = KIT_Waybills::warehouseWaybills();
-
-                    echo KIT_Commons::render_versatile_table($warehouseList, $columns, $waybill_actions, $options);
-                    ?>
-                </div>
+                
             </div>
         </div>
     </div>

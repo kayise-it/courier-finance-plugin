@@ -14,13 +14,13 @@ if (!defined('ABSPATH')) {
             <h3 style="margin: 0 0 15px 0; color: #2563eb;">User Manual</h3>
             <ul style="list-style: none; padding: 0; margin: 0;">
                 <li style="margin-bottom: 10px;">
-                    <a href="#" class="button button-secondary" style="width: 100%; text-align: left;">Getting Started Guide</a>
+                    <?php echo KIT_Commons::renderButton('Getting Started Guide', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
                 <li style="margin-bottom: 10px;">
-                    <a href="#" class="button button-secondary" style="width: 100%; text-align: left;">Complete User Manual</a>
+                    <?php echo KIT_Commons::renderButton('Complete User Manual', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
                 <li style="margin-bottom: 10px;">
-                    <a href="#" class="button button-secondary" style="width: 100%; text-align: left;">Feature Documentation</a>
+                    <?php echo KIT_Commons::renderButton('Feature Documentation', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
             </ul>
         </div>
@@ -30,13 +30,13 @@ if (!defined('ABSPATH')) {
             <h3 style="margin: 0 0 15px 0; color: #059669;">Frequently Asked Questions</h3>
             <ul style="list-style: none; padding: 0; margin: 0;">
                 <li style="margin-bottom: 10px;">
-                    <a href="#" class="button button-secondary" style="width: 100%; text-align: left;">General Questions</a>
+                    <?php echo KIT_Commons::renderButton('General Questions', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
                 <li style="margin-bottom: 10px;">
-                    <a href="#" class="button button-secondary" style="width: 100%; text-align: left;">Technical Issues</a>
+                    <?php echo KIT_Commons::renderButton('Technical Issues', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
                 <li style="margin-bottom: 10px;">
-                    <a href="#" class="button button-secondary" style="width: 100%; text-align: left;">Billing Questions</a>
+                    <?php echo KIT_Commons::renderButton('Billing Questions', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
             </ul>
         </div>
@@ -46,13 +46,13 @@ if (!defined('ABSPATH')) {
             <h3 style="margin: 0 0 15px 0; color: #dc2626;">Video Tutorials</h3>
             <ul style="list-style: none; padding: 0; margin: 0;">
                 <li style="margin-bottom: 10px;">
-                    <a href="#" class="button button-secondary" style="width: 100%; text-align: left;">Basic Tutorials</a>
+                    <?php echo KIT_Commons::renderButton('Basic Tutorials', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
                 <li style="margin-bottom: 10px;">
-                    <a href="#" class="button button-secondary" style="width: 100%; text-align: left;">Advanced Features</a>
+                    <?php echo KIT_Commons::renderButton('Advanced Features', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
                 <li style="margin-bottom: 10px;">
-                    <a href="#" class="button button-secondary" style="width: 100%; text-align: left;">Tips & Tricks</a>
+                    <?php echo KIT_Commons::renderButton('Tips & Tricks', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
             </ul>
         </div>
@@ -62,13 +62,13 @@ if (!defined('ABSPATH')) {
             <h3 style="margin: 0 0 15px 0; color: #7c3aed;">Contact Support</h3>
             <ul style="list-style: none; padding: 0; margin: 0;">
                 <li style="margin-bottom: 10px;">
-                    <a href="mailto:info@kayiseit.co.za" class="button button-secondary" style="width: 100%; text-align: left;">Email Support</a>
+                    <?php echo KIT_Commons::renderButton('Email Support', 'secondary', 'md', ['href' => 'mailto:info@kayiseit.co.za', 'fullWidth' => true]); ?>
                 </li>
                 <li style="margin-bottom: 10px;">
-                    <a href="tel:0877022625" class="button button-secondary" style="width: 100%; text-align: left;">Phone Support</a>
+                    <?php echo KIT_Commons::renderButton('Phone Support', 'secondary', 'md', ['href' => 'tel:0877022625', 'fullWidth' => true]); ?>
                 </li>
                 <li style="margin-bottom: 10px;">
-                    <a href="#" class="button button-secondary" style="width: 100%; text-align: left;">Live Chat</a>
+                    <?php echo KIT_Commons::renderButton('Live Chat', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
             </ul>
         </div>
@@ -78,13 +78,13 @@ if (!defined('ABSPATH')) {
             <h3 style="margin: 0 0 15px 0; color: #ea580c;">System Status</h3>
             <ul style="list-style: none; padding: 0; margin: 0;">
                 <li style="margin-bottom: 10px;">
-                    <a href="#" class="button button-secondary" style="width: 100%; text-align: left;">System Health</a>
+                    <?php echo KIT_Commons::renderButton('System Health', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
                 <li style="margin-bottom: 10px;">
-                    <a href="#" class="button button-secondary" style="width: 100%; text-align: left;">Maintenance Schedule</a>
+                    <?php echo KIT_Commons::renderButton('Maintenance Schedule', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
                 <li style="margin-bottom: 10px;">
-                    <a href="#" class="button button-secondary" style="width: 100%; text-align: left;">Update History</a>
+                    <?php echo KIT_Commons::renderButton('Update History', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
             </ul>
         </div>
@@ -94,13 +94,13 @@ if (!defined('ABSPATH')) {
             <h3 style="margin: 0 0 15px 0; color: #0891b2;">Community</h3>
             <ul style="list-style: none; padding: 0; margin: 0;">
                 <li style="margin-bottom: 10px;">
-                    <a href="#" class="button button-secondary" style="width: 100%; text-align: left;">User Forum</a>
+                    <?php echo KIT_Commons::renderButton('User Forum', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
                 <li style="margin-bottom: 10px;">
-                    <a href="#" class="button button-secondary" style="width: 100%; text-align: left;">Feature Requests</a>
+                    <?php echo KIT_Commons::renderButton('Feature Requests', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
                 <li style="margin-bottom: 10px;">
-                    <a href="#" class="button button-secondary" style="width: 100%; text-align: left;">Feedback</a>
+                    <?php echo KIT_Commons::renderButton('Feedback', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
             </ul>
         </div>

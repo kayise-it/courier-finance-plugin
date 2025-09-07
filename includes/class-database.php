@@ -78,6 +78,92 @@ class Database
             'created_by' => 0,
             'created_at' => current_time('mysql')
         ]);
+
+        // Seed default cross-border deliveries (idempotent)
+        self::seed_default_deliveries();
+    }
+    /**
+     * Seed 3 deliveries SA -> Tanzania and 5 deliveries Tanzania -> SA (Johannesburg),
+     * scheduled randomly 5–15 days from now. Safe to call multiple times.
+     */
+    public static function seed_default_deliveries()
+    {
+        global $wpdb;
+        $deliveries_table = $wpdb->prefix . 'kit_deliveries';
+        $directions_table = $wpdb->prefix . 'kit_shipping_directions';
+        $countries_table = $wpdb->prefix . 'kit_operating_countries';
+        $cities_table = $wpdb->prefix . 'kit_operating_cities';
+
+        // Only seed if there are no scheduled deliveries yet (besides the warehoused placeholder)
+        $existing = (int)$wpdb->get_var("SELECT COUNT(*) FROM {$deliveries_table} WHERE delivery_reference <> 'warehoused'");
+        if ($existing > 0) {
+            return; // Already seeded/has data
+        }
+
+        // Resolve country IDs
+        $sa_id = (int)$wpdb->get_var("SELECT id FROM {$countries_table} WHERE country_name = 'South Africa'");
+        $tz_id = (int)$wpdb->get_var("SELECT id FROM {$countries_table} WHERE country_name = 'Tanzania'");
+        if (!$sa_id || !$tz_id) {
+            return;
+        }
+
+        // Resolve directions
+        $dir_sa_tz = (int)$wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$directions_table} WHERE origin_country_id = %d AND destination_country_id = %d",
+            $sa_id, $tz_id
+        ));
+        $dir_tz_sa = (int)$wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$directions_table} WHERE origin_country_id = %d AND destination_country_id = %d",
+            $tz_id, $sa_id
+        ));
+        if (!$dir_sa_tz || !$dir_tz_sa) {
+            return;
+        }
+
+        // Resolve destination cities
+        $dar_id = (int)$wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$cities_table} WHERE country_id = %d AND city_name = %s",
+            $tz_id, 'Dar es Salaam'
+        ));
+        $jhb_id = (int)$wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$cities_table} WHERE country_id = %d AND city_name = %s",
+            $sa_id, 'Johannesburg'
+        ));
+        if (!$dar_id || !$jhb_id) {
+            return;
+        }
+
+        // Helper to randomize dispatch dates 5–15 days from now
+        $randDate = function () {
+            $days = rand(5, 15);
+            return date('Y-m-d', strtotime("+{$days} days"));
+        };
+
+        // Insert 3 deliveries SA -> TZ
+        for ($i = 1; $i <= 3; $i++) {
+            $wpdb->insert($deliveries_table, [
+                'delivery_reference' => 'SA-TZ-' . strtoupper(wp_generate_password(6, false, false)),
+                'direction_id' => $dir_sa_tz,
+                'destination_city_id' => $dar_id,
+                'dispatch_date' => $randDate(),
+                'status' => 'scheduled',
+                'created_by' => 0,
+                'created_at' => current_time('mysql'),
+            ]);
+        }
+
+        // Insert 5 deliveries TZ -> SA (Johannesburg)
+        for ($i = 1; $i <= 5; $i++) {
+            $wpdb->insert($deliveries_table, [
+                'delivery_reference' => 'TZ-SA-' . strtoupper(wp_generate_password(6, false, false)),
+                'direction_id' => $dir_tz_sa,
+                'destination_city_id' => $jhb_id,
+                'dispatch_date' => $randDate(),
+                'status' => 'scheduled',
+                'created_by' => 0,
+                'created_at' => current_time('mysql'),
+            ]);
+        }
     }
     
     public static function create_waybills_table()
@@ -184,7 +270,38 @@ class Database
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
     }
-    // Quotations table creation function removed
+    public static function create_quotations_table()
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'kit_quotations';
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE $table_name (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            delivery_id INT UNSIGNED NOT NULL,
+            waybill_id INT UNSIGNED NOT NULL,
+            waybillNo INT UNSIGNED NOT NULL,
+            customer_id MEDIUMINT(10) UNSIGNED NOT NULL,
+            subtotal DECIMAL(10,2) DEFAULT 0,
+            vat_amount DECIMAL(10,2) DEFAULT 0,
+            total DECIMAL(10,2) DEFAULT 0,
+            quotation_notes TEXT,
+            status ENUM('draft','sent','accepted','rejected') DEFAULT 'draft',
+            created_by INT UNSIGNED NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_updated_by INT UNSIGNED NULL,
+            last_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            FOREIGN KEY (delivery_id) REFERENCES {$wpdb->prefix}kit_deliveries(id),
+            FOREIGN KEY (waybill_id) REFERENCES {$wpdb->prefix}kit_waybills(id),
+            FOREIGN KEY (waybillNo) REFERENCES {$wpdb->prefix}kit_waybills(waybill_no),
+            FOREIGN KEY (customer_id) REFERENCES {$wpdb->prefix}kit_customers(cust_id),
+            INDEX (status)
+        ) $charset_collate;";
+
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+    }
     public static function create_operating_countries_table()
     {
         global $wpdb;
@@ -579,6 +696,7 @@ class Database
             vat_percentage DECIMAL(5,2) DEFAULT 15.00,
             sadc_charge DECIMAL(10,2) DEFAULT 0.00,
             sad500_charge DECIMAL(10,2) DEFAULT 0.00,
+            international_price DECIMAL(10,2) DEFAULT 100.00,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id)
@@ -590,9 +708,31 @@ class Database
         // Ensure there is at least one row
         $exists = $wpdb->get_var("SELECT COUNT(*) FROM $table_name");
         if (!$exists) {
+            $company_name = get_bloginfo('name');
+            // Ensure we have a valid string value, not null
+            if (empty($company_name) || $company_name === null) {
+                $company_name = 'KAYISE IT'; // Default fallback
+            }
             $wpdb->insert($table_name, [
-                'company_name' => get_bloginfo('name')
+                'company_name' => $company_name
             ]);
+        }
+    }
+    
+    public static function add_international_price_field()
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'kit_company_details';
+        
+        // Check if international_price column exists
+        $column_exists = $wpdb->get_results("SHOW COLUMNS FROM $table_name LIKE 'international_price'");
+        
+        if (empty($column_exists)) {
+            // Add the international_price column
+            $wpdb->query("ALTER TABLE $table_name ADD COLUMN international_price DECIMAL(10,2) DEFAULT 100.00 AFTER sad500_charge");
+            
+            // Update existing rows with default value
+            $wpdb->query("UPDATE $table_name SET international_price = 100.00 WHERE international_price IS NULL");
         }
     }
 
@@ -645,9 +785,12 @@ class Database
         self::create_shipping_rates_volume_table();
         self::create_shipping_dedicated_truck_rates_table();
         self::create_deliveries_table();
+        
+        // Add international_price field to existing company_details table if it doesn't exist
+        self::add_international_price_field();
         self::create_waybills_table();
         self::create_waybill_items_table();
-        // Quotations table creation removed
+        self::create_quotations_table();
         self::create_invoices_table();
         self::create_discounts_table();
         self::create_company_details_table();
@@ -655,36 +798,45 @@ class Database
     }
     public static function deactivate()
     {
+        global $wpdb;
+        // Temporarily disable FK checks to prevent constraint errors during teardown
+        $wpdb->query('SET FOREIGN_KEY_CHECKS=0');
 
-        // 1. Drop tables that depend on everything else (deepest children)
-        self::delete_table('kit_waybill_items');
-        // Quotations table deletion removed
-        self::delete_table('kit_invoices');
-        self::delete_table('kit_waybills');
+        // 1) Drop deepest child tables first (those that reference parents)
+        // Warehouse tracking references waybills → drop first
         self::delete_table('kit_warehouse_tracking');
+        // Waybill items reference waybills
+        self::delete_table('kit_waybill_items');
+        // Other children that may reference waybills
+        self::delete_table('kit_quotations');
+        self::delete_table('kit_invoices');
 
-        // 2. Drop delivery table (depends on directions & cities)
+        // 2) Now drop waybills (referenced by tracking/items/quotations/invoices)
+        self::delete_table('kit_waybills');
+
+        // 3) Drop deliveries (referenced by waybills)
         self::delete_table('kit_deliveries');
 
-        // 3. Drop rate tables (depend on directions & rate types)
+        // 4) Drop rate tables (depend on directions & rate types)
         self::delete_table('kit_shipping_rates_mass');
         self::delete_table('kit_shipping_rates_volume');
         self::delete_table('kit_shipping_dedicated_truck_rates');
 
-        // 4. Drop direction and rate type tables (parents of above)
+        // 5) Drop direction and rate type tables (parents of above)
         self::delete_table('kit_shipping_rate_types');
         self::delete_table('kit_shipping_directions');
 
-        // 5. Drop cities (they depend on countries)
+        // 6) Drop cities (depend on countries)
         self::delete_table('kit_operating_cities');
 
-        // 6. Now safe to drop countries
+        // 7) Drop countries
         self::delete_table('kit_operating_countries');
 
-        // 7. Drop remaining unrelated base tables
+        // 8) Drop remaining base tables
         self::delete_table('kit_customers');
-        //self::delete_table('kit_services');
         self::delete_table('kit_discounts');
-        
+
+        // Re-enable FK checks
+        $wpdb->query('SET FOREIGN_KEY_CHECKS=1');
     }
 }

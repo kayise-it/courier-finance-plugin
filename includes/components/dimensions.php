@@ -1,4 +1,8 @@
 <?php if (!defined('ABSPATH')) { exit; } ?>
+<?php
+// Include user roles for permission checking
+require_once plugin_dir_path(__FILE__) . '../user-roles.php';
+?>
 <div class="">
     <div class="grid grid-cols-3 gap-4 mb-4">
         <?php
@@ -26,6 +30,7 @@
         <?php endforeach; ?>
 
     </div>
+    <?php if (KIT_User_Roles::can_see_prices()): ?>
     <div class="grid grid-cols-2 gap-4">
         <div>
             <?= KIT_Commons::Linput([
@@ -51,9 +56,28 @@
             ]); ?>
         </div>
     </div>
-    <div id="ttt" class="text-sm text-gray-700 col-span-2">
-        = R<span id="volume_charge_display"><?= esc_html($waybill->volume_charge ?? '0.00'); ?></span> per m3
+    <!-- Dimension Manipulator (Admin only) -->
+    <div class="mt-4">
+        <label class="inline-flex items-center">
+            <input type="checkbox" id="enable_dimension_manipulator" name="enable_dimension_manipulator" class="form-checkbox h-4 w-4 text-blue-600">
+            <span class="ml-2 text-sm text-gray-700">Custom Volume Rate</span>
+        </label>
+        <div id="dimension_manipulator_input_container" style="display: none; margin-top: 1rem;">
+            <?= KIT_Commons::Linput([
+                'label' => 'Volume Rate Manipulator (R)',
+                'name'  => 'dimension_charge_manipulator',
+                'id'    => 'dimension_charge_manipulator',
+                'type'  => 'number',
+                'step'  => '0.01',
+                'value' => isset($waybill->dimension_charge_manipulator) ? esc_attr($waybill->dimension_charge_manipulator) : '',
+                'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 focus:ring-1 focus:ring-blue-500',
+            ]); ?>
+        </div>
     </div>
+    <div id="ttt" class="text-sm text-gray-700 col-span-2">
+        = R<span id="volume_charge_display"><?= htmlspecialchars($waybill->volume_charge ?? '0.00'); ?></span> per m3
+    </div>
+    <?php endif; ?>
 </div>
 
 <script>
@@ -70,11 +94,17 @@
             volumeField: document.getElementById('total_volume'),
             volumeCharge: document.getElementById('volume_charge'),
             volumeChargeDisplay: document.getElementById('volume_charge_display'),
-            countrySelect: document.getElementById('countrydestination_id')
+            countrySelect: document.getElementById('countrydestination_id'),
+            // Manipulator controls
+            manipCheckbox: document.getElementById('enable_dimension_manipulator'),
+            manipInput: document.getElementById('dimension_charge_manipulator'),
+            manipInputContainer: document.getElementById('dimension_manipulator_input_container')
         };
 
         let ajaxAbortController = null;
         let debounceTimer = null;
+        let baseRate = null; // for manipulation
+        let lastBaseRate = null; // to restore when unchecking manipulator
 
         function validateDimension(value) {
             const num = parseFloat(value);
@@ -92,7 +122,9 @@
             }
 
             const volume = (length * width * height) / CUBIC_CM_TO_CUBIC_M;
-            elements.volumeField.value = volume.toFixed(6);
+            if (elements.volumeField) {
+                elements.volumeField.value = volume.toFixed(6);
+            }
 
             if (immediate) {
                 fetchVolumeRate(volume);
@@ -103,7 +135,7 @@
         }
 
         function clearForm() {
-            elements.volumeField.value = '';
+            if (elements.volumeField) elements.volumeField.value = '';
             if (elements.volumeCharge) elements.volumeCharge.value = '';
             if (elements.volumeChargeDisplay) elements.volumeChargeDisplay.textContent = '';
         }
@@ -138,13 +170,10 @@
                 })
                 .then(data => {
                     if (data.success) {
-                        const rate = data.data.rate_per_m3;
-                        if (elements.volumeChargeDisplay) {
-                            elements.volumeChargeDisplay.textContent = rate;
-                        }
-                        if (elements.volumeCharge) {
-                            elements.volumeCharge.value = (rate * volume).toFixed(2);
-                        }
+                        const rate = parseFloat(data.data.rate_per_m3);
+                        baseRate = rate;
+                        lastBaseRate = rate; // always update lastBaseRate to latest fetched
+                        updateVolumeChargeUI(volume, rate);
                     } else {
                         console.error('Server reported error:', data.data.message);
                         clearForm();
@@ -156,6 +185,70 @@
                         clearForm();
                     }
                 });
+        }
+
+        function updateVolumeChargeUI(volume, fetchedRate) {
+            let rate = fetchedRate;
+            // If manipulator is enabled, add manip value
+            if (elements.manipCheckbox && elements.manipCheckbox.checked) {
+                const manip = parseFloat(elements.manipInput.value) || 0;
+                rate = (baseRate !== null ? baseRate : rate) + manip;
+            }
+            if (elements.volumeChargeDisplay) {
+                elements.volumeChargeDisplay.textContent = rate.toFixed(2);
+            }
+            if (elements.volumeCharge) {
+                elements.volumeCharge.value = (rate * volume).toFixed(2);
+            }
+        }
+
+        // Manipulator logic
+        if (elements.manipCheckbox && elements.manipInput && elements.manipInputContainer) {
+            // Show/hide manipulator input
+            elements.manipCheckbox.addEventListener('change', function() {
+                elements.manipInputContainer.style.display = this.checked ? 'block' : 'none';
+                if (!this.checked) {
+                    elements.manipInput.value = '';
+                    // Restore the rate to the last base rate before manipulation
+                    const length = validateDimension(elements.lengthInput.value);
+                    const width = validateDimension(elements.widthInput.value);
+                    const height = validateDimension(elements.heightInput.value);
+                    if ([length, width, height].some(val => val === null) || lastBaseRate === null) return;
+                    const volume = (length * width * height) / CUBIC_CM_TO_CUBIC_M;
+                    // Use lastBaseRate, not baseRate, to restore
+                    if (elements.volumeChargeDisplay) {
+                        elements.volumeChargeDisplay.textContent = lastBaseRate.toFixed(2);
+                    }
+                    if (elements.volumeCharge) {
+                        elements.volumeCharge.value = (lastBaseRate * volume).toFixed(2);
+                    }
+                } else {
+                    // When enabling, recalc with manipulator
+                    const length = validateDimension(elements.lengthInput.value);
+                    const width = validateDimension(elements.widthInput.value);
+                    const height = validateDimension(elements.heightInput.value);
+                    if ([length, width, height].some(val => val === null) || baseRate === null) return;
+                    const volume = (length * width * height) / CUBIC_CM_TO_CUBIC_M;
+                    updateVolumeChargeUI(volume, baseRate);
+                }
+            });
+
+            // Manipulator input changes
+            elements.manipInput.addEventListener('input', function() {
+                if (!elements.manipCheckbox.checked) return;
+                const length = validateDimension(elements.lengthInput.value);
+                const width = validateDimension(elements.widthInput.value);
+                const height = validateDimension(elements.heightInput.value);
+                if ([length, width, height].some(val => val === null) || baseRate === null) return;
+                const volume = (length * width * height) / CUBIC_CM_TO_CUBIC_M;
+                updateVolumeChargeUI(volume, baseRate);
+            });
+
+            // If editing and value exists, show input and check the box
+            <?php if (!empty($waybill->dimension_charge_manipulator)) : ?>
+            elements.manipCheckbox.checked = true;
+            elements.manipInputContainer.style.display = 'block';
+            <?php endif; ?>
         }
 
         // Set up event listeners

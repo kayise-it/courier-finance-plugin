@@ -1,169 +1,126 @@
+<?php if (!defined('ABSPATH')) { exit; } ?>
+
 <?php
 /**
- * DeliveryCard Component
- * Displays delivery information in a clean, modern card format
+ * Reusable Delivery Card Component
+ * 
+ * @param object $delivery Delivery data object
+ * @param string $card_type Type of card (scheduled, in-transit, delivered, etc.)
+ * @param bool $clickable Whether the card is clickable
+ * @param string $onclick_function JavaScript function to call on click
+ * @param array|null $radio_options Radio button options (type, name, checked_id)
  */
-class KIT_DeliveryCard {
+function renderDeliveryCard($delivery, $card_type = 'scheduled', $clickable = true, $onclick_function = 'handleDeliveryClick', $radio_options = null) {
+    // Get country names - support both ID-based and direct name-based
+    $origin_country = 'Unknown';
+    $dest_country = 'Unknown';
     
-    /**
-     * Render delivery card component
-     * 
-     * @param object $delivery Delivery object with properties
-     * @param array $options Additional options for customization
-     * @return string HTML output
-     */
-    public static function render($delivery, $options = []) {
-        $defaults = [
-            'show_actions' => true,
-            'show_truck' => true,
-            'show_waybill_count' => false,
-            'card_class' => 'bg-white rounded-lg shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow duration-200',
-            'actions' => [
-                'view' => true,
-                'edit' => true,
-                'delete' => true
-            ]
-        ];
-        
-        $options = array_merge($defaults, $options);
-        
-        // Get status colors
-        $status_colors = [
-            'scheduled' => 'bg-blue-100 text-blue-800',
-            'in_transit' => 'bg-yellow-100 text-yellow-800',
-            'delivered' => 'bg-green-100 text-green-800',
-            'cancelled' => 'bg-red-100 text-red-800'
-        ];
-        
-        $status_color = $status_colors[$delivery->status] ?? 'bg-gray-100 text-gray-800';
-        $status_text = ucfirst(str_replace('_', ' ', $delivery->status));
-        
-        $html = '<div class="' . $options['card_class'] . '">';
-        
-        // Header Section
-        $html .= '<div class="flex items-start justify-between mb-4">';
-        
-        // Left side - Tracking ID and Truck
-        $html .= '<div class="flex-1">';
-        $html .= '<div class="text-lg font-bold text-gray-900 mb-1">' . esc_html($delivery->delivery_reference) . '</div>';
-        
-        if ($options['show_truck'] && !empty($delivery->truck_number)) {
-            $html .= '<div class="text-sm text-gray-600">Truck: ' . esc_html($delivery->truck_number) . '</div>';
-        }
-        
-        $html .= '</div>';
-        
-        // Right side - Status Badge
-        $html .= '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ' . $status_color . '">';
-        $html .= $status_text;
-        $html .= '</span>';
-        
-        $html .= '</div>';
-        
-        // Details Section
-        $html .= '<div class="space-y-3 mb-4">';
-        
-        // Origin
-        if (!empty($delivery->origin_country)) {
-            $html .= '<div class="flex items-center text-sm">';
-            $html .= '<svg class="w-4 h-4 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">';
-            $html .= '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>';
-            $html .= '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>';
-            $html .= '</svg>';
-            $html .= '<span class="text-gray-600">From: <span class="font-medium text-gray-900">' . esc_html($delivery->origin_country) . '</span></span>';
-            $html .= '</div>';
-        }
-        
-        // Destination
-        if (!empty($delivery->destination_country)) {
-            $html .= '<div class="flex items-center text-sm">';
-            $html .= '<svg class="w-4 h-4 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">';
-            $html .= '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>';
-            $html .= '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>';
-            $html .= '</svg>';
-            $html .= '<span class="text-gray-600">To: <span class="font-medium text-gray-900">' . esc_html($delivery->destination_country) . '</span></span>';
-            $html .= '</div>';
-        }
-        
-        // Dispatch Date
-        if (!empty($delivery->dispatch_date)) {
-            $html .= '<div class="flex items-center text-sm">';
-            $html .= '<svg class="w-4 h-4 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">';
-            $html .= '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>';
-            $html .= '</svg>';
-            $html .= '<span class="text-gray-600">Dispatch: <span class="font-medium text-gray-900">' . date('M j, Y', strtotime($delivery->dispatch_date)) . '</span></span>';
-            $html .= '</div>';
-        }
-        
-        // Waybill Count (optional)
-        if ($options['show_waybill_count'] && isset($delivery->waybill_count)) {
-            $html .= '<div class="flex items-center text-sm">';
-            $html .= '<svg class="w-4 h-4 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">';
-            $html .= '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>';
-            $html .= '</svg>';
-            $html .= '<span class="text-gray-600">Waybills: <span class="font-medium text-gray-900">' . intval($delivery->waybill_count) . '</span></span>';
-            $html .= '</div>';
-        }
-        
-        $html .= '</div>';
-        
-        // Action Buttons Section
-        if ($options['show_actions']) {
-            $html .= '<div class="flex items-center gap-2">';
-            
-            if ($options['actions']['view']) {
-                $html .= '<a href="?page=kit-deliveries&view_delivery=' . $delivery->id . '" class="inline-flex items-center px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors">';
-                $html .= 'View';
-                $html .= '</a>';
-            }
-            
-            if ($options['actions']['edit']) {
-                $html .= '<button onclick="editDelivery(' . $delivery->id . ')" class="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors">';
-                $html .= 'Edit';
-                $html .= '</button>';
-            }
-            
-            if ($options['actions']['delete']) {
-                $html .= '<button onclick="deleteDelivery(' . $delivery->id . ')" class="inline-flex items-center px-3 py-2 text-sm font-medium text-red-700 bg-red-100 rounded-md hover:bg-red-200 transition-colors">';
-                $html .= 'Delete';
-                $html .= '</button>';
-            }
-            
-            $html .= '</div>';
-        }
-        
-        $html .= '</div>';
-        
-        return $html;
+    if (isset($delivery->origin_country_id) && $delivery->origin_country_id) {
+        $origin_country = getCountryNameById($delivery->origin_country_id);
+    } elseif (isset($delivery->origin_country)) {
+        $origin_country = $delivery->origin_country;
     }
     
-    /**
-     * Render multiple delivery cards in a grid
-     * 
-     * @param array $deliveries Array of delivery objects
-     * @param array $options Options for the cards
-     * @return string HTML output
-     */
-    public static function renderGrid($deliveries, $options = []) {
-        $defaults = [
-            'grid_class' => 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6',
-            'empty_message' => 'No deliveries found'
-        ];
-        
-        $options = array_merge($defaults, $options);
-        
-        if (empty($deliveries)) {
-            return '<div class="text-center py-12 text-gray-500">' . esc_html($options['empty_message']) . '</div>';
-        }
-        
-        $html = '<div class="' . $options['grid_class'] . '">';
-        
-        foreach ($deliveries as $delivery) {
-            $html .= self::render($delivery, $options);
-        }
-        
-        $html .= '</div>';
-        
-        return $html;
+    if (isset($delivery->destination_country_id) && $delivery->destination_country_id) {
+        $dest_country = getCountryNameById($delivery->destination_country_id);
+    } elseif (isset($delivery->destination_country)) {
+        $dest_country = $delivery->destination_country;
+    }
+    
+    // Determine status colors and text based on card type
+    $status_config = getStatusConfig($card_type);
+    
+    // Determine if card should be clickable
+    $cursor_class = $clickable ? 'cursor-pointer hover:shadow-md hover:border-blue-300' : 'cursor-default';
+    
+    // Format date - match the image format "04 Sep 2025"
+    $day = date('d', strtotime($delivery->dispatch_date));
+    $month = date('M', strtotime($delivery->dispatch_date));
+    $year = date('Y', strtotime($delivery->dispatch_date));
+?>
+
+<div class="delivery-card bg-white rounded-lg border border-gray-200 p-3 group relative <?php echo $cursor_class; ?>" 
+     data-index="<?php echo esc_attr($delivery->direction_id); ?>"
+     <?php if ($clickable): ?>onclick="selectDeliveryCard(this, <?php echo esc_attr($delivery->direction_id); ?>)"<?php endif; ?>>
+     
+    <?php if ($radio_options): ?>
+        <input type="<?php echo esc_attr($radio_options['type'] ?? 'radio'); ?>" 
+               name="<?php echo esc_attr($radio_options['name'] ?? 'delivery_id'); ?>" 
+               value="<?php echo esc_attr($delivery->id ?? $delivery->direction_id); ?>" 
+               class="sr-only" 
+               <?php echo ($radio_options['checked_id'] && ($delivery->id == $radio_options['checked_id'] || $delivery->direction_id == $radio_options['checked_id'])) ? 'checked' : ''; ?>>
+    <?php endif; ?>
+    
+    <!-- Date Display - match image format "04 Sep 2025" -->
+    <div class="text-center mb-2">
+        <div class="text-xs font-bold text-gray-900"><?php echo $day . ' ' . $month . ' ' . $year; ?></div>
+    </div>
+    
+    <!-- Route Information - show full country names like image -->
+    <div class="text-xs text-center text-gray-700 leading-tight mb-2">
+        <div class="font-medium"><?php echo htmlspecialchars($origin_country); ?></div>
+        <div class="text-gray-400 text-xs">→</div>
+        <div class="font-medium"><?php echo htmlspecialchars($dest_country); ?></div>
+    </div>
+    
+    <!-- Status Indicator -->
+    <div class="flex items-center justify-center space-x-1">
+        <span class="inline-block w-2 h-2 <?php echo $status_config['color']; ?> rounded-full"></span>
+        <span class="text-xs text-gray-500"><?php echo $status_config['text']; ?></span>
+    </div>
+    
+    <!-- Hover Details (only for clickable cards) -->
+    <?php if ($clickable): ?>
+    <div class="absolute inset-0 bg-blue-50 border-2 border-blue-300 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
+        <div class="p-2 text-xs text-blue-800">
+            <?php if (!empty($delivery->truck_number)): ?>
+                <div class="font-medium">Truck: <?php echo htmlspecialchars($delivery->truck_number); ?></div>
+            <?php endif; ?>
+            <?php if (!empty($delivery->description)): ?>
+                <div><?php echo htmlspecialchars($delivery->description); ?></div>
+            <?php endif; ?>
+            <?php if (empty($delivery->truck_number) && empty($delivery->description)): ?>
+                <div class="font-medium">Click to select this delivery</div>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+</div>
+
+<?php
+}
+
+/**
+ * Get status configuration based on card type
+ */
+function getStatusConfig($card_type) {
+    switch ($card_type) {
+        case 'scheduled':
+            return ['color' => 'bg-green-500', 'text' => 'Scheduled'];
+        case 'in-transit':
+            return ['color' => 'bg-blue-500', 'text' => 'In Transit'];
+        case 'delivered':
+            return ['color' => 'bg-gray-500', 'text' => 'Delivered'];
+        case 'cancelled':
+            return ['color' => 'bg-red-500', 'text' => 'Cancelled'];
+        default:
+            return ['color' => 'bg-gray-400', 'text' => 'Unknown'];
     }
 }
+
+/**
+ * Helper function to get country name by ID
+ */
+function getCountryNameById($country_id) {
+    global $wpdb;
+    
+    // Check if WordPress database is available
+    if (!isset($wpdb) || !is_object($wpdb)) {
+        return 'Unknown';
+    }
+    
+    $table_name = $wpdb->prefix . 'kit_operating_countries';
+    $country = $wpdb->get_row($wpdb->prepare("SELECT country_name FROM $table_name WHERE id = %d", $country_id));
+    return $country ? $country->country_name : 'Unknown';
+}
+?>

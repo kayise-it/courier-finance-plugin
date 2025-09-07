@@ -109,15 +109,9 @@ class KIT_Routes
                 <!-- Tab Navigation -->
                 <div class="route-tabs" style="margin-bottom: 30px;">
                     <div style="display: flex; background: #f3f4f6; padding: 4px; border-radius: 8px; width: fit-content;">
-                        <button id="overview-tab" class="tab-btn active" style="padding: 12px 24px; border-radius: 6px; font-weight: 500; font-size: 14px; transition: all 0.2s ease; background: white; color: #374151; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: none; cursor: pointer;">
-                            Overview
-                        </button>
-                        <button id="create-tab" class="tab-btn" style="padding: 12px 24px; border-radius: 6px; font-weight: 500; font-size: 14px; transition: all 0.2s ease; background: transparent; color: #6b7280; border: none; cursor: pointer;">
-                            Create Route
-                        </button>
-                        <button id="manage-tab" class="tab-btn" style="padding: 12px 24px; border-radius: 6px; font-weight: 500; font-size: 14px; transition: all 0.2s ease; background: transparent; color: #6b7280; border: none; cursor: pointer;">
-                            Manage Routes
-                        </button>
+                        <?php echo KIT_Commons::renderButton('Overview', 'ghost', 'sm', ['id' => 'overview-tab', 'classes' => 'tab-btn active']); ?>
+                        <?php echo KIT_Commons::renderButton('Create Route', 'ghost', 'sm', ['id' => 'create-tab', 'classes' => 'tab-btn']); ?>
+                        <?php echo KIT_Commons::renderButton('Manage Routes', 'ghost', 'sm', ['id' => 'manage-tab', 'classes' => 'tab-btn']); ?>
                     </div>
                 </div>
 
@@ -193,8 +187,8 @@ class KIT_Routes
                     <div style="background: white; padding: 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #e5e7eb;">
                         <h3 style="font-size: 18px; font-weight: 600; color: #111827; margin: 0 0 20px 0;">Quick Actions</h3>
                         <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-                            <button onclick="switchTab('create')" style="padding: 12px 24px; background: #2563eb; color: white; border: none; border-radius: 8px; font-weight: 500; cursor: pointer; transition: background 0.2s ease;">Create New Route</button>
-                            <button onclick="switchTab('manage')" style="padding: 12px 24px; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; border-radius: 8px; font-weight: 500; cursor: pointer; transition: all 0.2s ease;">View All Routes</button>
+                            <?php echo KIT_Commons::renderButton('Create New Route', 'primary', 'md', ['onclick' => 'switchTab(\'create\')', 'gradient' => true]); ?>
+                            <?php echo KIT_Commons::renderButton('View All Routes', 'secondary', 'md', ['onclick' => 'switchTab(\'manage\')']); ?>
                         </div>
                     </div>
                 </div>
@@ -212,7 +206,7 @@ class KIT_Routes
                     <div style="background: white; padding: 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #e5e7eb;">
                         <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 20px;">
                             <h3 style="font-size: 18px; font-weight: 600; color: #111827; margin: 0;">All Routes</h3>
-                            <button onclick="switchTab('create')" style="padding: 8px 16px; background: #2563eb; color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer;">Create New</button>
+                            <?php echo KIT_Commons::renderButton('Create New', 'primary', 'sm', ['onclick' => 'switchTab(\'create\')', 'gradient' => true]); ?>
                         </div>
                         
                         <!-- Search and Filter -->
@@ -256,12 +250,13 @@ class KIT_Routes
                                     '<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">Inactive</span>';
                             }
                             if ($key === 'actions') {
-                                return '<button onclick="editRoute(' . $row->route_id . ')" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-blue-700 bg-blue-100 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200">
-                                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
-                                    </svg>
-                                    Edit
-                                </button>';
+                                return KIT_Commons::renderButton('Edit', 'primary', 'sm', [
+                                    'onclick' => 'editRoute(' . $row->route_id . ')',
+                                    'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>',
+                                    'iconPosition' => 'left',
+                                    'classes' => 'text-blue-700 bg-blue-100 hover:bg-blue-200',
+                                    'gradient' => false
+                                ]);
                             }
                             return htmlspecialchars(($row->$key ?? '') ?: '');
                         };
@@ -321,8 +316,8 @@ class KIT_Routes
             document.getElementById('create-tab').addEventListener('click', () => switchTab('create'));
             document.getElementById('manage-tab').addEventListener('click', () => switchTab('manage'));
 
-            // Initialize with first tab active
-            switchTab('overview-tab');
+            // Initialize with overview tab active
+            switchTab('overview');
         });
 
         function editRoute(routeId) {
@@ -492,12 +487,8 @@ class KIT_Routes
                         <?php } ?>
                         
                         <div style="display: flex; gap: 12px; margin-top: 24px; padding-top: 24px; border-top: 1px solid #e5e7eb;">
-                            <button type="submit" style="padding: 12px 24px; background: #2563eb; color: white; border: none; border-radius: 8px; font-weight: 500; cursor: pointer; transition: background 0.2s ease;">
-                                <?php echo $is_edit_mode ? 'Update Route' : 'Create Route'; ?>
-                            </button>
-                            <button type="button" onclick="window.location.href='?page=route-management'" style="padding: 12px 24px; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; border-radius: 8px; font-weight: 500; cursor: pointer; transition: all 0.2s ease;">
-                                Cancel
-                            </button>
+                            <?php echo KIT_Commons::renderButton($is_edit_mode ? 'Update Route' : 'Create Route', 'primary', 'md', ['type' => 'submit', 'gradient' => true]); ?>
+                            <?php echo KIT_Commons::renderButton('Cancel', 'secondary', 'md', ['type' => 'button', 'onclick' => 'window.location.href=\'?page=route-management\'']); ?>
                         </div>
                     </form>
                 </div>

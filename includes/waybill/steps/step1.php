@@ -9,7 +9,7 @@
                 </p>
             </div>
             <!-- Waybill Number -->
-            <div class="w-full max-w-xs">
+            <div class="w-full">
                 <?php
                 echo KIT_Commons::Linput([
                     'label' => 'Waybill No',
@@ -21,7 +21,7 @@
                     'special' => 'readonly',
                 ]);
                 ?>
-                <div class="w-full max-w-xs">
+                <div class="w-full">
                     <?php
                     echo KIT_Commons::TextAreaField([
                         'label' => 'Waybill Description',
@@ -46,8 +46,13 @@
     </div>
 
     <div class="md:hidden flex justify-end mt-6">
-        <button type="button" class="next-step inline-flex items-center px-4 py-2 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-            Next: Customer Details →
-        </button>
+        <?php echo KIT_Commons::renderButton('Next: Waybill Items', 'primary', 'md', [
+            'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />',
+            'iconPosition' => 'right',
+            'data-target' => 'step-3',
+            'classes' => 'next-step',
+            'gradient' => true
+        ]);
+        ?>
     </div>
 </div>

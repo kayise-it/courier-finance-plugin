@@ -22,24 +22,31 @@ function handleCountryChange(countryId, fieldName) {
     if (!countryId) return;
 
     // Determine which city dropdown to update based on the field name
-    let citySelectId = '';
+    let primaryId = '';
+    let fallbackId = '';
     let isOrigin = false;
 
     if (fieldName === 'origin' || fieldName === 'origin_country') {
-        citySelectId = 'origin_city_select';
+        primaryId = 'origin_city_select';
+        fallbackId = 'origin_city';
         isOrigin = true;
     } else if (fieldName === 'destination' || fieldName === 'destination_country') {
-        citySelectId = 'destination_city_select';
+        primaryId = 'destination_city_select';
+        fallbackId = 'destination_city';
         isOrigin = false;
     } else {
         console.error('Unknown field name:', fieldName);
         return;
     }
 
-    const citySelect = document.getElementById(citySelectId);
+    // Try primary ID first, then fallback
+    let citySelect = document.getElementById(primaryId);
+    if (!citySelect) {
+        citySelect = document.getElementById(fallbackId);
+    }
 
     if (!citySelect) {
-        console.error('City select element not found:', citySelectId);
+        console.error('City select element not found for either ID:', primaryId, fallbackId);
         return;
     }
 
@@ -81,6 +88,37 @@ function handleCountryChange(countryId, fieldName) {
                 citySelect.innerHTML = '<option value="">No cities found</option>';
             }
             citySelect.disabled = false;
+
+            // Refresh Scheduled Deliveries when destination country changes
+            if (!isOrigin) {
+                const list = document.getElementById('scheduled-deliveries-list');
+                if (list && ajaxUrl) {
+                    list.innerHTML = '<div class="text-gray-500">Loading deliveries...</div>';
+                    jQuery.ajax({
+                        url: ajaxUrl,
+                        type: 'POST',
+                        dataType: 'json',
+                        data: {
+                            action: 'get_deliveries_by_country_id',
+                            country: countryId,
+                            nonce: (window.myPluginAjax && window.myPluginAjax.nonces && (myPluginAjax.nonces.deliveries_nonce || myPluginAjax.nonces.get_waybills_nonce)) || ''
+                        },
+                        success: function(res){
+                            if (res && res.success && res.html) {
+                                list.innerHTML = res.html;
+                            } else if (res && res.data && res.data.html) {
+                                list.innerHTML = res.data.html;
+                            } else {
+                                list.innerHTML = '<div class="text-gray-500">No deliveries found</div>';
+                            }
+                        },
+                        error: function(xhr){
+                            console.error('Deliveries AJAX error:', xhr.responseText);
+                            list.innerHTML = '<div class="text-red-600">Error loading deliveries</div>';
+                        }
+                    });
+                }
+            }
         },
         error: function(xhr, status, error) {
             console.error('AJAX error:', error);
@@ -158,13 +196,23 @@ document.addEventListener('DOMContentLoaded', function () {
 
 function handleDeliveryChange(delivery_id) {
     console.log('Selected delivery ID:', delivery_id);
+    
+    // Find and check the radio button for this delivery
+    const radioButton = document.querySelector(`input[name="direction_id"][value="${delivery_id}"]`);
+    if (radioButton) {
+        radioButton.checked = true;
+        // Trigger change event to ensure CSS classes update
+        radioButton.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    
     const deliveryInput = document.querySelector('input[name="delivery_id"]');
-    // get specialbtn should override the next-step function, because it is a special button, this button is disabled and is only enabled whern deliveryInput is not empty and 
-    // the next-step function is enabled when the deliveryInput is not empty and the deliveryInput is not the same as the delivery_id
     const specialDeliveryBtn = document.getElementById('specialDeliveryBtn');
-    specialDeliveryBtn.disabled = false;
-    specialDeliveryBtn.classList.remove('bg-gray-300', 'text-gray-500');
-    specialDeliveryBtn.classList.add('bg-blue-600', 'text-white');
+    
+    if (specialDeliveryBtn) {
+        specialDeliveryBtn.disabled = false;
+        specialDeliveryBtn.classList.remove('bg-gray-300', 'text-gray-500');
+        specialDeliveryBtn.classList.add('bg-blue-600', 'text-white');
+    }
 
     if (deliveryInput) {
         deliveryInput.value = delivery_id;
@@ -187,4 +235,18 @@ document.addEventListener('click', function (e) {
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function () {
     initItemsPerPage();
+    // Auto-load cities if a country is already selected on load (e.g., after validation redirect)
+    try {
+        var destCountry = document.getElementById('stepDestinationSelect');
+        if (destCountry && destCountry.value) {
+            handleCountryChange(destCountry.value, 'destination_country');
+        }
+
+        var originCountry = document.getElementById('origin_country_select');
+        if (originCountry && originCountry.value) {
+            handleCountryChange(originCountry.value, 'origin_country');
+        }
+    } catch (e) {
+        console && console.warn && console.warn('Auto city load skipped:', e);
+    }
 });

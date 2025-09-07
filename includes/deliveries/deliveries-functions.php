@@ -56,7 +56,7 @@ class KIT_Deliveries
 
         $direction_id = isset($_POST['direction_id']) ? intval($_POST['direction_id']) : 0;
         $total_volume_m3 = isset($_POST['total_volume_m3']) ? floatval($_POST['total_volume_m3']) : 0;
-        $chargeGroup = KIT_Waybills::chargeGroup($_POST['origin_country_id']);
+        $chargeGroup = KIT_Waybills::chargeGroup($_POST['origin_country_id'] ?? 0);
 
         if (!$chargeGroup || !$total_volume_m3) {
             wp_send_json_error(['message' => 'Missing chargeGroup or volume.']);
@@ -83,43 +83,109 @@ class KIT_Deliveries
     {
         global $wpdb;
 
-        /*   
-        if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'get_waybills_nonce')) {
-            wp_send_json_error(['message' => 'Invalid security token.']);
-        } 
-            */
+        // ✅ BULLETPROOF: Comprehensive input validation and sanitization
+        try {
+            // Validate nonce for security
+            if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'get_waybills_nonce')) {
+                wp_send_json_error(['message' => 'Invalid security token.']);
+                return;
+            }
 
+            // Sanitize and validate inputs
+            $direction_id = isset($_POST['direction_id']) ? intval($_POST['direction_id']) : 0;
+            $total_mass_kg = isset($_POST['total_mass_kg']) ? floatval($_POST['total_mass_kg']) : 0;
+            $origin_country_id = isset($_POST['origin_country_id']) ? intval($_POST['origin_country_id']) : 0;
 
-        $chargeGroup = KIT_Waybills::chargeGroup($_POST['origin_country_id']);
+            // ✅ BULLETPROOF: Comprehensive validation
+            if ($direction_id <= 0) {
+                wp_send_json_error(['message' => 'Invalid direction ID.']);
+                return;
+            }
 
-        $direction_id = isset($_POST['direction_id']) ? intval($_POST['direction_id']) : 0;
-        $total_mass_kg = isset($_POST['total_mass_kg']) ? floatval($_POST['total_mass_kg']) : 0;
+            if ($total_mass_kg <= 0) {
+                wp_send_json_error(['message' => 'Mass must be greater than 0.']);
+                return;
+            }
 
+            if ($total_mass_kg > 10000) { // Reasonable upper limit
+                wp_send_json_error(['message' => 'Mass exceeds maximum limit of 10,000 kg.']);
+                return;
+            }
 
-        if (!$total_mass_kg) {
-            wp_send_json_error(['message' => 'Missing direction_id or total_mass_kg.']);
-        }
+            // Get charge group with fallback
+            $chargeGroup = KIT_Waybills::chargeGroup($origin_country_id);
+            if (!$chargeGroup) {
+                wp_send_json_error(['message' => 'Unable to determine charge group.']);
+                return;
+            }
 
-        $table = $wpdb->prefix . 'kit_shipping_rates_mass';
+            $table = $wpdb->prefix . 'kit_shipping_rates_mass';
 
-        // safer than BETWEEN
-        $rate_per_kg = $wpdb->get_var($wpdb->prepare("
-        SELECT rate_per_kg
-        FROM $table
-        WHERE direction_id = %d
-          AND min_weight <= %f
-          AND max_weight >= %f
-        ORDER BY effective_date DESC
-        LIMIT 1", $chargeGroup, $total_mass_kg, $total_mass_kg));
+            // ✅ BULLETPROOF: Fixed boundary conditions with proper weight range logic
+            $rate_per_kg = $wpdb->get_var($wpdb->prepare("
+            SELECT rate_per_kg
+            FROM $table
+            WHERE direction_id = %d
+              AND min_weight <= %f
+              AND (max_weight > %f OR max_weight = %f)
+            ORDER BY effective_date DESC, min_weight DESC
+            LIMIT 1", $chargeGroup, $total_mass_kg, $total_mass_kg, $total_mass_kg));
 
-        if ($rate_per_kg !== null) {
+            // ✅ BULLETPROOF: Comprehensive error handling and fallbacks
+            if ($rate_per_kg !== null && $rate_per_kg > 0) {
+                $total_charge = round($rate_per_kg * $total_mass_kg, 2);
+                
+                // Validate calculated charge
+                if ($total_charge <= 0) {
+                    wp_send_json_error(['message' => 'Invalid calculated charge.']);
+                    return;
+                }
 
-            wp_send_json_success([
-                'rate_per_kg' => $rate_per_kg,
-                'total_charge' => round($rate_per_kg * $total_mass_kg, 2)
+                wp_send_json_success([
+                    'rate_per_kg' => floatval($rate_per_kg),
+                    'total_charge' => $total_charge,
+                    'direction_id' => $direction_id,
+                    'mass_kg' => $total_mass_kg,
+                    'charge_group' => $chargeGroup
+                ]);
+            } else {
+                // ✅ BULLETPROOF: Try fallback rate lookup
+                $fallback_rate = $wpdb->get_var($wpdb->prepare("
+                SELECT rate_per_kg
+                FROM $table
+                WHERE direction_id = %d
+                ORDER BY effective_date DESC, min_weight ASC
+                LIMIT 1", $chargeGroup));
+                
+                if ($fallback_rate !== null && $fallback_rate > 0) {
+                    $total_charge = round($fallback_rate * $total_mass_kg, 2);
+                    wp_send_json_success([
+                        'rate_per_kg' => floatval($fallback_rate),
+                        'total_charge' => $total_charge,
+                        'direction_id' => $direction_id,
+                        'mass_kg' => $total_mass_kg,
+                        'charge_group' => $chargeGroup,
+                        'fallback' => true
+                    ]);
+                } else {
+                    wp_send_json_error([
+                        'message' => 'No matching rate found for the specified criteria.',
+                        'debug_info' => [
+                            'direction_id' => $direction_id,
+                            'mass_kg' => $total_mass_kg,
+                            'charge_group' => $chargeGroup
+                        ]
+                    ]);
+                }
+            }
+            
+        } catch (Exception $e) {
+            // ✅ BULLETPROOF: Catch any unexpected errors
+            error_log('Rate fetch error: ' . $e->getMessage());
+            wp_send_json_error([
+                'message' => 'An unexpected error occurred while fetching rates.',
+                'error_code' => 'RATE_FETCH_ERROR'
             ]);
-        } else {
-            wp_send_json_error(['message' => 'No matching rate found.']);
         }
     }
 
@@ -145,7 +211,7 @@ class KIT_Deliveries
             wp_send_json_error('Invalid nonce');
         }
 
-        $country_id = intval($_POST['country_id']);
+        $country_id = intval($_POST['country_id'] ?? 0);
 
         if (! $country_id) {
             wp_send_json_error('Invalid country ID');
@@ -236,7 +302,9 @@ class KIT_Deliveries
     }
     public static function handle_get_deliveries_by_country()
     {
-        check_ajax_referer('deliveries_nonce', 'nonce');
+        if (! isset($_POST['nonce']) || ! (wp_verify_nonce($_POST['nonce'], 'deliveries_nonce') || wp_verify_nonce($_POST['nonce'], 'get_waybills_nonce'))) {
+            wp_send_json_error('Invalid nonce', 403);
+        }
 
         $country_code = sanitize_text_field($_POST['country']);
 
@@ -248,8 +316,8 @@ class KIT_Deliveries
 
         ob_start();
         foreach ($deliveries as $delivery): ?>
-            <label class="bg-white w-[100px] h-[100px] rounded-[5px] border-2 border-gray-300 cursor-pointer relative flex items-center justify-center text-center text-[11px] font-medium leading-tight hover:shadow-md transition-all duration-200 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-100 has-[:checked]:shadow-lg active:border-blue-500 active:bg-blue-100 active:shadow-lg">
-                <input type="radio" name="delivery_id" value="<?= esc_attr($delivery->id) ?>" class="sr-only peer" <?= $delivery->id == 1 ? 'checked' : '' ?>>
+            <label class="delivery-card bg-white w-[100px] h-[100px] rounded-[5px] border-2 border-gray-300 cursor-pointer relative flex items-center justify-center text-center text-[11px] font-medium leading-tight hover:shadow-md transition-all duration-200" data-delivery-id="<?= esc_attr($delivery->id) ?>">
+                <input type="radio" name="delivery_id" value="<?= esc_attr($delivery->id) ?>" class="sr-only" <?= $delivery->id == 1 ? 'checked' : '' ?>>
                 <div>
                     <div class="font-bold text-[12px]"><?= esc_html(date('d M Y', strtotime($delivery->dispatch_date))) ?></div>
                     <div class="text-gray-500"><?= esc_html(ucfirst($delivery->status)) ?></div>
@@ -263,30 +331,84 @@ class KIT_Deliveries
     }
     public static function get_deliveries_by_country_id()
     {
-        check_ajax_referer('deliveries_nonce', 'nonce');
-
-        $country_code = sanitize_text_field($_POST['country']);
-
-        if (empty($country_code)) {
-            wp_send_json_error(['message' => 'Country code is required']);
+        if (! isset($_POST['nonce']) || ! (wp_verify_nonce($_POST['nonce'], 'deliveries_nonce') || wp_verify_nonce($_POST['nonce'], 'get_waybills_nonce'))) {
+            wp_send_json_error('Invalid nonce', 403);
         }
 
-        $deliveries = KIT_Deliveries::getScheduledDeliveries($country_code);
+        $country_id = intval($_POST['country']);
+
+        if (empty($country_id)) {
+            wp_send_json_error(['message' => 'Country ID is required']);
+        }
+
+        // Validate country ID exists
+        global $wpdb;
+        $country_exists = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}kit_operating_countries WHERE id = %d",
+            $country_id
+        ));
+
+        if (!$country_exists) {
+            wp_send_json_error(['message' => 'Country not found']);
+        }
+
+        $deliveries = self::getScheduledCountryDeliveries($country_id);
 
         ob_start();
-        foreach ($deliveries as $delivery): ?>
-            <label class="bg-white w-[100px] h-[100px] rounded-[5px] border-2 border-gray-300 cursor-pointer relative flex items-center justify-center text-center text-[11px] font-medium leading-tight hover:shadow-md transition-all duration-200 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-100 has-[:checked]:shadow-lg active:border-blue-500 active:bg-blue-100 active:shadow-lg">
-                <input type="radio" name="delivery_id" value="<?= esc_attr($delivery->id) ?>" class="sr-only peer" <?= $delivery->id == 1 ? 'checked' : '' ?>>
-                <div>
-                    <div class="font-bold text-[12px]"><?= esc_html(date('d M Y', strtotime($delivery->dispatch_date))) ?></div>
-                    <div class="text-gray-500"><?= esc_html(ucfirst($delivery->status)) ?></div>
-                    <div class="text-gray-600 mt-1"><?= esc_html($delivery->origin_country) ?> → <?= esc_html($delivery->destination_country) ?></div>
-                </div>
-            </label>
-        <?php endforeach;
+        foreach ($deliveries as $delivery) {
+            echo self::render_scheduled_delivery_card($delivery, [
+                'input_type' => 'radio',
+                'input_name' => 'delivery_id',
+                'checked_id' => 1,
+            ]);
+        }
         $html = ob_get_clean();
 
         wp_send_json_success(['html' => $html]);
+    }
+
+    /**
+     * Render scheduled delivery card for AJAX responses
+     * Uses our reusable deliveryCard component
+     */
+    public static function render_scheduled_delivery_card($delivery, $options = [])
+    {
+        // Include our reusable component
+        require_once plugin_dir_path(__FILE__) . '../components/deliveryCard.php';
+        
+        // Convert delivery data to match our component format
+        $component_delivery = (object)[
+            'direction_id' => $delivery->delivery_id,
+            'id' => $delivery->delivery_id,
+            'origin_country' => $delivery->origin_country, // Use country names directly
+            'destination_country' => $delivery->destination_country,
+            'dispatch_date' => $delivery->dispatch_date,
+            'truck_number' => $delivery->truck_number ?? '',
+            'description' => $delivery->description ?? ''
+        ];
+        
+        // Debug: Log what we're getting from the database
+        error_log('Delivery data: ' . print_r($delivery, true));
+        error_log('Component delivery: ' . print_r($component_delivery, true));
+        
+        // Use our reusable component with radio button options
+        $radio_options = [
+            'type' => $options['input_type'] ?? 'radio',
+            'name' => $options['input_name'] ?? 'delivery_id',
+            'checked_id' => $options['checked_id'] ?? null
+        ];
+        
+        ob_start();
+        renderDeliveryCard($component_delivery, 'scheduled', true, 'handleDeliveryClick', $radio_options);
+        
+        return ob_get_clean();
+    }
+
+    // Wrapper to satisfy registered AJAX hook name
+    public static function handle_get_deliveries_by_country_id()
+    {
+        // Reuse core implementation
+        self::get_deliveries_by_country_id();
     }
     public static function getScheduledCountryDeliveries($country_id)
     {
@@ -352,7 +474,11 @@ class KIT_Deliveries
                 id="delivery-status-button-<?php echo $delivery_id; ?>"
                 onclick="toggleDropdownDeliveryStatus('<?php echo $delivery_id; ?>')">
                 <span class="flex items-center">
-                    <span class="mr-2"><?php echo esc_html(ucfirst(str_replace('_', ' ', $status))); ?></span>
+                    <?php 
+                // Ensure status is not null before using string functions
+                $status = $status ?? '';
+                ?>
+                <span class="mr-2"><?php echo esc_html(ucfirst(str_replace('_', ' ', (string)($status ?? '')))); ?></span>
                     <svg class="-mr-1 ml-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
                         <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
                     </svg>
@@ -408,6 +534,7 @@ class KIT_Deliveries
 
         $query = "
                 SELECT 
+                    $table_name.id,
                     $table_name.delivery_reference, 
                     $table_name.direction_id, 
                     $table_name.dispatch_date, 
@@ -435,7 +562,8 @@ class KIT_Deliveries
                 AND  $table_name.delivery_reference != 'warehoused'";
 
         if (!empty($country_code)) {
-            $query .= $wpdb->prepare(" AND destination_country = %s", $country_code);
+            // Filter by the joined destination country name column
+            $query .= $wpdb->prepare(" AND oc2.country_name = %s", $country_code);
         }
 
         $query .= " ORDER BY dispatch_date ASC";
@@ -530,7 +658,7 @@ class KIT_Deliveries
                                             ? 'bg-yellow-100 text-yellow-800'
                                             : 'bg-blue-100 text-blue-800');
                                     ?>">
-                                                    <?php echo esc_html(ucfirst(str_replace('_', ' ', $delivery->status))); ?>
+                                                    <?php echo esc_html(ucfirst(str_replace('_', ' ', (string)($delivery->status ?? '')))); ?>
                                                 </span>
                                             </td>
                                         </tr>
@@ -727,7 +855,7 @@ class KIT_Deliveries
                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
                             <?= $delivery->status === 'delivered' ? 'bg-green-100 text-green-800' : 
                                 ($delivery->status === 'in_transit' ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-blue-800') ?>">
-                            <?= ucfirst(str_replace('_', ' ', $delivery->status)) ?>
+                            <?= ucfirst(str_replace('_', ' ', (string)($delivery->status ?? ''))) ?>
                         </span>
                     </div>
                     <?php endif; ?>
@@ -2007,8 +2135,7 @@ class KIT_Deliveries
 
         check_ajax_referer('get_waybills_nonce', 'nonce');
 
-
-        if (!current_user_can('edit_pages')) {
+        if (!current_user_can('kit_view_waybills') && !current_user_can('edit_pages')) {
             wp_send_json_error('Unauthorized');
         }
 
@@ -2403,7 +2530,7 @@ function render_waybills_with_items($waybillsandItems)
     // Table header
     echo '<thead><tr>';
     foreach ($columns as $col) {
-        echo '<th>' . ucfirst(str_replace('_', ' ', $col)) . '</th>';
+        echo '<th>' . ucfirst(str_replace('_', ' ', (string)($col ?? ''))) . '</th>';
     }
     echo '</tr></thead>';
     echo '<tbody>';

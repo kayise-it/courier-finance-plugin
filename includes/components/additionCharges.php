@@ -19,7 +19,7 @@ if (!isset($optionChoice)) : ?>
                     <div>
                         <!-- The VAT option Checkbox -->
                         <input type="checkbox" name="vat_include" id="vat_include2" <?= (isset($waybill['vat_include']) && $waybill['vat_include'] == 1)? 'checked' : '' ?> value="1">
-                        <label for="vat_include">VAT 22Included</label>
+                        <label for="vat_include">VAT Included</label>
                     </div>
                 </div>
             </div>
@@ -42,7 +42,7 @@ if (!isset($optionChoice)) : ?>
         <div class="bg-slate-100 border-dotted border-2 mt-2 border-gray-300 rounded-lg p-2">
             <!-- The VAT option Checkbox -->
             <input type="checkbox" <?= (!empty($waybill['vat_include'])) ? 'checked' : '' ?> name="vat_include" id="vat_include" value="1">
-            <label for="vat_include">VAT Inc33luded</label>
+            <label for="vat_include">VAT Included (10%)</label>
         </div>
     </div>
 <?php elseif (isset($optionChoice) && $optionChoice == 3): ?>
@@ -66,18 +66,52 @@ if (!isset($optionChoice)) : ?>
         </div>
         <div>
             <span class="font-semibold">VAT Included:</span>
-            <span><?= !empty($waybill['vat_include']) ? '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-green-500 text-green-100">
+            <span><?= !empty($waybill['vat_include']) ? '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-green-500 text-blue-100">
                                     Yes
                                 </span> +' . KIT_Commons::currency() . ($waybill['miscellaneous']['others']['vat_total']??0) : '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-500 text-red-100">
                                     No
                                 </span>' ?></span>
         </div>
+        <?php if (empty($waybill['vat_include'])): ?>
+        <div>
+            <span class="font-semibold">Agent Clearing & Documentation:</span>
+            <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-blue-500 text-blue-100">
+                Yes
+            </span>: +<?= KIT_Commons::currency() . number_format(KIT_Waybills::international_price_in_rands(), 2) ?>
+        </div>
+        <?php endif; ?>
     </div>
     <?php elseif (isset($optionChoice) && $optionChoice == 4):
         echo '<div class="flex gap-4">';
-        echo KIT_Commons::buttonBox('SADC Certificate +'. KIT_Commons::currency() .KIT_Waybills::sad(), (!empty($waybill['include_sadc']) && $waybill['include_sadc'] == 1) ? 'highlight' : '');
-        echo KIT_Commons::buttonBox('SAD500 +'. KIT_Commons::currency() .KIT_Waybills::sadc_certificate(), (!empty($waybill['include_sad500']) && $waybill['include_sad500'] == 1) ? 'highlight' : '');
-        echo KIT_Commons::buttonBox('VAT +10%', (!empty($waybill['miscellaneous']['others']['vat_total']) && $waybill['miscellaneous']['others']['vat_total'] > 0) ? 'highlight' : '');
+        
+        // SADC Certificate button
+        $sadcHighlight = (!empty($waybill['include_sad500']) && $waybill['include_sad500'] == 1);
+        echo KIT_Commons::renderButton('SADC Certificate +'. KIT_Commons::currency() .KIT_Waybills::sad(), $sadcHighlight ? 'warning' : 'secondary', 'sm', [
+            'classes' => $sadcHighlight ? 'bg-yellow-400 text-black hover:bg-yellow-500' : '',
+            'gradient' => $sadcHighlight
+        ]);
+        
+        // SAD500 button
+        $sad500Highlight = (!empty($waybill['include_sad500']) && $waybill['include_sad500'] == 1);
+        echo KIT_Commons::renderButton('SAD500 +'. KIT_Commons::currency() .KIT_Waybills::sadc_certificate(), $sad500Highlight ? 'warning' : 'secondary', 'sm', [
+            'classes' => $sad500Highlight ? 'bg-yellow-400 text-black hover:bg-yellow-500' : '',
+            'gradient' => $sad500Highlight
+        ]);
+        
+        // VAT button
+        $vatHighlight = (!empty($waybill['miscellaneous']['others']['vat_total']) && $waybill['miscellaneous']['others']['vat_total'] > 0);
+        echo KIT_Commons::renderButton('VAT +10%', $vatHighlight ? 'warning' : 'secondary', 'sm', [
+            'classes' => $vatHighlight ? 'bg-yellow-400 text-black hover:bg-yellow-500' : '',
+            'gradient' => $vatHighlight
+        ]);
+        
+        // Agent Clearing button
+        if (empty($waybill['vat_include'])) {
+            echo KIT_Commons::renderButton('Agent Clearing & Documentation +'. KIT_Commons::currency() . number_format(KIT_Waybills::international_price_in_rands(), 2), 'warning', 'sm', [
+                'classes' => 'bg-yellow-400 text-black hover:bg-yellow-500',
+                'gradient' => true
+            ]);
+        }
         echo '</div>';
         ?>
 

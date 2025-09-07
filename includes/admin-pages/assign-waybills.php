@@ -3,6 +3,9 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// Include user roles for permission checking
+require_once plugin_dir_path(__FILE__) . '../user-roles.php';
+
 // Handle form submission
 if (isset($_POST['assign_waybills']) && wp_verify_nonce($_POST['nonce'], 'assign_waybills_nonce')) {
     global $wpdb;
@@ -138,7 +141,7 @@ $total_available_deliveries = count($available_deliveries);
                                                     #<?php echo $waybill->waybill_no; ?>
                                                 </p>
                                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                                    R<?php echo number_format($waybill->product_invoice_amount, 2); ?>
+                                                    R<?php echo KIT_User_Roles::can_see_prices() ? number_format($waybill->product_invoice_amount, 2) : '***'; ?>
                                                 </span>
                                             </div>
                                             <p class="text-sm text-gray-600 mt-1">
@@ -165,22 +168,20 @@ $total_available_deliveries = count($available_deliveries);
                 <!-- Action Buttons -->
                 <div class="flex justify-between items-center">
                     <div class="flex items-center space-x-4">
-                        <button type="button" id="select-all-btn" class="text-sm text-blue-600 hover:text-blue-800 font-medium">
-                            Select All
-                        </button>
-                        <button type="button" id="deselect-all-btn" class="text-sm text-gray-600 hover:text-gray-800 font-medium">
-                            Deselect All
-                        </button>
+                        <?php echo KIT_Commons::renderButton('Select All', 'ghost-primary', 'sm', ['id' => 'select-all-btn', 'type' => 'button']); ?>
+                        <?php echo KIT_Commons::renderButton('Deselect All', 'ghost', 'sm', ['id' => 'deselect-all-btn', 'type' => 'button']); ?>
                         <span id="selected-count" class="text-sm text-gray-500">0 waybills selected</span>
                     </div>
                     
-                    <button type="submit" name="assign_waybills" id="assign-btn" 
-                            class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed">
-                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
-                        </svg>
-                        Assign to Delivery
-                    </button>
+                    <?php echo KIT_Commons::renderButton('Assign to Delivery', 'primary', 'lg', [
+                        'type' => 'submit',
+                        'name' => 'assign_waybills',
+                        'id' => 'assign-btn',
+                        'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>',
+                        'iconPosition' => 'left',
+                        'classes' => 'disabled:opacity-50 disabled:cursor-not-allowed',
+                        'gradient' => true
+                    ]); ?>
                 </div>
             </form>
         </div>

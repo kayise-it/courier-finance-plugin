@@ -9,6 +9,35 @@
  * Text Domain: 08600-services-quotations
  */
 
+// PHP 8.1+ Deprecation Warning Suppression - TEMPORARILY DISABLED FOR DEBUGGING
+// if (version_compare(PHP_VERSION, '8.1.0', '>=')) {
+//     // Suppress deprecation warnings at plugin level
+//     error_reporting(E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED);
+//     ini_set('display_errors', 0);
+//     
+//     // Set custom error handler to catch and suppress deprecation warnings
+//     set_error_handler(function($severity, $message, $file, $line) {
+//         // Suppress deprecation warnings completely
+//         if ($severity === E_DEPRECATED || $severity === E_USER_DEPRECATED) {
+//             return true; // Don't execute PHP's internal error handler
+//         }
+//         
+//         // Let other errors through normally
+//         return false;
+//     });
+//     
+//     // Start output buffering to catch any warnings that slip through
+//     ob_start(function($buffer) {
+//         // Remove deprecation warnings from the output buffer
+//         $buffer = preg_replace('/Deprecated: .*? in .*? on line \d+/s', '', $buffer);
+//         return $buffer;
+//     });
+//     
+//     // Additional suppression will be registered via proper WordPress hook below
+// }
+
+
+
 // Exit if accessed directly
 if (! defined('ABSPATH')) {
     exit;
@@ -16,11 +45,22 @@ if (! defined('ABSPATH')) {
 define('COURIER_FINANCE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('COURIER_FINANCE_PLUGIN_URL', plugin_dir_url(__FILE__));
 
+
+
 // Enqueue styles for the admin panel
 function customStyling()
 {
-    wp_enqueue_style('autsincss', plugin_dir_url(__FILE__) . 'assets/css/austin.css', array(), '1.0');
-    wp_enqueue_style('kit-tailwindcss', plugin_dir_url(__FILE__) . 'assets/css/frontend.css', array(), '1.0');
+    // Only load CSS on our plugin's admin pages to avoid conflicts
+    $screen = get_current_screen();
+    if ($screen && $screen->id && strpos($screen->id, '08600') !== false) {
+        wp_enqueue_style('autsincss', plugin_dir_url(__FILE__) . 'assets/css/austin.css', array(), '1.0');
+        wp_enqueue_style('kit-tailwindcss', plugin_dir_url(__FILE__) . 'assets/css/frontend.css', array(), '1.0');
+        
+        // Add CSS class wrapper to admin body for scoping
+        add_filter('admin_body_class', function($classes) {
+            return $classes . ' courier-finance-plugin';
+        });
+    }
 }
 
 
@@ -28,22 +68,13 @@ function customStyling()
 require_once plugin_dir_path(__FILE__) . 'includes/class-database.php';
 include_once(plugin_dir_path(__FILE__) . 'includes/class-plugin.php');
 
-// Activate and deactivate hooks (guard against unexpected output)
+// Activate and deactivate hooks (guard against unexpected output) - SIMPLIFIED FOR DEBUGGING
 register_activation_hook(__FILE__, function() {
-    // Absorb any accidental output during activation to avoid "unexpected output" notice
-    $level = ob_get_level();
-    $prev_display = ini_get('display_errors');
-    @ini_set('display_errors', '0');
-    global $wpdb; if (isset($wpdb)) { $wpdb->suppress_errors(true); }
-    ob_start();
     try {
         Database::activate();
-    } finally {
-        while (ob_get_level() > $level) {
-            ob_end_clean();
-        }
-        if (isset($wpdb)) { $wpdb->suppress_errors(false); }
-        if ($prev_display !== false) { @ini_set('display_errors', $prev_display); }
+    } catch (Exception $e) {
+        // Log error but don't break activation
+        error_log('Plugin activation error: ' . $e->getMessage());
     }
 });
 register_deactivation_hook(__FILE__, array('Database', 'deactivate'));
@@ -61,6 +92,21 @@ function kit_remove_manage_options_from_editor()
 // Initialize the plugin
 Plugin::init();
 
+// Register additional deprecation warning suppression after WordPress is loaded - TEMPORARILY DISABLED
+// if (version_compare(PHP_VERSION, '8.1.0', '>=')) {
+//     add_action('init', function() {
+//         // Suppress deprecation warnings during WordPress initialization
+//         error_reporting(E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED);
+//         ini_set('display_errors', 0);
+//     }, 1);
+//     
+//     // Also suppress on admin pages where these warnings commonly appear
+//     add_action('admin_init', function() {
+//         error_reporting(E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED);
+//         ini_set('display_errors', 0);
+//     }, 1);
+// }
+
 // Include the service functions
 include_once plugin_dir_path(__FILE__) . 'includes/commons.php';
 include_once plugin_dir_path(__FILE__) . 'includes/admin-menu.php';
@@ -75,6 +121,30 @@ require_once plugin_dir_path(__FILE__) . 'includes/waybillmultiform.php';
 require_once plugin_dir_path(__FILE__) . 'includes/countries/opc-functions.php';
 require_once plugin_dir_path(__FILE__) . 'includes/routes/routes-functions.php';
 require_once plugin_dir_path(__FILE__) . 'includes/components/quickActions.php';
+
+// AJAX handler for international price migration
+add_action('wp_ajax_migrate_international_price', 'migrate_international_price_callback');
+add_action('wp_ajax_nopriv_migrate_international_price', 'migrate_international_price_callback');
+
+function migrate_international_price_callback() {
+    // Verify nonce
+    if (!wp_verify_nonce($_POST['nonce'], 'migrate_international_price')) {
+        wp_send_json_error(['message' => 'Security check failed']);
+        return;
+    }
+    
+    try {
+        // Include the database class
+        require_once plugin_dir_path(__FILE__) . 'includes/class-database.php';
+        
+        // Run the migration
+        KIT_Database::add_international_price_field();
+        
+        wp_send_json_success(['message' => 'International price field added successfully!']);
+    } catch (Exception $e) {
+        wp_send_json_error(['message' => 'Migration failed: ' . $e->getMessage()]);
+    }
+}
 
 function my_plugin_enqueue_scripts()
 {
@@ -291,6 +361,18 @@ add_action('admin_post_delete_service', 'handle_service_deletion');
 // Function to display a specific quotation
 function quotation_view_page()
 {
+    // Check if user is logged in and has admin permissions
+    if (!is_user_logged_in()) {
+        echo '<div class="error"><p>Access denied. Please log in.</p></div>';
+        return;
+    }
+
+    // Only administrators who can see prices can view quotations with PDF access
+    if (!KIT_User_Roles::can_see_prices()) {
+        echo '<div class="error"><p>Access denied. Only administrators can view quotations with PDF access.</p></div>';
+        return;
+    }
+
     if (!isset($_GET['quotation_id'])) {
         echo '<div class="error"><p>Quotation ID is missing.</p></div>';
         return;
@@ -405,7 +487,7 @@ function quotation_view_page()
             <!-- Left Column - Company Details -->
             <div class="space-y-4">
                 <div class="flex items-center gap-4 mb-4">
-                    <img class="w-32" src="<?php echo plugin_dir_url(__FILE__) . 'img/logo.png'; ?>" alt="Company Logo">
+                    <img class="w-32" src="<?php echo plugin_dir_url(__FILE__) . 'img/logo.jpeg'; ?>" alt="Company Logo">
                     <div>
                         <h2 class="text-2xl font-bold text-gray-800">08600 Logistics</h2>
                         <p class="text-blue-600 font-medium">Transport & Logistics Solutions</p>
@@ -646,9 +728,9 @@ function quotation_view_page()
                     </svg>
                     Print Quotation
                 </button>
-                <a href="<?php echo plugins_url('pdf-generator.php', __FILE__); ?>?quotation_id=<?php echo $quotation_id; ?>"
-                    class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition flex items-center
-                gap-2">
+                <a href="<?php echo plugin_dir_url(__FILE__) . 'pdf-generator.php?waybill_no=' . intval($quotation->waybill_no) . '&pdf_nonce=' . wp_create_nonce('pdf_nonce'); ?>"
+                    class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2" target="_blank"
+                >
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                         <path fill-rule="evenodd"
                             d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z"

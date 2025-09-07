@@ -1,0 +1,170 @@
+/* Waybill Form Validation Styles */
+
+/* Error field highlighting */
+.field-error {
+    border-color: #ef4444 !important;
+    background-color: #fef2f2 !important;
+    box-shadow: 0 0 0 1px #ef4444 !important;
+}
+
+.field-error:focus {
+    border-color: #ef4444 !important;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1) !important;
+}
+
+/* Success field highlighting */
+.field-success {
+    border-color: #10b981 !important;
+    background-color: #f0fdf4 !important;
+}
+
+/* Error message styling */
+.error-message {
+    color: #dc2626;
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+}
+
+/* Success message styling */
+.success-message {
+    color: #059669;
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+}
+
+/* Loading spinner */
+.spinner {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Form error container */
+.form-error-container {
+    margin-bottom: 1rem;
+    padding: 1rem;
+    background-color: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 0.375rem;
+}
+
+.form-error-container h3 {
+    color: #991b1b;
+    font-size: 0.875rem;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+}
+
+.form-error-container .error-list {
+    color: #dc2626;
+    font-size: 0.875rem;
+}
+
+.form-error-container .error-list a {
+    color: #dc2626;
+    text-decoration: underline;
+}
+
+.form-error-container .error-list a:hover {
+    color: #991b1b;
+}
+
+/* Form success container */
+.form-success-container {
+    margin-bottom: 1rem;
+    padding: 1rem;
+    background-color: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 0.375rem;
+}
+
+.form-success-container h3 {
+    color: #166534;
+    font-size: 0.875rem;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+}
+
+.form-success-container .success-message {
+    color: #059669;
+    font-size: 0.875rem;
+}
+
+/* Submit button loading state */
+.submit-loading {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.submit-loading .spinner {
+    display: inline-block;
+    margin-right: 0.5rem;
+}
+
+/* Field validation icons */
+.field-wrapper {
+    position: relative;
+}
+
+.field-wrapper .validation-icon {
+    position: absolute;
+    right: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+}
+
+.field-wrapper .validation-icon.error {
+    color: #ef4444;
+}
+
+.field-wrapper .validation-icon.success {
+    color: #10b981;
+}
+
+/* Delivery button selection styles */
+/* Now that input comes before label, peer-checked classes should work */
+.peer:checked ~ .peer-checked\:border-blue-500 {
+    border-color: #3b82f6 !important;
+}
+
+.peer:checked ~ .peer-checked\:bg-blue-100 {
+    background-color: #dbeafe !important;
+}
+
+.peer:checked ~ .peer-checked\:shadow-lg {
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Fallback for browsers that don't support peer-checked */
+input[type="radio"]:checked ~ label {
+    border-color: #3b82f6 !important;
+    background-color: #dbeafe !important;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .form-error-container,
+    .form-success-container {
+        margin: 0.5rem 0;
+        padding: 0.75rem;
+    }
+    
+    .form-error-container h3,
+    .form-success-container h3 {
+        font-size: 0.8rem;
+    }
+    
+    .form-error-container .error-list,
+    .form-success-container .success-message {
+        font-size: 0.8rem;
+    }
+}

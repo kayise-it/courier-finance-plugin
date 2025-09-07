@@ -1,4 +1,9 @@
-<?php if (!defined('ABSPATH')) { exit; } ?>
+<?php if (!defined('ABSPATH')) {
+    exit;
+}
+// Access waybill items from global scope
+global $waybill_items;
+?>
 <div class="bg-white p-6" id="step-3">
     <!-- VAT Validation Message -->
     <div id="vat-validation-message" class="mb-6 p-4 rounded-lg border-l-4" style="display: none;">
@@ -20,24 +25,11 @@
 
     <!-- Waybill Items Control -->
     <?=
-     KIT_Commons::waybillItemsControl([
+    KIT_Commons::waybillItemsControl([
         'container_id' => 'custom-waybill-items',
         'button_id' => 'add-waybill-item',
         'group_name' => 'custom_items',
-        'existing_items' => [/* 
-            [
-                'item_name' => 'Laptop Dell XPS',
-                'quantity' => 1,
-                'unit_price' => 1200,
-                'total_price' => 2 * 25
-            ],
-            [
-                'item_name' => 'Wireless Mouse',
-                'quantity' => 2,
-                'unit_price' => 25,
-                'total_price' => 2 * 25
-            ] */
-        ],
+        'existing_items' => $waybill_items ?? [],
         'input_class' => 'border border-gray-300 rounded px-3 py-2 bg-white',
         'remove_btn_class' => 'bg-red-500 text-white px-3 py-2 rounded hover:bg-red-600 transition-colors duration-200',
         'add_btn_class' => 'bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors duration-200',
@@ -47,117 +39,116 @@
 
     <!-- Navigation Buttons -->
     <div class="flex justify-between mt-8">
-        <button type="button" 
-                class="prev-step inline-flex items-center px-6 py-3 border border-gray-300 shadow-sm text-base font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed" 
-                data-target="step-2">
-            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
-            </svg>
-            Back
-        </button>
-       
-        <button type="button" 
-                id="next-step-3" 
-                class="next-step inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed" 
-                data-target="step-4">
-            Next: Charges & Fees
-            <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-            </svg>
-        </button>
+        <?php echo KIT_Commons::renderButton('Back', 'secondary', 'md', [
+            'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 17l-5-5m0 0l5-5m-5 5h12" />',
+            'iconPosition' => 'left',
+            'data-target' => 'step-1',
+            'classes' => 'prev-step'
+        ]); ?>
+        
+        <?php echo KIT_Commons::renderButton('Next: Charges & Fees', 'primary', 'md', [
+            'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />',
+            'iconPosition' => 'right',
+            'data-target' => 'step-4',
+            'classes' => 'next-step',
+            'id' => 'next-step-3',
+            'gradient' => true
+        ]);
+        ?>
+
     </div>
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const vatCheckbox = document.getElementById('vat_include2') || document.getElementById('vat_include');
-    const nextButton = document.getElementById('next-step-3');
-    const vatMessage = document.getElementById('vat-validation-message');
-    const waybillItemsContainer = document.getElementById('custom-waybill-items');
-    
-    // Function to check if VAT is enabled
-    function isVatEnabled() {
-        return vatCheckbox && vatCheckbox.checked;
-    }
-    
-    // Function to count waybill items
-    function countWaybillItems() {
-        if (!waybillItemsContainer) return 0;
-        const itemRows = waybillItemsContainer.querySelectorAll('.waybill-item-row');
-        return itemRows.length;
-    }
-    
-    // Function to validate and update button state
-    function validateAndUpdateButton() {
-        const hasVat = isVatEnabled();
-        const itemCount = countWaybillItems();
-        
-        if (hasVat && itemCount === 0) {
-            // VAT is checked but no items - show message and disable button
-            vatMessage.style.display = 'block';
-            vatMessage.className = 'mb-6 p-4 rounded-lg border-l-4 border-yellow-400 bg-yellow-50';
-            nextButton.disabled = true;
-            nextButton.classList.add('opacity-50', 'cursor-not-allowed');
-            nextButton.classList.remove('hover:bg-blue-700');
-        } else if (hasVat && itemCount > 0) {
-            // VAT is checked and items exist - hide message and enable button
-            vatMessage.style.display = 'none';
-            nextButton.disabled = false;
-            nextButton.classList.remove('opacity-50', 'cursor-not-allowed');
-            nextButton.classList.add('hover:bg-blue-700');
-        } else {
-            // VAT is not checked - hide message and enable button
-            vatMessage.style.display = 'none';
-            nextButton.disabled = false;
-            nextButton.classList.remove('opacity-50', 'cursor-not-allowed');
-            nextButton.classList.add('hover:bg-blue-700');
+    document.addEventListener('DOMContentLoaded', function() {
+        const vatCheckbox = document.getElementById('vat_include2') || document.getElementById('vat_include');
+        const nextButton = document.getElementById('next-step-3');
+        const vatMessage = document.getElementById('vat-validation-message');
+        const waybillItemsContainer = document.getElementById('custom-waybill-items');
+
+        // Function to check if VAT is enabled
+        function isVatEnabled() {
+            return vatCheckbox && vatCheckbox.checked;
         }
-    }
-    
-    // Listen for VAT checkbox changes
-    if (vatCheckbox) {
-        vatCheckbox.addEventListener('change', validateAndUpdateButton);
-    }
-    
-    // Listen for waybill items changes (using MutationObserver)
-    if (waybillItemsContainer) {
-        const observer = new MutationObserver(function(mutations) {
-            mutations.forEach(function(mutation) {
-                if (mutation.type === 'childList') {
-                    validateAndUpdateButton();
+
+        // Function to count waybill items
+        function countWaybillItems() {
+            if (!waybillItemsContainer) return 0;
+            const itemRows = waybillItemsContainer.querySelectorAll('.waybill-item-row');
+            return itemRows.length;
+        }
+
+        // Function to validate and update button state
+        function validateAndUpdateButton() {
+            const hasVat = isVatEnabled();
+            const itemCount = countWaybillItems();
+
+            if (hasVat && itemCount === 0) {
+                // VAT is checked but no items - show message and disable button
+                vatMessage.style.display = 'block';
+                vatMessage.className = 'mb-6 p-4 rounded-lg border-l-4 border-yellow-400 bg-yellow-50';
+                nextButton.disabled = true;
+                nextButton.classList.add('opacity-50', 'cursor-not-allowed');
+                nextButton.classList.remove('hover:bg-blue-700');
+            } else if (hasVat && itemCount > 0) {
+                // VAT is checked and items exist - hide message and enable button
+                vatMessage.style.display = 'none';
+                nextButton.disabled = false;
+                nextButton.classList.remove('opacity-50', 'cursor-not-allowed');
+                nextButton.classList.add('hover:bg-blue-700');
+            } else {
+                // VAT is not checked - hide message and enable button
+                vatMessage.style.display = 'none';
+                nextButton.disabled = false;
+                nextButton.classList.remove('opacity-50', 'cursor-not-allowed');
+                nextButton.classList.add('hover:bg-blue-700');
+            }
+        }
+
+        // Listen for VAT checkbox changes
+        if (vatCheckbox) {
+            vatCheckbox.addEventListener('change', validateAndUpdateButton);
+        }
+
+        // Listen for waybill items changes (using MutationObserver)
+        if (waybillItemsContainer) {
+            const observer = new MutationObserver(function(mutations) {
+                mutations.forEach(function(mutation) {
+                    if (mutation.type === 'childList') {
+                        validateAndUpdateButton();
+                    }
+                });
+            });
+
+            observer.observe(waybillItemsContainer, {
+                childList: true,
+                subtree: true
+            });
+        }
+
+        // Initial validation
+        validateAndUpdateButton();
+
+        // Enhanced button hover effects
+        const buttons = document.querySelectorAll('.prev-step, .next-step');
+        buttons.forEach(button => {
+            button.addEventListener('mouseenter', function() {
+                if (!this.disabled) {
+                    this.style.transform = 'translateY(-1px)';
+                    this.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
+                }
+            });
+
+            button.addEventListener('mouseleave', function() {
+                this.style.transform = 'translateY(0)';
+                this.style.boxShadow = '';
+            });
+
+            button.addEventListener('click', function() {
+                if (this.disabled) {
+                    return false;
                 }
             });
         });
-        
-        observer.observe(waybillItemsContainer, {
-            childList: true,
-            subtree: true
-        });
-    }
-    
-    // Initial validation
-    validateAndUpdateButton();
-    
-    // Enhanced button hover effects
-    const buttons = document.querySelectorAll('.prev-step, .next-step');
-    buttons.forEach(button => {
-        button.addEventListener('mouseenter', function() {
-            if (!this.disabled) {
-                this.style.transform = 'translateY(-1px)';
-                this.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
-            }
-        });
-        
-        button.addEventListener('mouseleave', function() {
-            this.style.transform = 'translateY(0)';
-            this.style.boxShadow = '';
-        });
-        
-        button.addEventListener('click', function() {
-            if (this.disabled) {
-                return false;
-            }
-        });
     });
-});
 </script>

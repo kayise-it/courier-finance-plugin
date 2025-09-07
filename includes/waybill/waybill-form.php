@@ -1,37 +1,38 @@
 <?php
 // waybill-form.php
-// Start session at the very top to preserve form data
-if (!session_id()) {
-    session_start();
-}
+// Start session at the very top to preserve form data - TEMPORARILY DISABLED FOR DEBUGGING
+// if (!session_id()) {
+//     session_start();
+// }
 
 if (!defined('ABSPATH')) {
     exit;
 }
 
-// Handle form submissions between steps
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Save all submitted data to session
-    $_SESSION['waybill_form_data'] = array_merge($_SESSION['waybill_form_data'] ?? [], $_POST);
+// Handle form submissions between steps - TEMPORARILY DISABLED FOR DEBUGGING
+// if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+//     // Save all submitted data to session
+//     $_SESSION['waybill_form_data'] = array_merge($_SESSION['waybill_form_data'] ?? [], $_POST);
 
-    // Handle step navigation
-    $current_step = isset($_POST['current_step']) ? intval($_POST['current_step']) : 1;
+//     // Handle step navigation
+//     $current_step = isset($_POST['current_step']) ? intval($_POST['current_step']) : 1;
 
-    if (isset($_POST['next_step'])) {
-        $next_step = min($current_step + 1, 4);
-    } elseif (isset($_POST['prev_step'])) {
-        $next_step = max($current_step - 1, 1);
-    } else {
-        $next_step = $current_step;
-    }
+//     if (isset($_POST['next_step'])) {
+//         $next_step = min($current_step + 1, 4);
+//     } elseif (isset($_POST['prev_step'])) {
+//         $next_step = max($current_step - 1, 1);
+//     } else {
+//         $next_step = $current_step;
+//     }
 
-    // Redirect to the next step
-    wp_redirect(add_query_arg(['step' => $next_step], wp_get_referer()));
-    exit;
-}
+//     // Redirect to the next step
+//     wp_redirect(add_query_arg(['step' => $next_step], wp_get_referer()));
+//     exit;
+// }
 
-// Restore form data from session
-$form_data = $_SESSION['waybill_form_data'] ?? [];
+// Restore form data from session - TEMPORARILY DISABLED FOR DEBUGGING
+// $form_data = $_SESSION['waybill_form_data'] ?? [];
+$form_data = [];
 
 
 // Dummy customer list
@@ -63,8 +64,16 @@ $set_cust_id = isset($_GET['cust_id']) ? intval($_GET['cust_id']) : "";
 if ($waybill_id > 0) {
     global $wpdb;
     $waybill = $wpdb->get_row(
-        $wpdb->prepare("SELECT * FROM {$wpdb->prefix}kit_waybills WHERE id = %d", $waybill_id)
+        $wpdb->prepare("SELECT * FROM {$wpdb->prefix}kit_waybills WHERE id = %d", $waybill_id),
+        ARRAY_A
     );
+
+    // Convert null values to empty strings to prevent deprecation warnings
+    if ($waybill) {
+        $waybill = array_map(function($value) {
+            return $value === null ? '' : $value;
+        }, $waybill);
+    }
     $is_edit_mode = !is_null($waybill);
 }
 $breadlinks = "";
