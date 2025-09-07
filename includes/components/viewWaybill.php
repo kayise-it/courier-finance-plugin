@@ -26,6 +26,29 @@ $is_equal = $mass_charge === $volume_charge;
         </div>
     <?php endif; ?>
     
+    <?php if (isset($_GET['assignment_success']) && $_GET['assignment_success'] == '1'): ?>
+        <div id="assignment-success-message" class="mb-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded">
+            <strong>Success!</strong> Waybill has been assigned to delivery truck.
+        </div>
+    <?php endif; ?>
+    
+    <?php if (isset($_GET['assignment_error'])): ?>
+        <div id="assignment-error-message" class="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
+            <strong>Error!</strong> 
+            <?php 
+            $error_code = $_GET['assignment_error'];
+            switch($error_code) {
+                case '1': echo 'Invalid waybill or delivery ID.'; break;
+                case '2': echo 'Waybill not found or not warehoused.'; break;
+                case '3': echo 'Delivery not found.'; break;
+                case '4': echo 'Waybill is already assigned to a delivery.'; break;
+                case '5': echo 'Failed to assign waybill. Please try again.'; break;
+                default: echo 'Unknown error occurred.'; break;
+            }
+            ?>
+        </div>
+    <?php endif; ?>
+    
     <div class="flex flex-col space-y-6 justify-between items-start border-b pb-4">
         <div class="grid grid-cols-2 w-full">
             <div>
@@ -94,7 +117,7 @@ $is_equal = $mass_charge === $volume_charge;
             <?php if ($waybill['warehouse']): ?>
                 <div class="flex flex-col">
                     <label class="<?= KIT_Commons::labelClass() ?>">Warehoused:</label>
-                    <?= KIT_Commons::statusBadge($waybill['status']); ?>
+                    <?= KIT_Commons::warehouseDeliveryAssignment($waybill['id'], $waybill['waybill_no'], $waybill['destination_country'], $waybill['destination_city'], $waybill['status']); ?>
                 </div>
             <?php endif; ?>
         </div>
@@ -553,7 +576,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const messages = [
         'approval-success-message',
         'invoice-status-message', 
-        'approval-error-message'
+        'approval-error-message',
+        'assignment-success-message',
+        'assignment-error-message'
     ];
     
     messages.forEach(function(messageId) {

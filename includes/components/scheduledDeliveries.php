@@ -99,6 +99,28 @@ function selectDeliveryCard(cardElement, directionId) {
     cardElement.classList.add('selected');
     console.log('Card selected:', directionId);
     
+    // ✅ CRITICAL: Update the direction_id field for rate calculation
+    const directionIdField = document.getElementById('direction_id');
+    if (directionIdField) {
+        directionIdField.value = directionId;
+        console.log('Updated direction_id field to:', directionId);
+        
+        // Trigger rate fetch if mass is present
+        const totalMassInput = document.getElementById('total_mass_kg');
+        if (totalMassInput && totalMassInput.value && parseFloat(totalMassInput.value) > 0) {
+            console.log('Mass present, triggering rate fetch...');
+            if (typeof fetchRatePerKg === 'function') {
+                try {
+                    fetchRatePerKg();
+                } catch(e) {
+                    console.error('Rate fetch failed:', e);
+                }
+            }
+        }
+    } else {
+        console.warn('direction_id field not found!');
+    }
+    
     // Force button to be disabled first, then check conditions
     const nextButton = document.getElementById('step4NextBtn');
     if (nextButton) {
@@ -234,6 +256,13 @@ function clearDeliverySelection() {
     document.querySelectorAll('.delivery-card').forEach(card => {
         card.classList.remove('selected');
     });
+    
+    // ✅ CRITICAL: Clear the direction_id field
+    const directionIdField = document.getElementById('direction_id');
+    if (directionIdField) {
+        directionIdField.value = '';
+        console.log('Cleared direction_id field');
+    }
     
     // Disable the button when delivery details are cleared
     const nextButton = document.getElementById('step4NextBtn');

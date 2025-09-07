@@ -231,6 +231,7 @@ if (!is_array($waybill['items'])) {
                 'remove_btn_class' => 'bg-red-500 text-white px-3 py-2 rounded hover:bg-red-600',
                 'add_btn_class' => 'bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700',
                 'specialClass' => '!text-[10px]',
+                'style' => 'slim'
             ]);
             ?>
             <!-- Miscellaneous Items Section (Editable) -->

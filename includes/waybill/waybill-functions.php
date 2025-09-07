@@ -13,6 +13,8 @@ class KIT_Waybills
         add_action('wp_ajax_nopriv_load_waybill_page', [self::class, 'myplugin_ajax_load_waybill_page']);
         add_action('admin_post_update_WaybillApproval', [self::class, 'update_waybillApproval']);
         add_action('admin_post_nopriv_update_WaybillApproval', [self::class, 'update_waybillApproval']);
+        add_action('admin_post_assign_waybill_to_delivery', [self::class, 'assign_waybill_to_delivery']);
+        add_action('admin_post_nopriv_assign_waybill_to_delivery', [self::class, 'assign_waybill_to_delivery']);
         // For JS fallback (POST without AJAX)
         add_action('admin_post_waybillQuoteStatus_update', [self::class, 'waybillQuoteStatus_update']);
         add_action('admin_post_nopriv_waybillQuoteStatus_update', [self::class, 'waybillQuoteStatus_update']);
@@ -176,6 +178,90 @@ class KIT_Waybills
             wp_redirect(add_query_arg($redirect_args, wp_get_referer()));
         } else {
             wp_redirect(add_query_arg('approval_error', '1', wp_get_referer()));
+        }
+        exit;
+    }
+
+    public static function assign_waybill_to_delivery()
+    {
+        global $wpdb;
+
+        // Check if user can assign deliveries (Admin or Manager only)
+        if (!KIT_User_Roles::can_approve()) {
+            wp_die('You do not have permission to assign waybills to deliveries.');
+        }
+
+        // Verify nonce for security
+        if (!isset($_POST['_wpnonce']) || !wp_verify_nonce($_POST['_wpnonce'], 'assign_waybill_delivery_nonce')) {
+            wp_die('Security check failed.');
+        }
+
+        $waybill_id = intval($_POST['waybill_id'] ?? 0);
+        $waybill_no = sanitize_text_field($_POST['waybill_no'] ?? '');
+        $delivery_id = intval($_POST['delivery_id'] ?? 0);
+        $assigned_by = get_current_user_id();
+
+        if (!$waybill_id || !$delivery_id) {
+            wp_redirect(add_query_arg('assignment_error', '1', wp_get_referer()));
+            exit;
+        }
+
+        $assignment_table = $wpdb->prefix . 'kit_waybill_delivery_assignments';
+        $waybill_table = $wpdb->prefix . 'kit_waybills';
+        $delivery_table = $wpdb->prefix . 'kit_deliveries';
+
+        // Check if waybill exists and is warehoused
+        $waybill = $wpdb->get_row($wpdb->prepare(
+            "SELECT id, waybill_no, warehouse FROM $waybill_table WHERE id = %d AND waybill_no = %s",
+            $waybill_id,
+            $waybill_no
+        ));
+
+        if (!$waybill || !$waybill->warehouse) {
+            wp_redirect(add_query_arg('assignment_error', '2', wp_get_referer()));
+            exit;
+        }
+
+        // Check if delivery exists
+        $delivery = $wpdb->get_row($wpdb->prepare(
+            "SELECT delivery_id FROM $delivery_table WHERE delivery_id = %d",
+            $delivery_id
+        ));
+
+        if (!$delivery) {
+            wp_redirect(add_query_arg('assignment_error', '3', wp_get_referer()));
+            exit;
+        }
+
+        // Check if waybill is already assigned
+        $existing_assignment = $wpdb->get_row($wpdb->prepare(
+            "SELECT id FROM $assignment_table WHERE waybill_id = %d",
+            $waybill_id
+        ));
+
+        if ($existing_assignment) {
+            wp_redirect(add_query_arg('assignment_error', '4', wp_get_referer()));
+            exit;
+        }
+
+        // Create the assignment
+        $inserted = $wpdb->insert(
+            $assignment_table,
+            [
+                'waybill_id' => $waybill_id,
+                'delivery_id' => $delivery_id,
+                'assigned_by' => $assigned_by,
+                'status' => 'assigned'
+            ],
+            ['%d', '%d', '%d', '%s']
+        );
+
+        if ($inserted !== false) {
+            error_log("Waybill {$waybill_no} assigned to delivery {$delivery_id} by user {$assigned_by}");
+            wp_redirect(add_query_arg('assignment_success', '1', wp_get_referer()));
+        } else {
+            error_log("Failed to assign waybill {$waybill_no} to delivery {$delivery_id}: " . $wpdb->last_error);
+            wp_redirect(add_query_arg('assignment_error', '5', wp_get_referer()));
         }
         exit;
     }

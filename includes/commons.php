@@ -468,6 +468,152 @@ class KIT_Commons
                 return ob_get_clean();
             }
 
+            public static function warehouseDeliveryAssignment($waybill_id, $waybill_no, $destination_country, $destination_city, $current_status)
+            {
+                // Check if user can assign deliveries (Admin or Manager only)
+                $can_assign = KIT_User_Roles::can_approve(); // Using same permission as approval
+                
+                if (!$can_assign) {
+                    return self::statusBadge($current_status, 'px-6 py-2 text-sm');
+                }
+
+                // Check if waybill is already assigned to a delivery
+                global $wpdb;
+                $delivery_table = $wpdb->prefix . 'kit_deliveries';
+                $assignment_table = $wpdb->prefix . 'kit_waybill_delivery_assignments';
+                
+                $assigned_delivery = $wpdb->get_row($wpdb->prepare(
+                    "SELECT d.delivery_id, d.delivery_name, d.destination_country, d.destination_city 
+                     FROM $assignment_table wda 
+                     JOIN $delivery_table d ON wda.delivery_id = d.delivery_id 
+                     WHERE wda.waybill_id = %d",
+                    $waybill_id
+                ));
+
+                // If already assigned, show the assignment info
+                if ($assigned_delivery) {
+                    ob_start(); ?>
+                    <div class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800 border border-blue-300">
+                        <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"/>
+                            <path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1V8a1 1 0 00-1-1h-3z"/>
+                        </svg>
+                        Assigned to: <?= esc_html($assigned_delivery->delivery_name) ?>
+                    </div>
+                    <?php
+                    return ob_get_clean();
+                }
+
+                // Get available deliveries going to the same destination
+                $available_deliveries = $wpdb->get_results($wpdb->prepare(
+                    "SELECT delivery_id, delivery_name, destination_country, destination_city, dispatch_date 
+                     FROM $delivery_table 
+                     WHERE destination_country = %s AND destination_city = %s 
+                     AND delivery_id NOT IN (
+                         SELECT delivery_id FROM $assignment_table WHERE waybill_id != %d
+                     )
+                     AND dispatch_date >= CURDATE()
+                     ORDER BY dispatch_date ASC",
+                    $destination_country,
+                    $destination_city,
+                    $waybill_id
+                ));
+
+                ob_start(); ?>
+                <form method="POST" action="<?= esc_url(admin_url('admin-post.php')) ?>" id="delivery-assignment-form">
+                    <input type="hidden" name="action" value="assign_waybill_to_delivery">
+                    <input type="hidden" name="waybill_id" value="<?= esc_attr($waybill_id) ?>">
+                    <input type="hidden" name="waybill_no" value="<?= esc_attr($waybill_no) ?>">
+                    <?php wp_nonce_field('assign_waybill_delivery_nonce'); ?>
+                    
+                    <div class="relative inline-block text-left">
+                        <div>
+                            <button type="button" 
+                                    id="delivery-assignment-button-<?= esc_attr($waybill_id) ?>" 
+                                    onclick="toggleDeliveryAssignment('<?= esc_attr($waybill_id) ?>')"
+                                    class="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md border shadow-sm bg-white font-medium bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500">
+                                <span>Assign to Delivery</span>
+                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div class="hidden origin-top-right absolute right-0 mt-2 w-80 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50"
+                            id="delivery-assignment-dropdown-<?= esc_attr($waybill_id) ?>">
+                            <div class="py-1" role="menu" aria-orientation="vertical">
+                                <?php if (empty($available_deliveries)): ?>
+                                    <div class="px-4 py-2 text-sm text-gray-500">
+                                        No deliveries available to <?= esc_html($destination_city) ?>, <?= esc_html($destination_country) ?>
+                                    </div>
+                                <?php else: ?>
+                                    <?php foreach ($available_deliveries as $delivery): ?>
+                                        <button type="submit" 
+                                                name="delivery_id" 
+                                                value="<?= esc_attr($delivery->delivery_id) ?>"
+                                                class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                                                role="menuitem">
+                                            <div class="font-medium"><?= esc_html($delivery->delivery_name) ?></div>
+                                            <div class="text-xs text-gray-500">
+                                                <?= esc_html($delivery->destination_city) ?>, <?= esc_html($delivery->destination_country) ?>
+                                                <br>Dispatch: <?= esc_html(date('M j, Y', strtotime($delivery->dispatch_date))) ?>
+                                            </div>
+                                        </button>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+
+                <script>
+                if (typeof window.deliveryAssignmentInitialized === 'undefined') {
+                    window.deliveryAssignmentInitialized = true;
+                    
+                    function toggleDeliveryAssignment(waybillId) {
+                        console.log('toggleDeliveryAssignment called with ID:', waybillId);
+                        
+                        const dropdown = document.getElementById('delivery-assignment-dropdown-' + waybillId);
+                        const button = document.getElementById('delivery-assignment-button-' + waybillId);
+                        
+                        console.log('Delivery dropdown element:', dropdown);
+                        console.log('Delivery button element:', button);
+
+                        if (!dropdown || !button) {
+                            console.error('Delivery dropdown or button not found!');
+                            return;
+                        }
+
+                        // Close all other delivery assignment dropdowns
+                        document.querySelectorAll('[id^="delivery-assignment-dropdown-"]').forEach(d => {
+                            if (d.id !== 'delivery-assignment-dropdown-' + waybillId) {
+                                d.classList.add('hidden');
+                            }
+                        });
+
+                        // Toggle current dropdown
+                        dropdown.classList.toggle('hidden');
+                        console.log('Delivery dropdown toggled, hidden class:', dropdown.classList.contains('hidden'));
+                    }
+                    
+                    // Make function globally available
+                    window.toggleDeliveryAssignment = toggleDeliveryAssignment;
+                    
+                    // Close dropdowns when clicking outside
+                    document.addEventListener('click', function(e) {
+                        if (!e.target.closest('[id^="delivery-assignment-dropdown-"]') && 
+                            !e.target.closest('[id^="delivery-assignment-button-"]')) {
+                            document.querySelectorAll('[id^="delivery-assignment-dropdown-"]').forEach(d => {
+                                d.classList.add('hidden');
+                            });
+                        }
+                    });
+                }
+                </script>
+                <?php
+                return ob_get_clean();
+            }
+
             public static function tick()
             {
     ?>
@@ -1811,6 +1957,50 @@ class KIT_Commons
                 return self::renderButton($atts['text'] ?? $content, $type, 'md', $options);
             }
 
+            /**
+             * Enqueue component scripts and styles
+             * Call this function at the top of any component that needs JavaScript
+             */
+            public static function enqueueComponentScripts($scripts = ['kitscript', 'waybill-pagination'])
+            {
+                // Always enqueue components.js first for utilities
+                if (!wp_script_is('components', 'enqueued') && !wp_script_is('components', 'done')) {
+                    wp_enqueue_script('components', COURIER_FINANCE_PLUGIN_URL . 'js/components.js', ['jquery'], '1.0', true);
+                }
+
+                // Only enqueue if not already enqueued
+                foreach ($scripts as $script) {
+                    if (!wp_script_is($script, 'enqueued') && !wp_script_is($script, 'done')) {
+                        switch ($script) {
+                            case 'kitscript':
+                                wp_enqueue_script('kitscript', COURIER_FINANCE_PLUGIN_URL . 'js/kitscript.js', ['jquery', 'components'], '1.0', true);
+                                break;
+                            case 'waybill-pagination':
+                                wp_enqueue_script('waybill-pagination', COURIER_FINANCE_PLUGIN_URL . 'js/waybill-pagination.js', ['jquery', 'components'], '1.0', true);
+                                break;
+                        }
+                    }
+                }
+
+                // Localize scripts if not already done
+                if (!wp_script_is('kitscript', 'done') && !wp_script_is('kitscript', 'enqueued')) {
+                    $localize_data = [
+                        'ajax_url' => admin_url('admin-ajax.php'),
+                        'admin_url' => admin_url(),
+                        'nonces' => [
+                            'add'    => wp_create_nonce('add_waybill_nonce'),
+                            'delete' => wp_create_nonce('delete_waybill_nonce'),
+                            'update' => wp_create_nonce('update_waybill_nonce'),
+                            'get_waybills_nonce' => wp_create_nonce('get_waybills_nonce'),
+                            'get_cities_nonce'   => wp_create_nonce('get_cities_nonce'),
+                            'kit_waybill_nonce'  => wp_create_nonce('kit_waybill_nonce'),
+                            'pdf_nonce'          => wp_create_nonce('pdf_nonce'),
+                        ],
+                    ];
+                    wp_localize_script('kitscript', 'myPluginAjax', $localize_data);
+                }
+            }
+
             // Future: modal() method
             public static function waybillItemsControl($options = [])
             {
@@ -1963,9 +2153,9 @@ class KIT_Commons
                                         <td class="px-2 py-1 text-center">
                                             <?php echo self::renderButton('', 'danger', 'sm', [
                                                 'type' => 'button',
-                                                'classes' => 'remove-item p-5 rounded',
+                                                'classes' => 'remove-item bg-red-500 hover:bg-red-600 text-white p-2 rounded shadow-md',
                                                 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>',
-                                                'gradient' => true
+                                                'gradient' => false
                                             ]); ?>
                                         </td>
                                     </tr>

@@ -450,13 +450,8 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
                                     }
                                 }
                             } else if (initialMass > 0 && initialRate <= 0 && !directionId) {
-                                console.warn('Cannot auto-trigger rate fetch: direction_id is missing');
-                                console.log('Available elements:', {
-                                    directionIdElement: document.getElementById('direction_id'),
-                                    directionIdValue: directionId,
-                                    originCountryIdElement: document.getElementById('countrydestination_id'),
-                                    originCountryIdValue: originCountryId
-                                });
+                                // Silently skip rate fetch if direction_id is missing - this is normal behavior
+                                console.log('Rate fetch skipped: direction_id not available yet');
                             }
                         }
                         

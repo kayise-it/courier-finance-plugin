@@ -2,6 +2,9 @@
 <?php
 // Include user roles for permission checking
 require_once plugin_dir_path(__FILE__) . '../user-roles.php';
+
+// Enqueue required scripts for this component
+KIT_Commons::enqueueComponentScripts(['kitscript']);
 ?>
 <div class="">
     <div class="grid grid-cols-3 gap-4 mb-4">
@@ -141,8 +144,8 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
         }
 
         function fetchVolumeRate(volume) {
-            // Show spinner on all dimension inputs
-            elements.inputs.forEach(input => SpinnerManager.show(input));
+            // Show spinner on all dimension inputs using ComponentUtils
+            elements.inputs.forEach(input => ComponentUtils.showSpinner(input));
 
             // Abort previous request if it exists
             if (ajaxAbortController) {
@@ -150,41 +153,25 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
             }
             ajaxAbortController = new AbortController();
 
-            // Prepare form data
-            const formData = new FormData();
-            formData.append('action', 'handle_get_price_per_m3');
-            formData.append('origin_country_id', elements.countrySelect?.value || '');
-            formData.append('total_volume_m3', volume);
-            formData.append('nonce', myPluginAjax.nonces.get_waybills_nonce);
-
-            fetch(myPluginAjax.ajax_url, {
-                    method: 'POST',
-                    signal: ajaxAbortController.signal,
-                    body: formData
-                })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    if (data.success) {
-                        const rate = parseFloat(data.data.rate_per_m3);
-                        baseRate = rate;
-                        lastBaseRate = rate; // always update lastBaseRate to latest fetched
-                        updateVolumeChargeUI(volume, rate);
-                    } else {
-                        console.error('Server reported error:', data.data.message);
-                        clearForm();
-                    }
-                })
-                .catch(error => {
-                    if (error.name !== 'AbortError') {
-                        console.error('Fetch error:', error);
-                        clearForm();
-                    }
-                });
+            // Use ComponentUtils for AJAX call
+            ComponentUtils.ajaxCall('handle_get_price_per_m3', {
+                'origin_country_id': elements.countrySelect?.value || '',
+                'total_volume_m3': volume
+            }, function(data) {
+                // Handle response
+                if (data.success) {
+                    const rate = parseFloat(data.data.rate_per_m3);
+                    baseRate = rate;
+                    lastBaseRate = rate;
+                    updateVolumeChargeUI(volume, rate);
+                } else {
+                    console.error('Server reported error:', data.data.message);
+                    clearForm();
+                }
+                
+                // Hide spinners
+                elements.inputs.forEach(input => ComponentUtils.hideSpinner(input));
+            });
         }
 
         function updateVolumeChargeUI(volume, fetchedRate) {

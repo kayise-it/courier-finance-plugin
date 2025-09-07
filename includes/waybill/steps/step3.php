@@ -34,6 +34,7 @@ global $waybill_items;
         'remove_btn_class' => 'bg-red-500 text-white px-3 py-2 rounded hover:bg-red-600 transition-colors duration-200',
         'add_btn_class' => 'bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors duration-200',
         'specialClass' => '!text-[10px]',
+        'style' => 'slim'
     ]);
     ?>
 
@@ -74,7 +75,7 @@ global $waybill_items;
         // Function to count waybill items
         function countWaybillItems() {
             if (!waybillItemsContainer) return 0;
-            const itemRows = waybillItemsContainer.querySelectorAll('.waybill-item-row');
+            const itemRows = waybillItemsContainer.querySelectorAll('.waybill-item');
             return itemRows.length;
         }
 
