@@ -9,6 +9,62 @@ class KIT_Commons
         // Register AJAX handlers for status updates
         add_action('wp_ajax_update_delivery_status', [self::class, 'ajax_update_delivery_status']);
         add_action('wp_ajax_update_waybill_status', [self::class, 'ajax_update_waybill_status']);
+
+        // Enqueue DataTables assets on relevant admin screens
+        add_action('admin_enqueue_scripts', [self::class, 'enqueue_datatables_assets']);
+    }
+
+    public static function enqueue_datatables_assets()
+    {
+        if (!function_exists('get_current_screen')) {
+            return;
+        }
+        $screen = get_current_screen();
+        if (!$screen || empty($screen->id)) {
+            return;
+        }
+        // Only load on our plugin pages to avoid conflicts
+        if (strpos($screen->id, '08600') === false) {
+            return;
+        }
+
+        // Ensure jQuery is available
+        if (function_exists('wp_enqueue_script')) {
+            wp_enqueue_script('jquery');
+        }
+
+        // Load DataTables only once
+        $style_loaded = function_exists('wp_style_is') ? wp_style_is('datatables-css', 'enqueued') : false;
+        if (function_exists('wp_enqueue_style') && ! $style_loaded) {
+            wp_enqueue_style('datatables-css', 'https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css', [], '1.13.6');
+        }
+        $script_loaded = function_exists('wp_script_is') ? wp_script_is('datatables-js', 'enqueued') : false;
+        if (function_exists('wp_enqueue_script') && ! $script_loaded) {
+            wp_enqueue_script('datatables-js', 'https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js', ['jquery'], '1.13.6', true);
+        }
+    }
+
+    /**
+     * Only allow specific admins to view financials: usernames thando, mel, patricia
+     */
+    public static function can_view_financials()
+    {
+        if (!function_exists('wp_get_current_user')) {
+            return true; // default allow if WP not fully loaded
+        }
+        $user = wp_get_current_user();
+        if (!$user || empty($user->user_login)) {
+            return false;
+        }
+        $allowed = ['thando', 'mel', 'patricia'];
+        if (in_array(strtolower($user->user_login), $allowed, true)) {
+            return true;
+        }
+        // Fallback: admins with manage_options
+        if (function_exists('current_user_can') && current_user_can('manage_options')) {
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -477,47 +533,37 @@ class KIT_Commons
                     return self::statusBadge($current_status, 'px-6 py-2 text-sm');
                 }
 
-                // Check if waybill is already assigned to a delivery
-                global $wpdb;
-                $delivery_table = $wpdb->prefix . 'kit_deliveries';
-                $assignment_table = $wpdb->prefix . 'kit_waybill_delivery_assignments';
-                
-                $assigned_delivery = $wpdb->get_row($wpdb->prepare(
-                    "SELECT d.delivery_id, d.delivery_name, d.destination_country, d.destination_city 
-                     FROM $assignment_table wda 
-                     JOIN $delivery_table d ON wda.delivery_id = d.delivery_id 
-                     WHERE wda.waybill_id = %d",
-                    $waybill_id
-                ));
+                // Include warehouse functions
+                require_once plugin_dir_path(__FILE__) . 'warehouse/warehouse-functions.php';
 
-                // If already assigned, show the assignment info
-                if ($assigned_delivery) {
+                // Check if waybill has warehouse items
+                $warehouse_items = KIT_Warehouse::getWarehouseItems($waybill_id);
+                
+                if (empty($warehouse_items)) {
+                    return self::statusBadge($current_status, 'px-6 py-2 text-sm');
+                }
+
+                // Check if any warehouse items are already assigned
+                $assigned_items = array_filter($warehouse_items, function($item) {
+                    return $item->status === 'assigned' || $item->status === 'shipped' || $item->status === 'delivered';
+                });
+
+                if (!empty($assigned_items)) {
+                    $first_assigned = reset($assigned_items);
                     ob_start(); ?>
                     <div class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800 border border-blue-300">
                         <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
                             <path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"/>
                             <path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1V8a1 1 0 00-1-1h-3z"/>
                         </svg>
-                        Assigned to: <?= esc_html($assigned_delivery->delivery_name) ?>
+                        Assigned to: <?= esc_html($first_assigned->delivery_reference) ?>
                     </div>
                     <?php
                     return ob_get_clean();
                 }
 
                 // Get available deliveries going to the same destination
-                $available_deliveries = $wpdb->get_results($wpdb->prepare(
-                    "SELECT delivery_id, delivery_name, destination_country, destination_city, dispatch_date 
-                     FROM $delivery_table 
-                     WHERE destination_country = %s AND destination_city = %s 
-                     AND delivery_id NOT IN (
-                         SELECT delivery_id FROM $assignment_table WHERE waybill_id != %d
-                     )
-                     AND dispatch_date >= CURDATE()
-                     ORDER BY dispatch_date ASC",
-                    $destination_country,
-                    $destination_city,
-                    $waybill_id
-                ));
+                $available_deliveries = KIT_Warehouse::getAvailableDeliveries($destination_country, $destination_city);
 
                 ob_start(); ?>
                 <form method="POST" action="<?= esc_url(admin_url('admin-post.php')) ?>" id="delivery-assignment-form">
@@ -1009,10 +1055,7 @@ class KIT_Commons
             public static function sumShowcase($atts)
             {
 
-                echo '<pre>';
-                print_r($atts);
-                echo '</pre>';
-                exit();
+                // Debug removed in production
 
     ?>
         <div class="flex flex-col">
@@ -1572,7 +1615,6 @@ class KIT_Commons
                 ];
 
                 $options = array_merge($defaults, $options);
-
                 // Get base classes
                 $baseClasses = self::buttonClass();
 
@@ -1622,20 +1664,42 @@ class KIT_Commons
                 if ($options['disabled']) {
                     $typeClasses .= ' ' . self::buttonDisabled();
                 }
-
                 // Combine all classes
                 $allClasses = trim($baseClasses . ' ' . $typeClasses . ' ' . $options['classes']);
 
+                // Safety: if not disabled, strip any disabling utility classes that may have been passed in
+                if (empty($options['disabled']) || $options['disabled'] === false || $options['disabled'] === 'false') {
+                    $allClasses = preg_replace('/\b(opacity-50|cursor-not-allowed|pointer-events-none)\b/', '', $allClasses);
+                    $allClasses = preg_replace('/\s+/', ' ', trim($allClasses));
+                }
+
                 // Build attributes
                 $attributes = [];
-                if ($options['id']) $attributes[] = 'id="' . esc_attr($options['id']) . '"';
-                if ($options['name']) $attributes[] = 'name="' . esc_attr($options['name']) . '"';
-                if ($options['value']) $attributes[] = 'value="' . esc_attr($options['value']) . '"';
-                if ($options['onclick']) $attributes[] = 'onclick="' . esc_js($options['onclick']) . '"';
-                if ($options['disabled']) $attributes[] = 'disabled';
-                if ($options['type']) $attributes[] = 'type="' . esc_attr($options['type']) . '"';
-                if ($options['modal']) $attributes[] = 'data-modal="' . esc_attr($options['modal']) . '"';
-                if ($options['data-target']) $attributes[] = 'data-target="' . esc_attr($options['data-target']) . '"';
+                // Build attributes only if the option is set and not null/empty (except for boolean flags)
+                if (!empty($options['id'])) {
+                    $attributes[] = 'id="' . esc_attr($options['id']) . '"';
+                }
+                if (!empty($options['name'])) {
+                    $attributes[] = 'name="' . esc_attr($options['name']) . '"';
+                }
+                if (isset($options['value']) && $options['value'] !== '') {
+                    $attributes[] = 'value="' . esc_attr($options['value']) . '"';
+                }
+                if (!empty($options['onclick'])) {
+                    $attributes[] = 'onclick="' . htmlspecialchars($options['onclick'], ENT_QUOTES) . '"';
+                }
+                if (!empty($options['disabled']) && $options['disabled'] !== "false" && $options['disabled'] !== false) {
+                    $attributes[] = 'disabled';
+                }
+                if (!empty($options['type'])) {
+                    $attributes[] = 'type="' . esc_attr($options['type']) . '"';
+                }
+                if (!empty($options['modal'])) {
+                    $attributes[] = 'data-modal="' . esc_attr($options['modal']) . '"';
+                }
+                if (!empty($options['data-target'])) {
+                    $attributes[] = 'data-target="' . esc_attr($options['data-target']) . '"';
+                }
 
                 $attributesStr = implode(' ', $attributes);
 
@@ -1669,6 +1733,88 @@ class KIT_Commons
                     return '<button class="' . $allClasses . '" ' . $attributesStr . '>' . $content . '</button>';
                 }
             }
+
+            /**
+             * Generate a pretty heading with icon and customizable text
+             * 
+             * @param array $args {
+             *     @type string $icon     SVG icon code (free version)
+             *     @type string $words    Heading text content
+             *     @type string $size     Heading size: 'sm', 'md', 'lg', 'xl', '2xl' (default: '2xl')
+             *     @type string $color    Text color: 'blue', 'gray', 'green', 'red', 'purple' (default: 'blue')
+             *     @type string $classes  Additional CSS classes
+             *     @type string $tag      HTML tag: 'h1', 'h2', 'h3', 'h4', 'h5', 'h6' (default: 'h2')
+             * }
+             * @return string HTML heading element
+             */
+            public static function prettyHeading($args = [])
+            {
+                $defaults = [
+                    'icon' => '',
+                    'words' => '',
+                    'size' => '2xl',
+                    'color' => 'black',
+                    'classes' => '',
+                    'tag' => 'h2'
+                ];
+                
+                $args = array_merge($defaults, $args);
+                
+                // Validate tag
+                $validTags = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+                $tag = in_array($args['tag'], $validTags) ? $args['tag'] : 'h2';
+                
+                // Size classes
+                $sizeClasses = [
+                    'sm' => 'text-lg',
+                    'md' => 'text-xl', 
+                    'lg' => 'text-2xl',
+                    'xl' => 'text-3xl',
+                    '2xl' => 'text-2xl'
+                ];
+                $sizeClass = isset($sizeClasses[$args['size']]) ? $sizeClasses[$args['size']] : $sizeClasses['2xl'];
+                
+                // Color classes
+                $colorClasses = [
+                    'black' => 'text-black',
+                    'blue' => 'text-blue-700',
+                    'gray' => 'text-gray-700',
+                    'green' => 'text-green-700',
+                    'red' => 'text-red-700',
+                    'purple' => 'text-purple-700'
+                ];
+                $colorClass = isset($colorClasses[$args['color']]) ? $colorClasses[$args['color']] : $colorClasses['blue'];
+                
+                // Icon color (slightly lighter than text)
+                $iconColorClasses = [
+                    'blue' => 'text-blue-500',
+                    'gray' => 'text-gray-500',
+                    'green' => 'text-green-500',
+                    'red' => 'text-red-500',
+                    'purple' => 'text-purple-500'
+                ];
+                $iconColorClass = isset($iconColorClasses[$args['color']]) ? $iconColorClasses[$args['color']] : $iconColorClasses['blue'];
+                
+                // Build classes
+                $allClasses = trim("font-bold {$sizeClass} {$colorClass} mb-6 flex items-center gap-2 {$args['classes']}");
+                
+                // Build icon HTML if provided
+                $iconHtml = '';
+                if (!empty($args['icon'])) {
+                    $iconHtml = '<svg class="w-6 h-6 ' . esc_attr($iconColorClass) . '" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">' . 
+                               $args['icon'] . 
+                               '</svg>';
+                }
+                
+                // Build the heading
+                $heading = '<' . $tag . ' class="' . esc_attr($allClasses) . '">' . 
+                          $iconHtml . 
+                          esc_html($args['words']) . 
+                          '</' . $tag . '>';
+                
+                return $heading;
+            }
+
             public static function labelClass()
             {
                 return 'block font-bold text-gray-700 mb-1';
@@ -1984,9 +2130,16 @@ class KIT_Commons
 
                 // Localize scripts if not already done
                 if (!wp_script_is('kitscript', 'done') && !wp_script_is('kitscript', 'enqueued')) {
+                    // Preload country->cities map for instant dropdown updates
+                    if (!class_exists('KIT_Deliveries')) {
+                        require_once COURIER_FINANCE_PLUGIN_PATH . 'includes/deliveries/deliveries-functions.php';
+                    }
+                    $country_cities_map = method_exists('KIT_Deliveries', 'getCountryCitiesMap') ? KIT_Deliveries::getCountryCitiesMap() : [];
+
                     $localize_data = [
                         'ajax_url' => admin_url('admin-ajax.php'),
                         'admin_url' => admin_url(),
+                        'countryCities' => $country_cities_map,
                         'nonces' => [
                             'add'    => wp_create_nonce('add_waybill_nonce'),
                             'delete' => wp_create_nonce('delete_waybill_nonce'),
@@ -2024,7 +2177,10 @@ class KIT_Commons
                 <div class="mb-6" id="step-waybill-items">
                     <!-- Slim Header -->
                     <div class="flex items-center justify-between mb-4">
-                        <h2 class="text-lg font-semibold text-gray-900">Waybill Items</h2>
+                    <?= KIT_Commons::prettyHeading([
+                    'icon' => '<path d="M16 7a4 4 0 1 0-8 0v2a4 4 0 0 0 8 0V7z" /><path d="M12 19v-2m0 0a7 7 0 0 1-7-7V7a7 7 0 0 1 14 0v3a7 7 0 0 1-7 7z" />',
+                    'words' => 'Waybill Items'
+                ]) ?>
                         <?php echo self::renderButton('Add Item', 'primary', 'sm', [
                             'id' => $options['button_id'],
                             'type' => 'button',
@@ -2108,6 +2264,12 @@ class KIT_Commons
                             letter-spacing: 0.05em;
                             border-bottom: 1px solid #e5e7eb;
                         }
+
+                        /* Right-align numeric columns for readability */
+                        .th-2, .td-2,
+                        .th-3, .td-3,
+                        .th-4, .td-4 { text-align: right; }
+                        .td-2 input, .td-3 input { text-align: right; }
                     </style>
 
                     <!-- Slim Table -->
@@ -2170,6 +2332,13 @@ class KIT_Commons
                                     </tr>
                                 <?php endif; ?>
                             </tbody>
+                            <tfoot>
+                                <tr class="bg-gray-50">
+                                    <td class="px-2 py-2" colspan="3" style="border-top: 1px solid #e5e7eb; text-align:right; font-weight:600; color:#374151;">Subtotal</td>
+                                    <td class="px-2 py-2 text-right" style="border-top: 1px solid #e5e7eb; font-weight:600; color:#111827;" id="slim-subtotal">R 0.00</td>
+                                    <td style="border-top: 1px solid #e5e7eb;"></td>
+                                </tr>
+                            </tfoot>
                         </table>
                     </div>
                 </div>
@@ -2237,6 +2406,9 @@ class KIT_Commons
                                                 min="0"
                                                 class="w-full pl-8 pr-4 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200" />
                                         </div>
+                                        <div class="mt-1 text-right text-sm text-gray-700">
+                                            Total: <span class="row-total">R <?php echo number_format((($item['quantity'] ?? 1) * ($item['unit_price'] ?? 0)), 2); ?></span>
+                                        </div>
                                     </div>
 
                                     <!-- Remove Button -->
@@ -2262,6 +2434,13 @@ class KIT_Commons
                         </div>
                         <h3 class="text-lg font-medium text-gray-900 mb-2">No items added yet</h3>
                         <p class="text-gray-600">Click "Add New Item" to start building your waybill</p>
+                    </div>
+
+                    <!-- Subtotal summary (modern style) -->
+                    <div id="modern-summary" class="<?php echo empty($options['existing_items']) ? 'hidden' : 'flex'; ?> justify-end mt-4">
+                        <div class="bg-white border border-gray-200 rounded-xl px-4 py-2 text-sm font-semibold text-gray-800 shadow-sm">
+                            Subtotal: <span id="modern-subtotal">R 0.00</span>
+                        </div>
                     </div>
                 </div>
             <?php endif; ?>
@@ -2375,12 +2554,15 @@ class KIT_Commons
                         updateEmptyState();
                         <?php if ($options['style'] === 'slim'): ?>
                             updateSlimTableTotals();
+                        <?php else: ?>
+                            updateModernTotals();
                         <?php endif; ?>
                     });
 
                     container.addEventListener('click', function(e) {
-                        if (e.target.classList.contains('remove-item')) {
-                            const row = e.target.closest('.waybill-item');
+                        const btn = e.target.closest('.remove-item');
+                        if (btn) {
+                            const row = btn.closest('.waybill-item');
                             if (row) {
                                 row.remove();
                             }
@@ -2388,6 +2570,8 @@ class KIT_Commons
                             updateEmptyState();
                             <?php if ($options['style'] === 'slim'): ?>
                                 updateSlimTableTotals();
+                            <?php else: ?>
+                                updateModernTotals();
                             <?php endif; ?>
                         }
                     });
@@ -2395,82 +2579,56 @@ class KIT_Commons
                     // Function to update empty state visibility
                     function updateEmptyState() {
                         const items = container.querySelectorAll('.waybill-item');
+                        let emptyStateElem;
                         <?php if ($options['style'] === 'slim'): ?>
                             // For slim table, look for the empty state row
-                            const emptyState = document.getElementById('empty-state-slim') || container.querySelector('.empty-state');
+                            emptyStateElem = document.getElementById('empty-state-slim') || container.querySelector('.empty-state');
                         <?php else: ?>
                             // For modern version, look for the empty state div
-                            const emptyState = document.getElementById('empty-state');
+                            emptyStateElem = document.getElementById('empty-state');
                         <?php endif; ?>
 
-                        if (emptyState) {
+                        if (emptyStateElem) {
                             if (items.length === 0) {
-                                emptyState.classList.remove('hidden');
-                                emptyState.style.display = '';
+                                emptyStateElem.classList.remove('hidden');
+                                emptyStateElem.style.display = '';
                             } else {
-                                emptyState.classList.add('hidden');
-                                emptyState.style.display = 'none';
+                                emptyStateElem.classList.add('hidden');
+                                emptyStateElem.style.display = 'none';
                             }
+                        }
+                        // Toggle subtotal visibility based on rows
+                        var subtotalCell = document.getElementById('slim-subtotal');
+                        if (subtotalCell && subtotalCell.closest('tfoot')) {
+                            subtotalCell.closest('tfoot').style.display = (items.length === 0) ? 'none' : '';
+                        }
+                        // Toggle modern summary
+                        var modernSummary = document.getElementById('modern-summary');
+                        if (modernSummary) {
+                            modernSummary.style.display = (items.length === 0) ? 'none' : '';
                         }
                     }
 
                     // Initialize empty state
                     updateEmptyState();
 
-                    // Toggle Next button active state when items change
-                    function getNextBtn() {
-                        // Support multiple markup options
-                        return document.querySelector('#nextStepButton, .next-step, button[data-next-step], a[data-next-step]');
-                    }
-
-                    function validateItems() {
-                        const rows = container.querySelectorAll('.waybill-item');
-                        let valid = false;
-                        rows.forEach(row => {
-                            const name = row.querySelector('input[name*="[item_name]"]');
-                            const qty = row.querySelector('input[name*="[quantity]"]');
-                            const price = row.querySelector('input[name*="[unit_price]"]');
-                            const q = parseFloat((qty && qty.value) || '0');
-                            const p = parseFloat((price && price.value) || '0');
-                            if (name && name.value.trim() !== '' && q > 0 && p >= 0) {
-                                valid = true;
-                            }
-                        });
-
-                        const btn = getNextBtn();
-                        if (!btn) return; // nothing to toggle
-
-                        if (valid) {
-                            btn.classList.remove('opacity-50', 'opacity-40', 'cursor-not-allowed', 'pointer-events-none', 'btn-disabled', 'bg-gray-300', 'bg-blue-400');
-                            btn.classList.add('bg-blue-600');
-                            btn.removeAttribute('disabled');
-                            btn.setAttribute('aria-disabled', 'false');
-                        } else {
-                            btn.classList.add('opacity-50', 'cursor-not-allowed', 'pointer-events-none', 'bg-blue-400');
-                            btn.classList.remove('bg-blue-600');
-                            btn.setAttribute('disabled', 'disabled');
-                            btn.setAttribute('aria-disabled', 'true');
-                        }
-                    }
-
-                    // Re-validate on any input change within the container
+                    // Note: Button state is now controlled solely by server-side logic.
+                    // We intentionally do not auto-disable/enable buttons here.
+                    // Recalculate slim totals on input changes (no button toggling).
                     container.addEventListener('input', function(e) {
-                        if (e.target.matches('input')) {
-                            validateItems();
-                            <?php if ($options['style'] === 'slim'): ?>
-                                updateSlimTableTotals();
-                            <?php endif; ?>
-                        }
+                        <?php if ($options['style'] === 'slim'): ?>
+                            updateSlimTableTotals();
+                        <?php else: ?>
+                            updateModernTotals();
+                        <?php endif; ?>
                     });
-
-                    // Initial state
-                    validateItems();
                     <?php if ($options['style'] === 'slim'): ?>
                         updateSlimTableTotals();
 
                         // Function to update totals in slim table
                         function updateSlimTableTotals() {
                             const rows = container.querySelectorAll('.waybill-item');
+                            let subtotal = 0;
                             rows.forEach(row => {
                                 const quantityInput = row.querySelector('input[name*="[quantity]"]');
                                 const priceInput = row.querySelector('input[name*="[unit_price]"]');
@@ -2480,9 +2638,39 @@ class KIT_Commons
                                     const quantity = parseFloat(quantityInput.value) || 0;
                                     const price = parseFloat(priceInput.value) || 0;
                                     const total = quantity * price;
+                                    subtotal += total;
                                     totalCell.textContent = `R ${total.toFixed(2)}`;
                                 }
                             });
+                            const subtotalCell = document.getElementById('slim-subtotal');
+                            if (subtotalCell) {
+                                subtotalCell.textContent = `R ${subtotal.toFixed(2)}`;
+                            }
+                        }
+                    <?php endif; ?>
+                    <?php if ($options['style'] !== 'slim'): ?>
+                        updateModernTotals();
+
+                        function updateModernTotals() {
+                            const rows = container.querySelectorAll('.waybill-item');
+                            let subtotal = 0;
+                            rows.forEach(row => {
+                                const quantityInput = row.querySelector('input[name*="[quantity]"]');
+                                const priceInput = row.querySelector('input[name*="[unit_price]"]');
+                                const totalSpan = row.querySelector('.row-total');
+
+                                if (quantityInput && priceInput && totalSpan) {
+                                    const quantity = parseFloat(quantityInput.value) || 0;
+                                    const price = parseFloat(priceInput.value) || 0;
+                                    const total = quantity * price;
+                                    subtotal += total;
+                                    totalSpan.textContent = `R ${total.toFixed(2)}`;
+                                }
+                            });
+                            const modernSubtotal = document.getElementById('modern-subtotal');
+                            if (modernSubtotal) {
+                                modernSubtotal.textContent = `R ${subtotal.toFixed(2)}`;
+                            }
                         }
                     <?php endif; ?>
                 });
@@ -2511,7 +2699,7 @@ class KIT_Commons
                 $labelClass = self::labelClass();
                 $selectClass = self::selectClass();
                 $html = '<label for="' . esc_attr($atts['id']) . '" class="' . esc_attr($labelClass) . '">' . esc_html($atts['label']) . '</label>';
-                $html .= '<select name="' . esc_attr($atts['name']) . '" id="' . esc_attr($atts['id']) . '" class="' . esc_attr($selectClass) . '">';
+                $html .= '<select name="' . esc_attr($atts['name']) . '" id="' . esc_attr($atts['id']) . '" class="' . esc_attr($selectClass) . '" autocomplete="off">';
                 $html .= '<option value="new"' . selected($selectedCustomerId, 'new', false) . '>Add New Customer</option>';
                 if (!empty($atts['customer'])) {
                     foreach ($atts['customer'] as $customer) {
@@ -2524,6 +2712,8 @@ class KIT_Commons
                         $html .= ' data-address="' . esc_attr($customer->address) . '"';
                         $html .= ' data-email="' . esc_attr($customer->email_address) . '"';
                         $html .= ' data-company-name="' . esc_attr($customer->company_name) . '"';
+                        $html .= ' data-country-id="' . esc_attr($customer->country_id ?? '') . '"';
+                        $html .= ' data-city-id="' . esc_attr($customer->city_id ?? '') . '"';
                         $html .= '>';
                         $html .= esc_html($customer->name . ' ' . $customer->surname); // Optional: visible name
                         $html .= '</option>';
@@ -2585,6 +2775,7 @@ class KIT_Commons
             {
                 // Generate unique table ID for search functionality
                 $table_id = $options['id'] ?? 'versatile-table-' . uniqid();
+                $use_datatables = isset($options['use_datatables']) ? (bool)$options['use_datatables'] : true;
 
                 // Handle bulk actions
                 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['bulk_action'])) {
@@ -2596,11 +2787,19 @@ class KIT_Commons
                         foreach ($selectedRows as $row) {
                             if ($options['role'] === 'delivery') {
                                 KIT_Deliveries::delete_delivery($row);
-                                wp_redirect(admin_url('admin.php?page=kit-deliveries&per_page=' . $_GET['per_page']));
+                                $redir = admin_url('admin.php?page=kit-deliveries&per_page=' . (isset($_GET['per_page']) ? intval($_GET['per_page']) : 10) . '&deleted=1');
+                                if (!headers_sent()) { wp_safe_redirect($redir); exit; }
+                                echo '<script>window.location.replace(' . json_encode($redir) . ');</script>';
+                                echo '<noscript><meta http-equiv="refresh" content="0;url=' . esc_url($redir) . '"></noscript>';
+                                exit;
                             }
                             if ($options['role'] === 'waybills') {
                                 KIT_Waybills::delete_waybill($row);
-                                wp_redirect(admin_url('admin.php?page=08600-Waybill&per_page=' . $_GET['per_page']));
+                                $redir2 = admin_url('admin.php?page=08600-Waybill&per_page=' . (isset($_GET['per_page']) ? intval($_GET['per_page']) : 10) . '&deleted=1');
+                                if (!headers_sent()) { wp_safe_redirect($redir2); exit; }
+                                echo '<script>window.location.replace(' . json_encode($redir2) . ');</script>';
+                                echo '<noscript><meta http-equiv="refresh" content="0;url=' . esc_url($redir2) . '"></noscript>';
+                                exit;
                             }
                         }
 
@@ -2618,10 +2817,8 @@ class KIT_Commons
                         wp_redirect(add_query_arg('selected_ids', $ids, $url));
                         exit();
                     } elseif ($action === 'export') {
-                        // Export or download logic here
-                        echo '<pre>';
-                        print_r($selectedRows);
-                        echo '</pre>';
+                        // Export or download logic here (placeholder)
+                        wp_redirect(add_query_arg('export', '1', admin_url('admin.php?page=all-customer-waybills')));
                         exit();
                     }
                 }
@@ -2632,87 +2829,19 @@ class KIT_Commons
                 $currentPage = max(1, intval($_GET['paged'] ?? 1));
 
                 $totalItems = count($data);
-                $totalPages = ceil($totalItems / $itemsPerPage);
+                $totalPages = $use_datatables ? 1 : ceil($totalItems / $itemsPerPage);
 
                 $offset = ($currentPage - 1) * $itemsPerPage;
-                $pagedData = array_slice($data, $offset, $itemsPerPage);
+                $pagedData = $use_datatables ? $data : array_slice($data, $offset, $itemsPerPage);
 
                 if ($totalItems === 0) {
                     echo '<div class="text-gray-500 py-4 text-center">No records found</div>';
                     return;
                 }
 
-                // Modern Search and Filter Controls (only if not disabled)
-                if (!isset($options['disable_search']) || !$options['disable_search']) {
-                    echo '<div class="bg-white border border-gray-200 rounded-lg p-4 mb-6 shadow-sm">';
-                    echo '<div class="flex flex-wrap items-center gap-4">';
-
-                    // Search Bar
-                    echo '<div class="flex-1 min-w-64">';
-                    echo '<div class="relative">';
-                    echo '<div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">';
-                    echo '<svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">';
-                    echo '<path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />';
-                    echo '</svg>';
-                    echo '</div>';
-                    echo '<input type="text" id="search-' . $table_id . '" placeholder="Search..." class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm">';
-                    echo '</div>';
-                    echo '</div>';
-
-                    // Filter Dropdown (Status by default, overridable)
-                    if (!isset($options['disable_filters']) || !$options['disable_filters']) {
-                        echo '<div class="flex-shrink-0">';
-                        $filterLabel = $options['filterOverride'] ?? '';
-                        if ($filterLabel === 'country') {
-                            // Country filter replaces status
-                            echo '<select id="status-filter-' . $table_id . '" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white">';
-                            echo '<option value="">All countries</option>';
-                            global $wpdb;
-                            $countries = $wpdb->get_results("SELECT id, country_name FROM {$wpdb->prefix}kit_operating_countries ORDER BY country_name");
-                            if ($countries) {
-                                foreach ($countries as $c) {
-                                    echo '<option data-text="' . esc_attr(strtolower($c->country_name)) . '" value="' . intval($c->id) . '">' . esc_html($c->country_name) . '</option>';
-                                }
-                            }
-                            echo '</select>';
-                        } else {
-                            // Default Status filter
-                            echo '<select id="status-filter-' . $table_id . '" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white">';
-                            echo '<option value="">All Status</option>';
-                            echo '<option value="pending">Pending</option>';
-                            echo '<option value="shipped">Shipped</option>';
-                            echo '<option value="delivered">Delivered</option>';
-                            echo '<option value="cancelled">Cancelled</option>';
-                            echo '</select>';
-                        }
-                        echo '</div>';
-
-                        // Date Filter (keep for non-country mode)
-                        echo '<div class="flex-shrink-0">';
-                        echo '<div class="relative">';
-                        echo '<input type="date" id="date-filter-' . $table_id . '" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white">';
-                        echo '</div>';
-                        echo '</div>';
-                    }
-
-                    // Add New Button
-                    if (isset($options['add_button'])) {
-                        echo '<div class="flex-shrink-0">';
-                        echo self::renderButton($options['add_button']['text'], 'primary', 'sm', [
-                            'type' => 'button',
-                            'onclick' => $options['add_button']['onclick'],
-                            'icon' => '<path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd" />',
-                            'iconPosition' => 'left',
-                            'gradient' => true
-                        ]);
-                        echo '</div>';
-                    }
-
-                    echo '</div>';
-                    echo '</div>';
-                }
-
+                if (!$use_datatables) {
                 echo KIT_Commons::paginationSelect($itemsPerPage, $totalPages, $currentPage);
+                }
 
                 // ✅ Bulk Actions Form START (POST)
                 echo '<form method="POST" action="' . esc_url($_SERVER['REQUEST_URI']) . '&bulk_action=delete" id="bulkActionForm">';
@@ -2809,123 +2938,160 @@ class KIT_Commons
 
                 echo '</form>';  // ✅ Bulk Actions Form END
 
-                // Enhanced JavaScript for Select All and Dynamic Search
+                // Enhanced JavaScript: Select All, DataTables init and Dynamic Search
         ?>
             <script>
                 document.addEventListener('DOMContentLoaded', function() {
-                    const tableId = '<?php echo $table_id; ?>';
-                    const table = document.getElementById(tableId);
-                    const searchInput = document.getElementById('search-' + tableId);
-                    const statusFilter = document.getElementById('status-filter-' + tableId);
-                    const dateFilter = document.getElementById('date-filter-' + tableId);
-                    const selectAll = table.querySelector('.selectAllRows');
-                    const rowCheckboxes = table.querySelectorAll('.selectRow');
-                    const selectedCountSpan = document.getElementById('selected-count-' + tableId);
+                    var tableId = '<?php echo $table_id; ?>';
+                    var table = document.getElementById(tableId);
+                    var searchInput = document.getElementById('search-' + tableId);
+                    var statusFilter = document.getElementById('status-filter-' + tableId);
+                    var dateFilter = document.getElementById('date-filter-' + tableId);
+                    var selectAll = table.querySelector('.selectAllRows');
+                    var rowCheckboxes = table.querySelectorAll('.selectRow');
+                    var selectedCountSpan = document.getElementById('selected-count-' + tableId);
 
                     // Select All functionality
                     if (selectAll) {
                         selectAll.addEventListener('change', function() {
-                            rowCheckboxes.forEach(cb => cb.checked = selectAll.checked);
+                            Array.prototype.forEach.call(rowCheckboxes, function(cb){ cb.checked = selectAll.checked; });
                             updateSelectedCount();
                         });
                     }
 
-                    rowCheckboxes.forEach(cb => {
+                    Array.prototype.forEach.call(rowCheckboxes, function(cb){
                         cb.addEventListener('change', function() {
-                            const allChecked = Array.from(rowCheckboxes).every(checkbox => checkbox.checked);
-                            selectAll.checked = allChecked;
+                            var allChecked = true;
+                            Array.prototype.forEach.call(rowCheckboxes, function(checkbox){
+                                if (!checkbox.checked) { allChecked = false; }
+                            });
+                            if (selectAll) { selectAll.checked = allChecked; }
                             updateSelectedCount();
                         });
                     });
 
-                    // Update selected count
                     function updateSelectedCount() {
-                        const selectedCount = table.querySelectorAll('.selectRow:checked').length;
+                        var selectedCount = table.querySelectorAll('.selectRow:checked').length;
                         if (selectedCountSpan) {
                             selectedCountSpan.textContent = selectedCount;
                         }
                     }
 
-                    // Dynamic Search functionality (only if not disabled)
-                    if (searchInput && (!<?php echo isset($options['disable_search']) && $options['disable_search'] ? 'true' : 'false'; ?>)) {
-                        searchInput.addEventListener('input', function() {
-                            filterTable();
-                        });
-                    }
+                    var useDT = <?php echo $use_datatables ? 'true' : 'false'; ?>;
+                    var disableSearch = <?php echo isset($options['disable_search']) && $options['disable_search'] ? 'true' : 'false'; ?>;
+                    var disableFilters = <?php echo isset($options['disable_filters']) && $options['disable_filters'] ? 'true' : 'false'; ?>;
 
-                    // Status filter (only if not disabled)
-                    if (statusFilter && (!<?php echo isset($options['disable_filters']) && $options['disable_filters'] ? 'true' : 'false'; ?>)) {
-                        statusFilter.addEventListener('change', function() {
-                            filterTable();
+                    if (useDT && window.jQuery && jQuery.fn && jQuery.fn.DataTable) {
+                        var $ = jQuery;
+                        var dt = $('#' + tableId).DataTable({
+                            paging: true,
+                            searching: true,
+                            info: true,
+                            order: [],
+                            lengthMenu: [[5, 10, 20, 50, -1], [5, 10, 20, 50, 'All']],
                         });
-                    }
 
-                    // Date filter (only if not disabled)
-                    if (dateFilter && (!<?php echo isset($options['disable_filters']) && $options['disable_filters'] ? 'true' : 'false'; ?>)) {
-                        dateFilter.addEventListener('change', function() {
-                            filterTable();
-                        });
-                    }
+                        if (searchInput && !disableSearch) {
+                            searchInput.addEventListener('input', function(){
+                                dt.search(this.value).draw();
+                            });
+                        }
 
-                    // Immediate filter without animations (undo cascade)
+                        if (statusFilter && !disableFilters) {
+                            statusFilter.addEventListener('change', function(){
+                                var val = this.value || '';
+                                // Try find Status column by header text
+                                var colIndex = -1;
+                                $('#' + tableId + ' thead th').each(function(i){
+                                    var t = (this.textContent || '').trim().toLowerCase();
+                                    if (t === 'status' || t === 'approval' || t === 'country') colIndex = i;
+                                });
+                                if (colIndex >= 0) {
+                                    dt.column(colIndex).search(val, false, false).draw();
+                                } else {
+                                    dt.search(val).draw();
+                                }
+                            });
+                        }
+
+                        if (dateFilter && !disableFilters) {
+                            dateFilter.addEventListener('change', function(){
+                                var dateVal = this.value || '';
+                                // naive filter across table text
+                                dt.search(dateVal).draw();
+                            });
+                        }
+                    } else {
+                        // Fallback: native filtering
+                        if (searchInput && !disableSearch) {
+                            searchInput.addEventListener('input', function() { filterTable(); });
+                        }
+                        if (statusFilter && !disableFilters) {
+                            statusFilter.addEventListener('change', function() { filterTable(); });
+                        }
+                        if (dateFilter && !disableFilters) {
+                            dateFilter.addEventListener('change', function() { filterTable(); });
+                        }
+
                     function filterTable() {
-                        const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
-                        const statusValue = statusFilter ? statusFilter.value.toLowerCase() : '';
-                        const dateValue = dateFilter ? dateFilter.value : '';
-                        const rows = table.querySelectorAll('tbody tr');
-                        rows.forEach(row => {
-                            const text = row.textContent.toLowerCase();
-                            const statusCell = row.querySelector('[data-status]');
-                            const dateCell = row.querySelector('[data-date]');
-                            let showRow = true;
-                            if (searchTerm && !text.includes(searchTerm)) showRow = false;
+                        var searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
+                        var statusValue = statusFilter ? statusFilter.value.toLowerCase() : '';
+                        var dateValue = dateFilter ? dateFilter.value : '';
+                        var rows = table.querySelectorAll('tbody tr');
+                        Array.prototype.forEach.call(rows, function(row){
+                            var text = row.textContent.toLowerCase();
+                            var statusCell = row.querySelector('[data-status]');
+                            var dateCell = row.querySelector('[data-date]');
+                            var showRow = true;
+                            if (searchTerm && text.indexOf(searchTerm) === -1) showRow = false;
                             <?php if (isset($options['filterOverride']) && $options['filterOverride'] === 'country') { ?>
                                 if (statusFilter && statusFilter.value) {
-                                    const ths = table.querySelectorAll('thead th');
-                                    let idx = -1;
-                                    for (let i = 0; i < ths.length; i++) {
-                                        if ((ths[i].textContent || '').trim().toLowerCase() === 'country') {
-                                            idx = i;
-                                            break;
-                                        }
+                                    var ths = table.querySelectorAll('thead th');
+                                    var idx = -1;
+                                    for (var i = 0; i < ths.length; i++) {
+                                        if ((ths[i].textContent || '').trim().toLowerCase() === 'country') { idx = i; break; }
                                     }
                                     if (idx >= 0) {
-                                        const cCell = row.querySelector('td:nth-child(' + (idx + 1) + ')');
-                                        const cText = (cCell && cCell.textContent ? cCell.textContent : '').trim().toLowerCase();
-                                        const opt = statusFilter.options[statusFilter.selectedIndex];
-                                        const sel = (opt && (opt.getAttribute('data-text') || opt.textContent)).toLowerCase();
-                                        if (cText !== sel) showRow = false;
+                                        var cCell = row.querySelector('td:nth-child(' + (idx + 1) + ')');
+                                        var cText = (cCell && cCell.textContent ? cCell.textContent : '').trim().toLowerCase();
+                                        var sel = '';
+                                        if (statusFilter && typeof statusFilter.selectedIndex !== 'undefined' && statusFilter.selectedIndex >= 0) {
+                                            var opt = statusFilter.options[statusFilter.selectedIndex];
+                                            if (opt) {
+                                                var optText = opt.getAttribute('data-text') || opt.textContent || '';
+                                                sel = (optText + '').toLowerCase();
+                                            }
+                                        }
+                                        if (sel && cText !== sel) showRow = false;
                                     }
                                 }
                             <?php } else { ?>
                                 if (statusValue) {
                                     if (statusCell) {
-                                        const rowStatus = statusCell.getAttribute('data-status').toLowerCase();
+                                        var rowStatus = statusCell.getAttribute('data-status').toLowerCase();
                                         if (rowStatus !== statusValue) showRow = false;
                                     } else {
-                                        const ths = table.querySelectorAll('thead th');
-                                        let idx = -1;
-                                        for (let i = 0; i < ths.length; i++) {
-                                            const l = (ths[i].textContent || '').trim().toLowerCase();
-                                            if (l === 'status' || l === 'approval') {
-                                                idx = i;
-                                                break;
-                                            }
+                                        var ths2 = table.querySelectorAll('thead th');
+                                        var idx2 = -1;
+                                        for (var j = 0; j < ths2.length; j++) {
+                                            var l = (ths2[j].textContent || '').trim().toLowerCase();
+                                            if (l === 'status' || l === 'approval') { idx2 = j; break; }
                                         }
-                                        if (idx >= 0) {
-                                            const sCell = row.querySelector('td:nth-child(' + (idx + 1) + ')');
-                                            const sText = (sCell && sCell.textContent ? sCell.textContent : '').trim().toLowerCase();
+                                        if (idx2 >= 0) {
+                                            var sCell = row.querySelector('td:nth-child(' + (idx2 + 1) + ')');
+                                            var sText = (sCell && sCell.textContent ? sCell.textContent : '').trim().toLowerCase();
                                             if (sText !== statusValue) showRow = false;
                                         }
                                     }
                                 }
                             <?php } ?>
                             if (dateValue && dateCell) {
-                                const rowDate = dateCell.getAttribute('data-date');
-                                if (rowDate !== dateValue) showRow = false;
+                                var rowDate = dateCell.getAttribute('data-date') || '';
+                                if ((rowDate + '') !== (dateValue + '')) showRow = false;
                             }
                             row.style.display = showRow ? '' : 'none';
                         });
+                        }
                     }
 
                     // Initialize

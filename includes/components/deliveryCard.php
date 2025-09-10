@@ -1,6 +1,80 @@
-<?php if (!defined('ABSPATH')) { exit; } ?>
-
-<?php
+<?php if (!defined('ABSPATH')) { exit; }
+/**
+ * KIT_DeliveryCard Class
+ * Handles delivery card rendering and grid display
+ */
+class KIT_DeliveryCard {
+    
+    /**
+     * Render a grid of delivery cards
+     * 
+     * @param array $deliveries Array of delivery objects
+     * @param array $options Rendering options
+     * @return string HTML output
+     */
+    public static function renderGrid($deliveries, $options = []) {
+        $defaults = [
+            'show_actions' => false,
+            'show_truck' => false,
+            'show_waybill_count' => false,
+            'grid_class' => 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6',
+            'empty_message' => 'No deliveries found',
+            'card_type' => 'scheduled',
+            'clickable' => true,
+            'radio_options' => null
+        ];
+        
+        $options = wp_parse_args($options, $defaults);
+        
+        if (empty($deliveries)) {
+            return '<div class="text-center py-8 text-gray-500">' . esc_html($options['empty_message']) . '</div>';
+        }
+        
+        ob_start();
+        echo '<div class="' . esc_attr($options['grid_class']) . '">';
+        
+        foreach ($deliveries as $delivery) {
+            renderDeliveryCard(
+                $delivery, 
+                $options['card_type'], 
+                $options['clickable'], 
+                'handleDeliveryClick', 
+                $options['radio_options']
+            );
+        }
+        
+        echo '</div>';
+        return ob_get_clean();
+    }
+    
+    /**
+     * Render a single delivery card
+     * 
+     * @param object $delivery Delivery data object
+     * @param array $options Rendering options
+     * @return string HTML output
+     */
+    public static function renderCard($delivery, $options = []) {
+        $defaults = [
+            'card_type' => 'scheduled',
+            'clickable' => true,
+            'onclick_function' => 'handleDeliveryClick',
+            'radio_options' => null
+        ];
+        
+        $options = wp_parse_args($options, $defaults);
+        
+        ob_start();
+        renderDeliveryCard(
+            $delivery,
+            $options['card_type'],
+            $options['clickable'],
+            $options['onclick_function'],
+            $options['radio_options']
+        );
+        return ob_get_clean();
+    }
+}
 /**
  * Reusable Delivery Card Component
  * 
@@ -34,9 +108,10 @@ function renderDeliveryCard($delivery, $card_type = 'scheduled', $clickable = tr
     $cursor_class = $clickable ? 'cursor-pointer hover:shadow-md hover:border-blue-300' : 'cursor-default';
     
     // Format date - match the image format "04 Sep 2025"
-    $day = date('d', strtotime($delivery->dispatch_date));
-    $month = date('M', strtotime($delivery->dispatch_date));
-    $year = date('Y', strtotime($delivery->dispatch_date));
+    $dispatch_date = $delivery->dispatch_date ?? '';
+    $day = $dispatch_date ? date('d', strtotime($dispatch_date)) : '';
+    $month = $dispatch_date ? date('M', strtotime($dispatch_date)) : '';
+    $year = $dispatch_date ? date('Y', strtotime($dispatch_date)) : '';
 ?>
 
 <div class="delivery-card bg-white rounded-lg border border-gray-200 p-3 group relative <?php echo $cursor_class; ?>" 

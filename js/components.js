@@ -106,3 +106,4 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Export for use in other scripts
 window.ComponentUtils = ComponentUtils;
+

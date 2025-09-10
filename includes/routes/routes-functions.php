@@ -27,6 +27,8 @@ class KIT_Routes
         add_action('wp_ajax_get_route_by_name', [self::class, 'get_route_by_name']);
         add_action('wp_ajax_nopriv_get_route_by_name', [self::class, 'get_route_by_name']);
         add_action('wp_ajax_get_route_by_description', [self::class, 'get_route_by_description']);
+        // DataTables server-side endpoint for routes
+        add_action('wp_ajax_routes_datatable', [self::class, 'routes_datatable']);
         // Register AJAX handlers here as needed
         // add_action('wp_ajax_...', [self::class, 'ajax_handler']);
     }
@@ -75,8 +77,89 @@ class KIT_Routes
         return $routes;
     }
 
+    /**
+     * DataTables server-side provider for Routes
+     */
+    public static function routes_datatable()
+    {
+        if (! current_user_can('manage_options')) {
+            wp_send_json([ 'draw' => intval($_POST['draw'] ?? 0), 'recordsTotal' => 0, 'recordsFiltered' => 0, 'data' => [] ]);
+        }
+
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'kit_shipping_directions';
+        $countries = $wpdb->prefix . 'kit_operating_countries';
+
+        $draw   = intval($_POST['draw'] ?? 0);
+        $start  = intval($_POST['start'] ?? 0);
+        $length = intval($_POST['length'] ?? 10);
+        $search = isset($_POST['search']['value']) ? sanitize_text_field($_POST['search']['value']) : '';
+
+        $base_sql = "FROM {$table} sd
+            LEFT JOIN {$countries} oc ON sd.origin_country_id = oc.id
+            LEFT JOIN {$countries} dc ON sd.destination_country_id = dc.id";
+
+        // Total records
+        $records_total = intval($wpdb->get_var("SELECT COUNT(*) {$base_sql}"));
+
+        // Filtering
+        $where = '';
+        $params = [];
+        if ($search !== '') {
+            $where = "WHERE (oc.country_name LIKE %s OR dc.country_name LIKE %s OR sd.description LIKE %s)";
+            $like = '%' . $wpdb->esc_like($search) . '%';
+            $params = [ $like, $like, $like ];
+        }
+
+        // Ordering
+        $order_col_index = intval($_POST['order'][0]['column'] ?? 0);
+        $order_dir = strtolower($_POST['order'][0]['dir'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
+        $order_columns = [ 'sd.id', 'oc.country_name', 'dc.country_name', 'sd.description', 'sd.is_active' ];
+        $order_by = $order_columns[$order_col_index] ?? 'sd.id';
+
+        // Records filtered
+        if ($where) {
+            $records_filtered = intval($wpdb->get_var($wpdb->prepare("SELECT COUNT(*) {$base_sql} {$where}", ...$params)));
+        } else {
+            $records_filtered = $records_total;
+        }
+
+        // Data query
+        $limit_sql = $wpdb->prepare(" LIMIT %d OFFSET %d", $length, $start);
+        $select = "SELECT sd.id as route_id, sd.description, sd.is_active, oc.country_name as origin_country_name, dc.country_name as destination_country_name";
+        $sql = "{$select} {$base_sql} {$where} ORDER BY {$order_by} {$order_dir} {$limit_sql}";
+        $rows = $where ? $wpdb->get_results($wpdb->prepare($sql, ...$params)) : $wpdb->get_results($sql);
+
+        $data = array_map(function($r) {
+            return [
+                'route_id' => intval($r->route_id),
+                'origin_country_name' => esc_html($r->origin_country_name),
+                'destination_country_name' => esc_html($r->destination_country_name),
+                'description' => esc_html($r->description),
+                'status' => $r->is_active ? '<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">Active</span>' : '<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">Inactive</span>',
+                'actions' => '<a href="?page=route-create&route_id=' . intval($r->route_id) . '&route_atts=edit_route" class="text-blue-600 hover:text-blue-800">Edit</a>'
+            ];
+        }, $rows);
+
+        wp_send_json([
+            'draw' => $draw,
+            'recordsTotal' => $records_total,
+            'recordsFiltered' => $records_filtered,
+            'data' => $data,
+        ]);
+    }
+
     public static function plugin_route_management_page()
     {
+        // Enqueue DataTables assets for this admin page
+        if (function_exists('wp_enqueue_style')) {
+            wp_enqueue_style('datatables-css', 'https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css', [], '1.13.6');
+        }
+        if (function_exists('wp_enqueue_script')) {
+            wp_enqueue_script('jquery');
+            wp_enqueue_script('datatables-js', 'https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js', ['jquery'], '1.13.6', true);
+        }
         $countries = KIT_Commons::get_countries();
         $cities = KIT_Commons::get_cities();
 
@@ -197,7 +280,18 @@ class KIT_Routes
                 <div id="create-content" class="tab-content" style="display: none;">
                     <div style="background: white; padding: 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #e5e7eb;">
                         <h3 style="font-size: 18px; font-weight: 600; color: #111827; margin: 0 0 20px 0;">Create New Route</h3>
-                        <?php echo self::routeForm(); ?>
+                        
+                        <form id="route-create-form" method="post" action="<?php echo admin_url('admin-post.php'); ?>">
+                            <input type="hidden" name="action" value="create_route">
+                            <input type="hidden" name="security" value="<?php echo wp_create_nonce('create_route'); ?>">
+                            
+                            <?php echo self::routeForm(); ?>
+                            
+                            <div style="display: flex; gap: 12px; margin-top: 24px; padding-top: 24px; border-top: 1px solid #e5e7eb;">
+                                <?php echo KIT_Commons::renderButton('Create Route', 'primary', 'md', ['type' => 'submit', 'gradient' => true]); ?>
+                                <?php echo KIT_Commons::renderButton('Cancel', 'secondary', 'md', ['type' => 'button', 'onclick' => 'switchTab(\'overview\')']); ?>
+                            </div>
+                        </form>
                     </div>
                 </div>
 
@@ -206,7 +300,10 @@ class KIT_Routes
                     <div style="background: white; padding: 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #e5e7eb;">
                         <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 20px;">
                             <h3 style="font-size: 18px; font-weight: 600; color: #111827; margin: 0;">All Routes</h3>
-                            <?php echo KIT_Commons::renderButton('Create New', 'primary', 'sm', ['onclick' => 'switchTab(\'create\')', 'gradient' => true]); ?>
+                            <div style="display: flex; gap: 12px;">
+                                <?php echo KIT_Commons::renderButton('Create New', 'primary', 'sm', ['onclick' => 'switchTab(\'create\')', 'gradient' => true]); ?>
+                                <?php echo KIT_Commons::renderButton('Test Toast', 'secondary', 'sm', ['onclick' => 'testToast()', 'gradient' => false]); ?>
+                            </div>
                         </div>
                         
                         <!-- Search and Filter -->
@@ -219,50 +316,45 @@ class KIT_Routes
                             </select>
                         </div>
                         
-                        <?php
-                        $options = [
-                            'itemsPerPage' => 10,
-                            'currentPage' => $_GET['paged'] ?? 1,
-                            'tableClass' => 'min-w-full text-left text-xs text-gray-700',
-                            'emptyMessage' => 'No routes found',
-                            'id' => 'routesTable',
-                        ];
-
-                        $columns = [
-                            'route_id' => ['label' => 'Route ID', 'align' => 'text-left'],
-                            'origin_country_id' => ['label' => 'Origin', 'align' => 'text-left'],
-                            'destination_country_id' => ['label' => 'Destination', 'align' => 'text-left'],
-                            'description' => ['label' => 'Description', 'align' => 'text-left'],
-                            'status' => ['label' => 'Status', 'align' => 'text-center'],
-                            'actions' => ['label' => 'Actions', 'align' => 'text-center'],
-                        ];
-
-                        $route_actions = function ($key, $row) {
-                            if ($key === 'origin_country_id') {
-                                return '<span class="font-medium text-gray-900">' . $row->origin_country_name . '</span>';
-                            }
-                            if ($key === 'destination_country_id') {
-                                return '<span class="font-medium text-gray-900">' . $row->destination_country_name . '</span>';
-                            }
-                            if ($key === 'status') {
-                                return $row->is_active ? 
-                                    '<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">Active</span>' : 
-                                    '<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">Inactive</span>';
-                            }
-                            if ($key === 'actions') {
-                                return KIT_Commons::renderButton('Edit', 'primary', 'sm', [
-                                    'onclick' => 'editRoute(' . $row->route_id . ')',
-                                    'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>',
-                                    'iconPosition' => 'left',
-                                    'classes' => 'text-blue-700 bg-blue-100 hover:bg-blue-200',
-                                    'gradient' => false
-                                ]);
-                            }
-                            return htmlspecialchars(($row->$key ?? '') ?: '');
-                        };
-
-                        echo KIT_Commons::render_versatile_table($routes, $columns, $route_actions, $options);
-                        ?>
+                        <table id="routes-dt" class="display stripe hover" style="width: 100%">
+                            <thead>
+                                <tr>
+                                    <th>Route ID</th>
+                                    <th>Origin</th>
+                                    <th>Destination</th>
+                                    <th>Description</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                        <script>
+                        jQuery(function ($) {
+                            if (!$.fn.DataTable) return;
+                            $('#routes-dt').DataTable({
+                                processing: true,
+                                serverSide: true,
+                                ajax: {
+                                    url: (window.myPluginAjax && myPluginAjax.ajax_url) || ajaxurl,
+                                    type: 'POST',
+                                    data: function (d) {
+                                        d.action = 'routes_datatable';
+                                        d._ajax_nonce = (window.myPluginAjax && myPluginAjax.nonces && myPluginAjax.nonces.get_waybills_nonce) || '';
+                                    }
+                                },
+                                order: [[0, 'desc']],
+                                columns: [
+                                    { data: 'route_id' },
+                                    { data: 'origin_country_name' },
+                                    { data: 'destination_country_name' },
+                                    { data: 'description' },
+                                    { data: 'status', orderable: false, searchable: false },
+                                    { data: 'actions', orderable: false, searchable: false }
+                                ]
+                            });
+                        });
+                        </script>
                     </div>
                 </div>
             </div>
@@ -322,6 +414,24 @@ class KIT_Routes
 
         function editRoute(routeId) {
             window.location.href = '?page=route-create&route_id=' + routeId + '&route_atts=edit_route';
+        }
+
+        function testToast() {
+            if (window.KITToast) {
+                // Test different toast types
+                window.KITToast.show('This is a success message!', 'success', 'Test Success');
+                setTimeout(() => {
+                    window.KITToast.show('This is an error message!', 'error', 'Test Error');
+                }, 1000);
+                setTimeout(() => {
+                    window.KITToast.show('This is a warning message!', 'warning', 'Test Warning');
+                }, 2000);
+                setTimeout(() => {
+                    window.KITToast.show('This is an info message!', 'info', 'Test Info');
+                }, 3000);
+            } else {
+                alert('Toast system not loaded. Please refresh the page.');
+            }
         }
         </script>
 
@@ -443,7 +553,6 @@ class KIT_Routes
         if ($route_id && $route_atts == 'edit_route') {
             $route = self::get_route_by_id($route_id);
         }
-
         $is_page = isset($_GET['page']) ? $_GET['page'] : null;
         $is_route_id = isset($_GET['route_id']) ? $_GET['route_id'] : null;
         $is_route_atts = isset($_GET['route_atts']) ? $_GET['route_atts'] : null;
@@ -500,6 +609,11 @@ class KIT_Routes
     public static function create_route()
     {
         global $wpdb;
+    
+        // Verify nonce for security
+        if (!isset($_POST['security']) || !wp_verify_nonce($_POST['security'], 'create_route')) {
+            wp_die('Security check failed');
+        }
     
         // Sanitize/validate input
         $route_name = isset($_POST['route_name']) ? sanitize_text_field($_POST['route_name']) : '';
@@ -577,16 +691,32 @@ class KIT_Routes
     
         if ($is_ajax) {
             if ($result) {
+                // Add toast notification for AJAX requests
+                if (class_exists('KIT_Toast')) {
+                    echo KIT_Toast::db_success('Route creation', 'Route created successfully');
+                }
                 wp_send_json_success('Route created successfully');
             } else {
+                // Add toast notification for AJAX errors
+                if (class_exists('KIT_Toast')) {
+                    echo KIT_Toast::db_error('Route creation', $wpdb->last_error ?: 'Unknown error');
+                }
                 wp_send_json_error('Failed to create route');
             }
         } else {
             if ($result) {
+                // Add toast notification for non-AJAX requests
+                if (class_exists('KIT_Toast')) {
+                    echo KIT_Toast::db_success('Route creation', 'Route created successfully');
+                }
                 echo '<div class="notice notice-success"><p>Route created successfully.</p></div>';
                 wp_redirect(admin_url('admin.php?page=route-management'));
                 exit;
             } else {
+                // Add toast notification for non-AJAX errors
+                if (class_exists('KIT_Toast')) {
+                    echo KIT_Toast::db_error('Route creation', $wpdb->last_error ?: 'Unknown error');
+                }
                 echo '<div class="notice notice-error"><p>Failed to create route.</p></div>';
             }
         }

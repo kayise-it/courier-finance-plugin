@@ -37,8 +37,8 @@ class KIT_Customers
         global $wpdb;
         $table_name = $wpdb->prefix . 'kit_customers';
         
-        // Debug: Log customer data
-        error_log('save_customer called with data: ' . print_r($cust, true));
+        // Optional debug (disabled in production)
+        // error_log('save_customer called with data: ' . print_r($cust, true));
 
         // First check if customer already exists
         $existing_customer = $wpdb->get_row(
@@ -56,6 +56,7 @@ class KIT_Customers
 
 
         // Sanitize inputs
+        $city_id = isset($cust['city_id']) && $cust['city_id'] !== '' ? intval($cust['city_id']) : null; // NULL for FK when empty
         $cust_data = [
             'cust_id'  => rand(1000, 9999),
             'name'     => sanitize_text_field($cust['name'] ?? $cust['customer_name'] ?? ''),
@@ -64,25 +65,27 @@ class KIT_Customers
             'email_address'  => sanitize_text_field($cust['email_address'] ?? ''),
             'address'  => sanitize_text_field($cust['address'] ?? ''),
             'country_id'  => intval($cust['country_id'] ?? 0),
-            'city_id'  => intval($cust['city_id'] ?? 0),
+            'city_id'  => $city_id,
             'company_name'  => sanitize_text_field($cust['company_name'] ?? ''),
             'vat_number'  => sanitize_text_field($cust['vat_number'] ?? ''),
         ];
 
         // Insert into DB
-        $inserted = $wpdb->insert($table_name, $cust_data);
+        // Specify data types to allow NULL for city_id
+        $inserted = $wpdb->insert($table_name, $cust_data, [
+            '%d', '%s', '%s', '%s', '%s', '%s', '%d', ($city_id === null ? null : '%d'), '%s', '%s'
+        ]);
         
-        // Debug: Log insert result
-        error_log('Database insert result: ' . ($inserted ? 'SUCCESS' : 'FAILED'));
-        if ($inserted === false) {
-            error_log('Database error: ' . $wpdb->last_error);
-        }
+        // Optional debug
+        // if ($inserted === false) {
+        //     error_log('Database error: ' . $wpdb->last_error);
+        // }
 
         if ($inserted === false) {
             return false; // Insert failed
         }
 
-        error_log('Customer saved successfully with ID: ' . $cust_data['cust_id']);
+        // error_log('Customer saved successfully with ID: ' . $cust_data['cust_id']);
         return $cust_data['cust_id']; // Return the new customer ID
     }
 
@@ -495,7 +498,7 @@ class KIT_Customers
         }
         $output .= '<h3>Bulk Upload Customers (CSV or Excel)</h3>';
         $output .= '<input type="file" name="customers_file" accept=".csv,.xlsx,.xls" required> ';
-        $output .= '<?php echo KIT_Commons::renderButton("Upload", "primary", "md", ["type" => "submit", "gradient" => true]); ?>';
+        $output .= KIT_Commons::renderButton('Upload', 'primary', 'md', ['type' => 'submit', 'gradient' => true]);
         $output .= '</form>';
         return $output;
     }
@@ -606,6 +609,17 @@ function customer_dashboard()
     ]);
     echo '<hr class="wp-header-end">';
 
+    // Toast after delete success
+    if (isset($_GET['deleted']) && $_GET['deleted'] == '1') {
+        $deleted_waybills = isset($_GET['waybills_deleted']) ? intval($_GET['waybills_deleted']) : 0;
+        $msg = 'Customer deleted successfully';
+        if ($deleted_waybills > 0) {
+            $msg .= ' • Deleted ' . $deleted_waybills . ' waybill(s)';
+        }
+        require_once plugin_dir_path(__FILE__) . '../components/toast.php';
+        echo KIT_Toast::success($msg);
+    }
+
     // Show success message if customer was just added
     if (isset($_GET['customer_added']) && $_GET['customer_added'] == '1') {
         echo '<div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">Customer added successfully! 🎉</div>';
@@ -695,7 +709,7 @@ function customer_dashboard()
 
     $options = [
         'itemsPerPage' => 10,
-        'currentPage'  => $_GET['paged'] ?? 1,
+        'currentPage'  => isset($_GET['paged']) ? $_GET['paged'] : 1,
         'tableClass'   => 'w-full text-left text-xs text-gray-700',
         'emptyMessage' => 'No customers found. <a href="#" onclick="showAddCustomerForm(); return false;">Add your first customer</a>',
         'id'           => 'customerTable',
@@ -708,31 +722,31 @@ function customer_dashboard()
     echo '</div>';
 
     // Client-side country filtering for versatile table
-    echo '<script>\n';
-    echo 'document.addEventListener("DOMContentLoaded", function(){\n';
-    echo '  const select = document.getElementById("customerCountryFilter");\n';
-    echo '  function countryColIndex(){\n';
-    echo '    const ths = document.querySelectorAll("#customerTable thead th");\n';
-    echo '    for (let i=0;i<ths.length;i++){ if ((ths[i].textContent||"").trim().toLowerCase()==="country") return i; }\n';
-    echo '    return -1;\n';
-    echo '  }\n';
-    echo '  const col = countryColIndex();\n';
-    echo '  function applyFilter(){\n';
-    echo '    const selectedText = select && select.value!=="" ? select.options[select.selectedIndex].text.toLowerCase() : "";\n';
-    echo '    const rows = document.querySelectorAll("#customerTable tbody tr");\n';
-    echo '    rows.forEach(function(row){\n';
-    echo '      if (col < 0 || !select || select.value===""){ row.style.display=""; return; }\n';
-    echo '      const cell = row.querySelector("td:nth-child("+(col+1)+")");\n';
-    echo '      const txt = (cell && cell.textContent ? cell.textContent : "").trim().toLowerCase();\n';
-    echo '      row.style.display = (txt === selectedText) ? "" : "none";\n';
-    echo '    });\n';
-    echo '  }\n';
-    echo '  if (select){ select.addEventListener("change", function(){ setTimeout(applyFilter, 0); }); }\n';
-    echo '  const search = document.getElementById("customerTable-search");\n';
-    echo '  if (search){ search.addEventListener("input", function(){ setTimeout(applyFilter, 50); }); }\n';
-    echo '  setTimeout(applyFilter, 200);\n';
-    echo '});\n';
-    echo '</script>';
+    echo "<script>\n";
+    echo "document.addEventListener(\"DOMContentLoaded\", function(){\n";
+    echo "  var select = document.getElementById(\"customerCountryFilter\");\n";
+    echo "  function countryColIndex(){\n";
+    echo "    var ths = document.querySelectorAll(\"#customerTable thead th\");\n";
+    echo "    for (var i=0;i<ths.length;i++){ if ((ths[i].textContent||\"\").trim().toLowerCase()===\"country\") return i; }\n";
+    echo "    return -1;\n";
+    echo "  }\n";
+    echo "  var col = countryColIndex();\n";
+    echo "  function applyFilter(){\n";
+    echo "    var selectedText = select && select.value!==\"\" ? select.options[select.selectedIndex].text.toLowerCase() : \"\";\n";
+    echo "    var rows = document.querySelectorAll(\"#customerTable tbody tr\");\n";
+    echo "    Array.prototype.forEach.call(rows, function(row){\n";
+    echo "      if (col < 0 || !select || select.value===\"\"){ row.style.display=\"\"; return; }\n";
+    echo "      var cell = row.querySelector(\"td:nth-child(\"+(col+1)+\")\");\n";
+    echo "      var txt = (cell && cell.textContent ? cell.textContent : \"\").trim().toLowerCase();\n";
+    echo "      row.style.display = (txt === selectedText) ? \"\" : \"none\";\n";
+    echo "    });\n";
+    echo "  }\n";
+    echo "  if (select){ select.addEventListener(\"change\", function(){ setTimeout(applyFilter, 0); }); }\n";
+    echo "  var search = document.getElementById(\"customerTable-search\");\n";
+    echo "  if (search){ search.addEventListener(\"input\", function(){ setTimeout(applyFilter, 50); }); }\n";
+    echo "  setTimeout(applyFilter, 200);\n";
+    echo "});\n";
+    echo "</script>";
     echo '</div>';
     echo '</div>';
 
@@ -740,7 +754,7 @@ function customer_dashboard()
     echo '<script>';
     echo 'document.addEventListener("DOMContentLoaded", function(){';
     echo '  function activateTab(name){';
-    echo '    const tabs = ["overview","manage-customers"];';
+    echo '    var tabs = ["overview","manage-customers"];';
     echo '    tabs.forEach(function(t){';
     echo '      var btn = document.getElementById(t+"-tab"); var panel = document.getElementById(t+"-content");';
     echo '      if(!btn||!panel) return;';
@@ -748,12 +762,12 @@ function customer_dashboard()
     echo '      var inactiveClasses = ["text-gray-600","border-transparent"];';
     echo '      if(t===name){';
     echo '        btn.classList.add("active"); panel.style.display="block";';
-    echo '        activeClasses.forEach(c=>btn.classList.add(c));';
-    echo '        inactiveClasses.forEach(c=>btn.classList.remove(c));';
+    echo '        activeClasses.forEach(function(c){ btn.classList.add(c); });';
+    echo '        inactiveClasses.forEach(function(c){ btn.classList.remove(c); });';
     echo '      } else {';
     echo '        btn.classList.remove("active"); panel.style.display="none";';
-    echo '        activeClasses.forEach(c=>btn.classList.remove(c));';
-    echo '        inactiveClasses.forEach(c=>btn.classList.add(c));';
+    echo '        activeClasses.forEach(function(c){ btn.classList.remove(c); });';
+    echo '        inactiveClasses.forEach(function(c){ btn.classList.add(c); });';
     echo '      }';
     echo '    });';
     echo '  }';
@@ -952,11 +966,20 @@ function customer_dashboard()
                     $selectedRows = $_POST['selected_rows'];
                     $action = $_POST['bulk_action'];
                     if ($action === 'delete') {
+                        $deletedCount = 0;
                         foreach ($selectedRows as $row) {
-                            delete_customer($row, false);
+                            $result = delete_customer($row, false);
+                            if ($result === true) { $deletedCount++; }
                         }
-                        wp_redirect(admin_url('admin.php?page=customers-dashboard'));
-                        exit();
+                        $target = admin_url('admin.php?page=08600-customers&deleted=1&bulk=1&waybills_deleted=' . intval($deletedCount) . '&tab=manage-customers');
+                        if (!headers_sent()) {
+                            wp_safe_redirect($target);
+                            exit();
+                        } else {
+                            echo '<script>window.location.replace(' . json_encode($target) . ');</script>';
+                            echo '<noscript><meta http-equiv="refresh" content="0;url=' . esc_url($target) . '"></noscript>';
+                            exit();
+                        }
                     } elseif ($action === 'export') {
                         echo '<pre>';
                         print_r($selectedRows);
@@ -984,7 +1007,7 @@ function customer_dashboard()
         // Function to show add customer form
         function showAddCustomerForm() {
             // Hide all tab contents
-            document.querySelectorAll('.tab-content').forEach(function(panel) {
+            Array.prototype.forEach.call(document.querySelectorAll('.tab-content'), function(panel) {
                 panel.style.display = 'none';
             });
             // Show add customer form
@@ -993,7 +1016,7 @@ function customer_dashboard()
                 addCustomerPanel.style.display = 'block';
             }
             // Deactivate all tab buttons
-            document.querySelectorAll('.customer-tabs .tab-btn').forEach(function(btn) {
+            Array.prototype.forEach.call(document.querySelectorAll('.customer-tabs .tab-btn'), function(btn) {
                 btn.classList.remove('active');
             });
         }
@@ -1002,11 +1025,11 @@ function customer_dashboard()
         document.addEventListener('DOMContentLoaded', function() {
             function switchCustomerTab(name) {
                 // Hide all panels
-                document.querySelectorAll('.tab-content').forEach(function(panel) {
+                Array.prototype.forEach.call(document.querySelectorAll('.tab-content'), function(panel) {
                     panel.style.display = 'none';
                 });
                 // Deactivate all buttons
-                document.querySelectorAll('.customer-tabs .tab-btn').forEach(function(btn) {
+                Array.prototype.forEach.call(document.querySelectorAll('.customer-tabs .tab-btn'), function(btn) {
                     btn.classList.remove('active');
                 });
                 // Show requested panel
@@ -1143,14 +1166,14 @@ function theForm($customer = null)
 
 ?>
     <div class="grid grid-cols-1 gap-4">
-        <input type="hidden" name="cust_id" id="cust_id" value="<?= esc_attr($customer->cust_id ?? '') ?>">
+        <input type="hidden" name="cust_id" id="cust_id" value="<?= esc_attr($customer['cust_id'] ?? '') ?>">
         <div>
             <?= KIT_Commons::Linput([
                 'label' => 'Company Name',
                 'name'  => 'company_name',
                 'id'    => 'company_name',
                 'type'  => 'text',
-                'value' => $customer->company_name ?? '',
+                'value' => $customer['company_name'] ?? '',
                 'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500',
                 'special' => ''
             ]); ?>
@@ -1162,7 +1185,7 @@ function theForm($customer = null)
                 'name'  => 'name',
                 'id'    => 'customer_name',
                 'type'  => 'text',
-                'value' => $customer->customer_name ?? '',
+                'value' => $customer['customer_name'] ?? '',
                 'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500',
                 'special' => ''
             ]); ?>
@@ -1173,7 +1196,7 @@ function theForm($customer = null)
                 'name'  => 'surname',
                 'id'    => 'customer_surname',
                 'type'  => 'text',
-                'value' => $customer->customer_surname ?? '',
+                'value' => $customer['customer_surname'] ?? '',
                 'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500',
                 'special' => ''
             ]); ?>
@@ -1184,7 +1207,7 @@ function theForm($customer = null)
                 'name'  => 'cell',
                 'id'    => 'cell',
                 'type'  => 'text',
-                'value' => $customer->cell ?? '',
+                'value' => $customer['cell'] ?? '',
                 'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500',
                 'special' => ''
             ]); ?>
@@ -1195,7 +1218,7 @@ function theForm($customer = null)
                 'name'  => 'address',
                 'id'    => 'address',
                 'type'  => 'text',
-                'value' => $customer->address ?? '',
+                'value' => $customer['address'] ?? '',
                 'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500',
                 'special' => ''
             ]); ?>
@@ -1206,7 +1229,7 @@ function theForm($customer = null)
                 'name'  => 'email_address',
                 'id'    => 'email_address',
                 'type'  => 'text',
-                'value' => $customer->email_address ?? '',
+                'value' => $customer['email_address'] ?? '',
                 'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500',
                 'special' => ''
             ]); ?>
@@ -1273,12 +1296,12 @@ function customer_form()
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            const modal = document.getElementById('customerModal');
-            const openBtn = document.getElementById('customerModalButton');
-            const closeBtn = document.getElementById('customerModalClose');
-            const closeBtn2 = document.getElementById('customerModalCloseBtn');
-            const form = document.getElementById('customerForm');
-            const submitBtn = document.getElementById('customerSubmitBtn');
+            var modal = document.getElementById('customerModal');
+            var openBtn = document.getElementById('customerModalButton');
+            var closeBtn = document.getElementById('customerModalClose');
+            var closeBtn2 = document.getElementById('customerModalCloseBtn');
+            var form = document.getElementById('customerForm');
+            var submitBtn = document.getElementById('customerSubmitBtn');
 
             // Open modal
             if (openBtn) {
@@ -1312,30 +1335,30 @@ function customer_form()
                     submitBtn.textContent = 'Saving...';
 
                     // Submit form via AJAX
-                    const formData = new FormData(form);
+                    var formData = new FormData(form);
                     formData.append('action', 'save_customer_ajax');
                     formData.append('nonce', '<?php echo wp_create_nonce("save_customer_nonce"); ?>');
 
                     // Debug: Log what we're sending
                     console.log('Sending form data:');
-                    for (let [key, value] of formData.entries()) {
-                        console.log(key + ': ' + value);
+                    for (var pair of formData.entries()) {
+                        console.log(pair[0] + ': ' + pair[1]);
                     }
 
                     fetch(ajaxurl || '/wp-admin/admin-ajax.php', {
                             method: 'POST',
                             body: formData
                         })
-                        .then(response => {
+                        .then(function(response) {
                             console.log('Response status:', response.status);
                             console.log('Response headers:', response.headers);
                             return response.json();
                         })
-                        .then(data => {
+                        .then(function(data) {
                             console.log('Response data:', data);
                             if (data.success) {
                                 // Show success message
-                                const successDiv = document.createElement('div');
+                                var successDiv = document.createElement('div');
                                 successDiv.className = 'bg-green-100 text-green-800 p-4 rounded mb-4';
                                 successDiv.textContent = data.data.message;
 
@@ -1343,7 +1366,7 @@ function customer_form()
                                 form.parentNode.insertBefore(successDiv, form);
 
                                 // Close modal after 2 seconds
-                                setTimeout(() => {
+                                setTimeout(function() {
                                     closeModal();
                                     location.reload(); // Reload page to show new customer
                                 }, 2000);
@@ -1351,13 +1374,13 @@ function customer_form()
                                 throw new Error(data.data.message || 'Unknown error');
                             }
                         })
-                        .catch(error => {
+                        .catch(function(error) {
                             console.error('Error:', error);
                             submitBtn.disabled = false;
                             submitBtn.textContent = '<?= $is_edit ? 'Update' : 'Save' ?>';
 
                             // Show error message
-                            const errorDiv = document.createElement('div');
+                            var errorDiv = document.createElement('div');
                             errorDiv.className = 'bg-red-100 text-red-800 p-4 rounded mb-4';
                             errorDiv.textContent = error.message || 'Failed to save customer. Please try again.';
                             form.parentNode.insertBefore(errorDiv, form);
@@ -1415,11 +1438,32 @@ function customer_detail_view($customer_id)
     global $wpdb;
     $customer_id = intval($customer_id);
 
+    // Handle success/error messages
+    if (isset($_GET['updated']) && $_GET['updated'] == '1') {
+        if (class_exists('KIT_Toast')) {
+            echo KIT_Toast::success('Customer updated successfully!', 'Customer Update');
+        } else {
+            echo '<div class="notice notice-success"><p>Customer updated successfully.</p></div>';
+        }
+    }
+    
+    if (isset($_GET['error']) && $_GET['error'] == '1') {
+        if (class_exists('KIT_Toast')) {
+            echo KIT_Toast::error('Failed to update customer. Please try again.', 'Customer Update');
+        } else {
+            echo '<div class="notice notice-error"><p>Failed to update customer. Please try again.</p></div>';
+        }
+    }
+
     // Get customer details
     $customer = get_customer_details($customer_id);
 
     if (!$customer) {
+        if (class_exists('KIT_Toast')) {
+            echo KIT_Toast::error('Customer not found.', 'Customer Details');
+        } else {
         echo '<div class="notice notice-error"><p>Customer not found.</p></div>';
+        }
         return;
     }
 
@@ -1448,7 +1492,10 @@ function customer_detail_view($customer_id)
             <div class="col-span-2 bg-white shadow rounded-lg p-6 mb-6">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-xl font-semibold text-gray-900">Customer Information</h2>
-                    <?php echo KIT_Commons::renderButton('Edit Customer', 'primary', 'md', ['href' => '?page=08600-customers&edit_customer=' . $customer_id, 'gradient' => true]); ?>
+                    <div class="flex gap-2">
+                        <?php echo KIT_Commons::renderButton('Edit Customer', 'primary', 'md', ['href' => '?page=08600-customers&edit_customer=' . $customer_id, 'gradient' => true]); ?>
+                        <?php echo KIT_Commons::renderButton('Test Toast', 'secondary', 'md', ['onclick' => 'testCustomerToast()', 'gradient' => false]); ?>
+                    </div>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
@@ -1456,15 +1503,15 @@ function customer_detail_view($customer_id)
                         <div class="space-y-3">
                             <div>
                                 <span class="text-sm font-medium text-gray-500">Full Name:</span>
-                                <p class="text-gray-900"><?php echo esc_html($customer->customer_name . ' ' . $customer->customer_surname); ?></p>
+                                <p class="text-gray-900"><?php echo esc_html(($customer['customer_name'] ?? '') . ' ' . ($customer['customer_surname'] ?? '')); ?></p>
                             </div>
                             <div>
                                 <span class="text-sm font-medium text-gray-500">Cell Phone:</span>
-                                <p class="text-gray-900"><?php echo esc_html($customer->cell); ?></p>
+                                <p class="text-gray-900"><?php echo esc_html($customer['cell'] ?? 'Not provided'); ?></p>
                             </div>
                             <div>
                                 <span class="text-sm font-medium text-gray-500">Email:</span>
-                                <p class="text-gray-900"><?php echo esc_html($customer->email_address ?: 'Not provided'); ?></p>
+                                <p class="text-gray-900"><?php echo esc_html($customer['email_address'] ?: 'Not provided'); ?></p>
                             </div>
                         </div>
                     </div>
@@ -1473,19 +1520,19 @@ function customer_detail_view($customer_id)
                         <div class="space-y-3">
                             <div>
                                 <span class="text-sm font-medium text-gray-500">Company:</span>
-                                <p class="text-gray-900"><?php echo esc_html($customer->company_name ?: 'Not provided'); ?></p>
+                                <p class="text-gray-900"><?php echo esc_html($customer['company_name'] ?: 'Not provided'); ?></p>
                             </div>
                             <div>
                                 <span class="text-sm font-medium text-gray-500">Country:</span>
-                                <p class="text-gray-900"><?php echo esc_html($customer->country_name ?: 'Not specified'); ?></p>
+                                <p class="text-gray-900"><?php echo esc_html($customer['country_name'] ?: 'Not specified'); ?></p>
                             </div>
                             <div>
                                 <span class="text-sm font-medium text-gray-500">City:</span>
-                                <p class="text-gray-900"><?php echo esc_html($customer->city_name ?: 'Not specified'); ?></p>
+                                <p class="text-gray-900"><?php echo esc_html($customer['city_name'] ?: 'Not specified'); ?></p>
                             </div>
                             <div>
                                 <span class="text-sm font-medium text-gray-500">Address:</span>
-                                <p class="text-gray-900"><?php echo esc_html($customer->address ?: 'Not provided'); ?></p>
+                                <p class="text-gray-900"><?php echo esc_html($customer['address'] ?: 'Not provided'); ?></p>
                             </div>
                         </div>
                     </div>
@@ -1552,6 +1599,23 @@ function customer_detail_view($customer_id)
                 <?php endif; ?>
             </div>
     </div>
+    
+    <script>
+    function testCustomerToast() {
+        if (window.KITToast) {
+            // Test different toast types
+            window.KITToast.show('Customer data loaded successfully!', 'success', 'Customer Details');
+            setTimeout(() => {
+                window.KITToast.show('This is a test error message', 'error', 'Test Error');
+            }, 1000);
+            setTimeout(() => {
+                window.KITToast.show('Customer information updated', 'info', 'Information');
+            }, 2000);
+        } else {
+            alert('Toast system not loaded. Please refresh the page.');
+        }
+    }
+    </script>
 <?php
 }
 
@@ -1578,6 +1642,10 @@ function delete_customer($id, $redirect = false)
         $wpdb->delete($waybills_table, ['customer_id' => $customer_id]);
     }
 
+    // Also remove warehouse tracking linked to this customer (FK lacks ON DELETE CASCADE)
+    $warehouse_tracking_table = $wpdb->prefix . 'kit_warehouse_tracking';
+    $wpdb->delete($warehouse_tracking_table, ['customer_id' => $customer_id]);
+
     // Now delete the customer
     $customers_table = $wpdb->prefix . 'kit_customers';
     $deleted = $wpdb->delete($customers_table, ['cust_id' => $customer_id]);
@@ -1588,11 +1656,19 @@ function delete_customer($id, $redirect = false)
         if ($deleted_count > 0) {
             $message .= " Also deleted $deleted_count waybill(s) and their associated items.";
         }
-        wp_redirect(admin_url('admin.php?page=08600-customers&deleted=1&waybills_deleted=' . $deleted_count . '&tab=manage-customers'));
-        exit;
-    } elseif (!$redirect) {
-        echo '<div class="bg-yellow-100 text-yellow-800 p-4 rounded mb-4">Customer not found or already deleted.</div>';
+        $target_url = admin_url('admin.php?page=08600-customers&deleted=1&waybills_deleted=' . $deleted_count . '&tab=manage-customers');
+        if (!headers_sent()) {
+            wp_safe_redirect($target_url);
+            exit;
+        } else {
+            echo '<script>window.location.replace(' . json_encode($target_url) . ');</script>';
+            echo '<noscript><meta http-equiv="refresh" content="0;url=' . esc_url($target_url) . '"></noscript>';
+            exit;
+        }
     }
+
+    // Return true/false for bulk operations instead of echoing HTML
+    return (bool) $deleted;
 }
 
 function tholaMaCustomer()
@@ -1845,14 +1921,14 @@ function view_customer_waybills()
                             echo '<div class="divide-y divide-gray-200">';
                             // Only add Company if it's not empty
                             $fields = array_filter([
-                                'Company'  => $customer->company_name,
-                                'Name'     => $customer->customer_name,
-                                'Surname'  => $customer->customer_surname,
-                                'Cell'     => $customer->cell,
-                                'Address'  => $customer->address,
-                                'Email'  => $customer->email_address,
-                                'Country'  => $customer->country_name,
-                                'City'     => $customer->city_name,
+                                'Company'  => $customer['company_name'] ?? '',
+                                'Name'     => $customer['customer_name'] ?? '',
+                                'Surname'  => $customer['customer_surname'] ?? '',
+                                'Cell'     => $customer['cell'] ?? '',
+                                'Address'  => $customer['address'] ?? '',
+                                'Email'  => $customer['email_address'] ?? '',
+                                'Country'  => $customer['country_name'] ?? '',
+                                'City'     => $customer['city_name'] ?? '',
                             ], function ($value) {
                                 return $value !== null && $value !== '';
                             });
@@ -1867,13 +1943,13 @@ function view_customer_waybills()
                             //We will add a delete button here to delete the customer.
                             echo KIT_Commons::kitButton([
                                 'color' => 'red',
-                                'href' => admin_url('admin.php?page=customers-dashboard&delete_customer=' . $customer->cust_id)
+                                'href' => admin_url('admin.php?page=customers-dashboard&delete_customer=' . $customer['cust_id'])
                             ], 'Delete Customer');
 
                             //We will add a edit button here to edit the customer details.
                             echo KIT_Commons::kitButton([
                                 'color' => 'blue',
-                                'href' => admin_url('admin.php?page=08600-customers&edit_customer=' . $customer->cust_id)
+                                'href' => admin_url('admin.php?page=08600-customers&edit_customer=' . $customer['cust_id'])
                             ], 'Edit Customer');
                         } else {
                             /* We will display the edit form here */

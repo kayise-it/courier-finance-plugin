@@ -1,6 +1,9 @@
 <?php if (!defined('ABSPATH')) { exit; } ?>
 <div class="bg-white p-6">
-    <h3 class="text-lg font-medium text-gray-700 mb-3">Item Information</h3>
+<?= KIT_Commons::prettyHeading([
+                    'icon' => '<path d="M16 7a4 4 0 1 0-8 0v2a4 4 0 0 0 8 0V7z" /><path d="M12 19v-2m0 0a7 7 0 0 1-7-7V7a7 7 0 0 1 14 0v3a7 7 0 0 1-7 7z" />',
+                    'words' => 'Charges & Fees'
+                ]) ?>
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
         <div>
             <?php require COURIER_FINANCE_PLUGIN_PATH . 'includes/components/countriesSelect.php'; ?>

@@ -154,11 +154,6 @@ $scheduled_deliveries = KIT_Deliveries::getScheduledDeliveries();
                 const address = selectedOption.getAttribute('data-address');
                 const companyName = selectedOption.getAttribute('data-company-name');
 
-                console.log('Name:', name);
-                console.log('Surname:', surname);
-                console.log('Cell:', cell);
-                console.log('Address:', address);
-                console.log('Company Name:', companyName);
 
                 if (this.value === 'new') {
                     // Clear all fields for new customer

@@ -62,17 +62,17 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
     <!-- Dimension Manipulator (Admin only) -->
     <div class="mt-4">
         <label class="inline-flex items-center">
-            <input type="checkbox" id="enable_dimension_manipulator" name="enable_dimension_manipulator" class="form-checkbox h-4 w-4 text-blue-600">
+            <input type="checkbox" id="enable_price_manipulator" name="enable_price_manipulator" class="form-checkbox h-4 w-4 text-blue-600">
             <span class="ml-2 text-sm text-gray-700">Custom Volume Rate</span>
         </label>
         <div id="dimension_manipulator_input_container" style="display: none; margin-top: 1rem;">
             <?= KIT_Commons::Linput([
                 'label' => 'Volume Rate Manipulator (R)',
-                'name'  => 'dimension_charge_manipulator',
-                'id'    => 'dimension_charge_manipulator',
+                'name'  => 'manny_volume_rate',
+                'id'    => 'manny_volume_rate',
                 'type'  => 'number',
                 'step'  => '0.01',
-                'value' => isset($waybill->dimension_charge_manipulator) ? esc_attr($waybill->dimension_charge_manipulator) : '',
+                'value' => isset($waybill->manny_volume_rate) ? esc_attr($waybill->manny_volume_rate) : '',
                 'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 focus:ring-1 focus:ring-blue-500',
             ]); ?>
         </div>
@@ -99,8 +99,8 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
             volumeChargeDisplay: document.getElementById('volume_charge_display'),
             countrySelect: document.getElementById('countrydestination_id'),
             // Manipulator controls
-            manipCheckbox: document.getElementById('enable_dimension_manipulator'),
-            manipInput: document.getElementById('dimension_charge_manipulator'),
+            manipCheckbox: document.getElementById('enable_price_manipulator'),
+            manipInput: document.getElementById('manny_volume_rate'),
             manipInputContainer: document.getElementById('dimension_manipulator_input_container')
         };
 
@@ -232,7 +232,7 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
             });
 
             // If editing and value exists, show input and check the box
-            <?php if (!empty($waybill->dimension_charge_manipulator)) : ?>
+            <?php if (!empty($waybill->manny_volume_rate)) : ?>
             elements.manipCheckbox.checked = true;
             elements.manipInputContainer.style.display = 'block';
             <?php endif; ?>

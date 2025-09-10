@@ -1,27 +1,38 @@
 <?php if (!defined('ABSPATH')) { exit; } ?>
-<div>
-    <tr>
-        <th><label for="origin_country_select" class="<?= KIT_Commons::labelClass() ?>">Origin Country</label></th>
-        <td>
-            <?php if (isset($waybillFromStats['country_id'])) : ?>
-                <?php echo KIT_Deliveries::selectAllCountries('origin_country', 'origin_country_select', $waybillFromStats['country_id'], $required = "required", 'origin'); ?>
-            <?php else: ?>
-                <?php echo KIT_Deliveries::selectAllCountries('origin_country', 'origin_country_select', 1, "required", 'origin'); ?>
-            <?php endif; ?>
-        </td>
-    </tr>
-    <tr>
-        <th><label for="origin_city" class="<?= KIT_Commons::labelClass() ?>">Origin City</label></th>
-        <td>
-            <?php if (isset($waybillFromStats['country_id'])) : ?>
-                <?php
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div>
+        <label for="origin_country_select" class="<?= KIT_Commons::labelClass() ?>">Origin Country</label>
+        <?php 
+        // Determine default country ID - prioritize existing waybill data, then customer data, then default to 1
+        $defaultCountryId = 1;
+        if (isset($waybillFromStats['country_id'])) {
+            $defaultCountryId = $waybillFromStats['country_id'];
+        } elseif (isset($customer) && isset($customer->country_id)) {
+            $defaultCountryId = $customer->country_id;
+        }
+        echo KIT_Deliveries::selectAllCountries('origin_country', 'origin_country_select', $defaultCountryId, "required", 'origin'); 
+        ?>
+    </div>
+    <div>
+        <label for="origin_city_select" class="<?= KIT_Commons::labelClass() ?>">Origin City</label>
+        <?php 
+        // Determine default city ID - prioritize existing waybill data, then customer data, then default to 1
+        $defaultCityId = 1;
+        if (isset($waybillFromStats['country_id'])) {
+            // For existing waybills, try to get the city from delivery data
+            if (isset($waybill['delivery_id'])) {
                 $delData = KIT_Deliveries::get_delivery($waybill['delivery_id']);
-                $cityData = KIT_Deliveries::getCityData($delData->origin_country_id);
-                ?>
-                <?php echo KIT_Deliveries::selectAllCitiesByCountry('origin_city', 'origin_city_select', $waybillFromStats['country_id'], $cityData->id); ?>
-            <?php else: ?>
-                <?php echo KIT_Deliveries::selectAllCitiesByCountry('origin_city', 'origin_city_select', 1, 1); ?>
-            <?php endif; ?>
-        </td>
-    </tr>
+                if ($delData && isset($delData->origin_country_id)) {
+                    $cityData = KIT_Deliveries::getCityData($delData->origin_country_id);
+                    if ($cityData && isset($cityData->id)) {
+                        $defaultCityId = $cityData->id;
+                    }
+                }
+            }
+        } elseif (isset($customer) && isset($customer->city_id)) {
+            $defaultCityId = $customer->city_id;
+        }
+        echo KIT_Deliveries::selectAllCitiesByCountry('origin_city', 'origin_city_select', $defaultCountryId, $defaultCityId); 
+        ?>
+    </div>
 </div>

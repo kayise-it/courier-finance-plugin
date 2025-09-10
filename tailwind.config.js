@@ -1,10 +1,48 @@
-/** @type {import('tailwindcss').Config} */
 module.exports = {
-  important: true, // Add this 
   content: [
-    './**/*.php', // All PHP files
-    './includes/**/*.php', // Nested PHP files
-    './assets/**/*.js' // JS files, if using Tailwind in JS
+    './**/*.php',
+    './assets/js/**/*.js',
+    './js/**/*.js'
+  ],
+  safelist: [
+    // Layout
+    /^container$/,
+    /^grid$/,
+    /^grid-cols-/,
+    /^md:grid-cols-/,
+    /^flex$/,
+    /^flex-col$/,
+    /^items-/,
+    /^justify-/,
+    /^w-/,
+    /^h-/,
+    // Spacing
+    /^p[trblxy]?-/,
+    /^m[trblxy]?-/,
+    /^space-[xy]-/,
+    // Typography & colors
+    /^text-/,
+    /^font-/,
+    /^leading-/,
+    /^tracking-/,
+    /^bg-/,
+    /^from-/,
+    /^to-/,
+    /^via-/,
+    // Borders & radius & shadows
+    /^border/,
+    /^rounded/,
+    /^shadow/,
+    // Effects & transitions
+    /^transition/,
+    /^duration-/,
+    /^ease-/,
+    /^hover:/,
+    /^active:/,
+    /^focus:/,
+    /^focus:ring/,
+    // States
+    /^disabled:/,
   ],
   theme: {
     extend: {},

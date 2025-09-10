@@ -1,9 +1,12 @@
 <?php if (!defined('ABSPATH')) { exit; } ?>
-<div class="bg-white md:bg-transparent shadow md:shadow-transparent rounded-lg md:rounded-none space-y-4 md:space-y-0 md:grid md:grid-cols-2 md:gap-6">
-    <div class="space-y-4 md:bg-white md:shadow rounded-lg md:p-6">
+<div class="px-3 pt-4 bg-transparent md:bg-transparent space-y-4 md:space-y-0 md:grid md:grid-cols-2 md:gap-6">
+    <div class="space-y-4 bg-white shadow rounded-lg p-3 md:p-6">
         <div class="md:bg-white rounded-lg">
             <div class="">
-                <h2 class="text-xl font-semibold text-gray-800 mb-2">Create New Waybill</h2>
+                <?= KIT_Commons::prettyHeading([
+                    'icon' => '<path d="M16 7a4 4 0 1 0-8 0v2a4 4 0 0 0 8 0V7z" /><path d="M12 19v-2m0 0a7 7 0 0 1-7-7V7a7 7 0 0 1 14 0v3a7 7 0 0 1-7 7z" />',
+                    'words' => 'Create New Waybill'
+                ]) ?>
                 <p class="text-xs text-gray-600">
                     <?php echo $is_edit_mode ? 'Edit the waybill details below.' : 'Please fill in the details below to create a new waybill.'; ?>
                 </p>
@@ -39,20 +42,10 @@
         <?php require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/additionCharges.php'); ?>
     </div>
 
-    <div class="hidden md:block bg-white shadow rounded-lg p-4">
+    <div class="bg-white shadow rounded-lg p-3 md:p-4">
 
         <?php
         require __DIR__ . '/step2.php'; ?>
     </div>
 
-    <div class="md:hidden flex justify-end mt-6">
-        <?php echo KIT_Commons::renderButton('Next: Waybill Items', 'primary', 'md', [
-            'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />',
-            'iconPosition' => 'right',
-            'data-target' => 'step-3',
-            'classes' => 'next-step',
-            'gradient' => true
-        ]);
-        ?>
-    </div>
 </div>

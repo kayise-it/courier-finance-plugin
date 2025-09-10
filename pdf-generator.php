@@ -7,7 +7,33 @@ $testing = 0;
 
 // Bootstrap WordPress if accessed directly
 if (! defined('ABSPATH')) {
-  require_once dirname(__FILE__, 4) . '/wp-load.php';
+  // Try multiple possible paths to find WordPress root
+  $possible_paths = [
+    dirname(__FILE__, 4) . '/wp-load.php',  // Plugin -> wp-content -> plugins -> root
+    dirname(__FILE__, 3) . '/wp-load.php',  // Plugin -> wp-content -> root
+    dirname(__FILE__, 2) . '/wp-load.php',  // Plugin -> root
+  ];
+  
+  $wp_load_found = false;
+  
+  foreach ($possible_paths as $path) {
+    if (file_exists($path)) {
+      // Suppress errors during WordPress loading
+      $old_error_reporting = error_reporting();
+      error_reporting(E_ERROR | E_PARSE | E_CORE_ERROR | E_COMPILE_ERROR);
+      
+      require_once $path;
+      
+      // Restore error reporting
+      error_reporting($old_error_reporting);
+      $wp_load_found = true;
+      break;
+    }
+  }
+  
+  if (!$wp_load_found) {
+    die('WordPress not found. Please ensure the plugin is installed in the correct directory.');
+  }
 }
 
 // Color scheme (Settings & Configuration 60/30/10)
@@ -71,10 +97,29 @@ $waybillItems = isset($quotation->items) && is_array($quotation->items) ? $quota
 // Company details (name, address, VAT, banking) from DB
 global $wpdb;
 $company = $wpdb->get_row("SELECT * FROM {$wpdb->prefix}kit_company_details LIMIT 1", ARRAY_A);
-//use charge basis to determine the charge to use
+// Use stored snapshot where possible to ensure PDF matches UI exactly
 $mass_charge = floatval($waybill->mass_charge ?? 0);
 $volume_charge = floatval($waybill->volume_charge ?? 0);
-$charge_basis = ($mass_charge > $volume_charge) ? 'mass' : 'volume';
+
+$stored_basis = '';
+$stored_volume_rate = 0.0;
+$stored_mass_rate = 0.0;
+$stored_invoice_amount = 0.0;
+if (!empty($waybill->miscellaneous)) {
+  $md = maybe_unserialize($waybill->miscellaneous);
+  if (is_array($md) && isset($md['others'])) {
+    $stored_basis = isset($md['others']['used_charge_basis']) ? $md['others']['used_charge_basis'] : '';
+    $stored_volume_rate = isset($md['others']['volume_rate_used']) ? floatval($md['others']['volume_rate_used']) : 0.0;
+    if (isset($md['others']['mass_rate'])) {
+      $stored_mass_rate = floatval($md['others']['mass_rate']);
+    }
+    if (isset($md['others']['product_invoice_amount_snapshot'])) {
+      $stored_invoice_amount = floatval($md['others']['product_invoice_amount_snapshot']);
+    }
+  }
+}
+
+$charge_basis = !empty($stored_basis) ? $stored_basis : (($mass_charge > $volume_charge) ? 'mass' : 'volume');
 if ($charge_basis == 'mass' || $charge_basis == 'weight') {
   $charge = $mass_charge;
 } else {
@@ -459,23 +504,19 @@ ob_start();
           <td class="cellStyle aligncenter" <?= (!empty($waybillItems)) ? 'colspan="2"' : '' ?>>1</td>
           <td class="cellStyle" style="text-align:right;">
             <?php
-            // Display the rate (either mass or volume rate)
+            // Display the rate (either mass or volume rate) from stored snapshot first
             if ($charge_basis == 'mass' || $charge_basis == 'weight') {
-              // Try to get rate from miscellaneous data first, then fallback to calculated rate
-              $rate = '0.00';
-              if (!empty($misc_data) && isset($misc_data['others']['mass_rate'])) {
-                $rate = number_format($misc_data['others']['mass_rate'], 2);
-              } elseif (!empty($waybill->mass_charge) && !empty($waybill->total_mass_kg) && $waybill->total_mass_kg > 0) {
-                $rate = number_format($waybill->mass_charge / $waybill->total_mass_kg, 2);
+              $rate = $stored_mass_rate > 0 ? $stored_mass_rate : ((!empty($misc_data) && isset($misc_data['others']['mass_rate'])) ? floatval($misc_data['others']['mass_rate']) : 0);
+              if (!$rate && !empty($waybill->mass_charge) && !empty($waybill->total_mass_kg) && $waybill->total_mass_kg > 0) {
+                $rate = $waybill->mass_charge / $waybill->total_mass_kg;
               }
-              echo $rate;
+              echo number_format($rate, 2);
             } else {
-              // For volume charge, calculate rate from volume_charge / total_volume
-              $rate = '0.00';
-              if (!empty($waybill->volume_charge) && !empty($waybill->total_volume) && $waybill->total_volume > 0) {
-                $rate = number_format($waybill->volume_charge / $waybill->total_volume, 2);
+              $rate = $stored_volume_rate > 0 ? $stored_volume_rate : 0;
+              if (!$rate && !empty($waybill->volume_charge) && !empty($waybill->total_volume) && $waybill->total_volume > 0) {
+                $rate = $waybill->volume_charge / $waybill->total_volume;
               }
-              echo $rate;
+              echo number_format($rate, 2);
             }
             ?>
           </td>
@@ -568,7 +609,7 @@ ob_start();
         <!-- TOTAL ROW -->
         <tr class="rowTotal">
           <td class="cellStyle" style="font-size:18px; font-weight:700;">TOTAL</td>
-          <td class="cellStyle" <?= (!empty($waybillItems)) ? 'colspan="5"' : 'colspan="4"' ?> style="text-align:right;">R <?= number_format(floatval($waybill->product_invoice_amount ?? 0), 2) ?></td>
+          <td class="cellStyle" <?= (!empty($waybillItems)) ? 'colspan="5"' : 'colspan="4"' ?> style="text-align:right;">R <?= number_format($stored_invoice_amount > 0 ? $stored_invoice_amount : floatval($waybill->product_invoice_amount ?? 0), 2) ?></td>
         </tr>
       </table>
 

@@ -13,42 +13,54 @@ $is_equal = $mass_charge === $volume_charge;
             <strong>Success!</strong> Approval status has been updated.
         </div>
     <?php endif; ?>
-    
+
     <?php if (isset($_GET['invoice_status_updated']) && $_GET['invoice_status_updated'] == '1'): ?>
         <div id="invoice-status-message" class="mb-4 p-4 bg-blue-100 border border-blue-400 text-blue-700 rounded">
             <strong>Note:</strong> Invoice status has been automatically set to "Pending" because the approval status was changed from "Approved" or "Completed".
         </div>
     <?php endif; ?>
-    
+
     <?php if (isset($_GET['approval_error']) && $_GET['approval_error'] == '1'): ?>
         <div id="approval-error-message" class="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
             <strong>Error!</strong> Failed to update approval status. Please try again.
         </div>
     <?php endif; ?>
-    
+
     <?php if (isset($_GET['assignment_success']) && $_GET['assignment_success'] == '1'): ?>
         <div id="assignment-success-message" class="mb-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded">
             <strong>Success!</strong> Waybill has been assigned to delivery truck.
         </div>
     <?php endif; ?>
-    
+
     <?php if (isset($_GET['assignment_error'])): ?>
         <div id="assignment-error-message" class="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
-            <strong>Error!</strong> 
-            <?php 
+            <strong>Error!</strong>
+            <?php
             $error_code = $_GET['assignment_error'];
-            switch($error_code) {
-                case '1': echo 'Invalid waybill or delivery ID.'; break;
-                case '2': echo 'Waybill not found or not warehoused.'; break;
-                case '3': echo 'Delivery not found.'; break;
-                case '4': echo 'Waybill is already assigned to a delivery.'; break;
-                case '5': echo 'Failed to assign waybill. Please try again.'; break;
-                default: echo 'Unknown error occurred.'; break;
+            switch ($error_code) {
+                case '1':
+                    echo 'Invalid waybill or delivery ID.';
+                    break;
+                case '2':
+                    echo 'Waybill not found or not warehoused.';
+                    break;
+                case '3':
+                    echo 'Delivery not found.';
+                    break;
+                case '4':
+                    echo 'Waybill is already assigned to a delivery.';
+                    break;
+                case '5':
+                    echo 'Failed to assign waybill. Please try again.';
+                    break;
+                default:
+                    echo 'Unknown error occurred.';
+                    break;
             }
             ?>
         </div>
     <?php endif; ?>
-    
+
     <div class="flex flex-col space-y-6 justify-between items-start border-b pb-4">
         <div class="grid grid-cols-2 w-full">
             <div>
@@ -82,7 +94,7 @@ $is_equal = $mass_charge === $volume_charge;
                 <div class="text-right">
                     <h1 class="display-3 font-bold">Total Waybill: <?= KIT_Commons::displayWaybillTotal($waybill['product_invoice_amount'] ?? 0) ?></h1>
                 </div>
-        <?php
+            <?php
             endif;
             ?>
         </div>
@@ -108,18 +120,43 @@ $is_equal = $mass_charge === $volume_charge;
             ?>
             <div class="flex flex-col">
                 <label class="<?= KIT_Commons::labelClass() ?>">Invoice Status:</label>
-                <?= KIT_Commons::waybillQuoteStatus(esc_attr($waybill['waybill_no']), esc_attr($waybill['id']), 'select'); ?>
+                <?= KIT_Commons::waybillQuoteStatus(esc_attr((string)($waybill['waybill_no'] ?? '')), esc_attr((string)($waybill['id'] ?? '')), 'select'); ?>
             </div>
             <div class="flex flex-col">
                 <label class="<?= KIT_Commons::labelClass() ?>">Approval Status:</label>
-                <?= KIT_Commons::waybillApprovalStatus(esc_attr($waybill['waybill_no']), esc_attr($waybill['id']), esc_attr($waybill['approval']), 'select'); ?>
+                <?= KIT_Commons::waybillApprovalStatus(esc_attr((string)($waybill['waybill_no'] ?? '')), esc_attr((string)($waybill['id'] ?? '')), esc_attr((string)($waybill['approval'] ?? '')), 'select'); ?>
             </div>
-            <?php if ($waybill['warehouse']): ?>
+            <?php
+            // Check if waybill has warehouse items
+            require_once plugin_dir_path(__FILE__) . '../warehouse/warehouse-functions.php';
+            $warehouse_items = KIT_Warehouse::getWarehouseItems($waybill['id']);
+            if (!empty($warehouse_items)): ?>
                 <div class="flex flex-col">
                     <label class="<?= KIT_Commons::labelClass() ?>">Warehoused:</label>
-                    <?= KIT_Commons::warehouseDeliveryAssignment($waybill['id'], $waybill['waybill_no'], $waybill['destination_country'], $waybill['destination_city'], $waybill['status']); ?>
+                    <?= KIT_Commons::warehouseDeliveryAssignment(
+                        $waybill['id'],
+                        $waybill['waybill_no'],
+                        $waybill['destination_country'] ?? '',
+                        $waybill['destination_city'] ?? '',
+                        $waybill['status']
+                    ); ?>
                 </div>
             <?php endif; ?>
+            <?php
+            // Decide which button to show based on whether DB total matches recalculation
+            $allowFix = false;
+            $buttonText = 'Confirm Waybill Total';
+            if (class_exists('KIT_Waybills')) {
+                $checkTotal = KIT_Waybills::doubleCalcWaybillTotal(['waybill_no' => intval($waybill['waybill_no'])]);
+                if (is_array($checkTotal) && empty($checkTotal['error'])) {
+                    $allowFix = !$checkTotal['matches'];
+                    if ($allowFix) {
+                        $buttonText = 'Verify & Update DB';
+                    }
+                }
+            }
+            ?>
+            
         </div>
         <!-- VAT Warning Display -->
         <?php if (isset($_GET['vat_warning']) && $_GET['vat_warning'] == '1'): ?>
@@ -144,7 +181,7 @@ $is_equal = $mass_charge === $volume_charge;
                 <?= KIT_Commons::h2tag(['title' => 'Waybill Description', 'class' => '']) ?>
                 <p class="text xs"><?= esc_html($waybill['miscellaneous']['others']['waybill_description'] ?? '') ?></p>
             </div>
-           
+
         </div>
     </div>
 
@@ -260,10 +297,10 @@ $is_equal = $mass_charge === $volume_charge;
                 $volume_charge = floatval($waybill['volume_charge'] ?? 0);
                 $total_mass_kg = floatval($waybill['total_mass_kg'] ?? 0);
                 $total_volume = floatval($waybill['miscellaneous']['others']['total_volume'] ?? 0);
-                
+
                 // Calculate mass rate if we have mass data
                 $mass_rate = ($total_mass_kg > 0) ? $mass_charge / $total_mass_kg : 0;
-                
+
                 // Determine preferred charge (the one actually being used)
                 $preferred_charge = ($mass_charge > $volume_charge) ? 'mass' : 'volume';
 
@@ -336,17 +373,6 @@ $is_equal = $mass_charge === $volume_charge;
                 ]);
                 echo '</div>';
 
-                //Grand Total:
-                echo '<div class="flex gap-2">';
-                echo KIT_Commons::LText([
-                    'label' => "Total:",
-                                            'value' => KIT_Commons::displayWaybillTotal($waybill['product_invoice_amount']),
-                    'classlabel' => '',
-                    'classP' => '',
-                    'onclick' => '',
-                ]);
-                echo '</div>';
-
                 // Convert all values to float to ensure proper numeric comparison
                 $vat_total = isset($waybill['miscellaneous']['others']['vat_total']) ? floatval($waybill['miscellaneous']['others']['vat_total']) : 0.0;
                 $misc_total = isset($waybill['miscellaneous']['misc_total']) ? floatval($waybill['miscellaneous']['misc_total']) : 0.0;
@@ -367,6 +393,11 @@ $is_equal = $mass_charge === $volume_charge;
                     $optionChoice = 3;
                     require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/additionCharges.php'); ?>
                 </div>
+                <div class="flex gap-2" style="font-size: 1.2rem; font-weight: bold;">
+                    <label class="<?= KIT_Commons::labelClass() ?>">Grand Total:</label>
+                    <span class="font-bold"><?= KIT_Commons::displayWaybillTotal($waybill['product_invoice_amount']) ?></span>
+                    
+                </div>
             </div>
         </div>
         <!-- Route Information -->
@@ -380,7 +411,7 @@ $is_equal = $mass_charge === $volume_charge;
                 <div class="flex flex-col">
                     <label class="<?= KIT_Commons::labelClass() ?>">Destination:</label>
                     <span class="font-medium">
-                        <?= htmlspecialchars($waybill['destination_country']) ?>
+                        <?= htmlspecialchars($waybill['destination_country'] ?? 'N/A') ?>
                     </span>
                 </div>
                 <div class="flex flex-col">
@@ -571,27 +602,27 @@ if (!function_exists('maybe_unserialize')) {
 ?>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Auto-hide success/error messages after 10 seconds
-    const messages = [
-        'approval-success-message',
-        'invoice-status-message', 
-        'approval-error-message',
-        'assignment-success-message',
-        'assignment-error-message'
-    ];
-    
-    messages.forEach(function(messageId) {
-        const message = document.getElementById(messageId);
-        if (message) {
-            setTimeout(function() {
-                message.style.transition = 'opacity 0.5s ease-out';
-                message.style.opacity = '0';
+    document.addEventListener('DOMContentLoaded', function() {
+        // Auto-hide success/error messages after 10 seconds
+        const messages = [
+            'approval-success-message',
+            'invoice-status-message',
+            'approval-error-message',
+            'assignment-success-message',
+            'assignment-error-message'
+        ];
+
+        messages.forEach(function(messageId) {
+            const message = document.getElementById(messageId);
+            if (message) {
                 setTimeout(function() {
-                    message.remove();
-                }, 500); // Wait for fade out animation
-            }, 10000); // 10 seconds
-        }
+                    message.style.transition = 'opacity 0.5s ease-out';
+                    message.style.opacity = '0';
+                    setTimeout(function() {
+                        message.remove();
+                    }, 500); // Wait for fade out animation
+                }, 10000); // 10 seconds
+            }
+        });
     });
-});
 </script>

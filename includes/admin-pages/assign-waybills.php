@@ -39,13 +39,14 @@ if (isset($_POST['assign_waybills']) && wp_verify_nonce($_POST['nonce'], 'assign
     }
 }
 
-// Get warehouse waybills (assigned to warehouse delivery)
+// Get warehouse waybills (waybills with warehouse items)
 global $wpdb;
 $warehouse_waybills_query = "
-    SELECT w.*, c.name as customer_name, c.surname as customer_surname, c.company_name
+    SELECT DISTINCT w.*, c.name as customer_name, c.surname as customer_surname, c.company_name
     FROM {$wpdb->prefix}kit_waybills w
     LEFT JOIN {$wpdb->prefix}kit_customers c ON w.customer_id = c.cust_id
-    WHERE w.warehouse = 1 AND w.delivery_id = 1
+    INNER JOIN {$wpdb->prefix}kit_warehouse_items wi ON w.id = wi.waybill_id
+    WHERE wi.status = 'in_warehouse'
     ORDER BY w.created_at DESC
 ";
 $warehouse_waybills = $wpdb->get_results($warehouse_waybills_query);

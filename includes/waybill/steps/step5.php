@@ -1,14 +1,19 @@
-<?php if (!defined('ABSPATH')) { exit; } ?>
- <div class="bg-white p-6">
-     <div class="grid md:grid-cols-5 gap-4">
-         <div class="md:col-span-3 rounded-lg">
-             <div class="">
-                 <?php require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/dimandvol.php'); ?>
-             </div>
+<?php if (!defined('ABSPATH')) {
+    exit;
+} ?>
+<div class="bg-white p-6">
+    <div class="grid md:grid-cols-5 gap-4">
+        <div class="md:col-span-3 rounded-lg">
+            <div class="">
+                <?php require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/dimandvol.php'); ?>
+            </div>
             <!--  <div class="rounded bg-slate-100 p-6">
-                 <?= KIT_Commons::h2tag(['title' => 'Charge Basis', 'class' => 'text-lg font-medium text-gray-700 mb-3']) ?>
                  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                      <div>
+                     <?= KIT_Commons::prettyHeading([
+                            'icon' => '<path d="M16 7a4 4 0 1 0-8 0v2a4 4 0 0 0 8 0V7z" /><path d="M12 19v-2m0 0a7 7 0 0 1-7-7V7a7 7 0 0 1 14 0v3a7 7 0 0 1-7 7z" />',
+                            'words' => 'Charge Basis'
+                        ]) ?>
                          <?php
                             $chargebasis = [
                                 'mass' => 'Mass',
@@ -49,67 +54,70 @@
                      </div>
                  </div>
              </div> -->
-         </div>
+        </div>
 
-         <div class="md:col-span-2 items-section">
-            
-             <div class="p-6 rounded-lg bg-slate-100">
-                 <?= KIT_Commons::h2tag(['title' => 'Items', 'class' => 'text-lg font-medium text-gray-700 mb-3']) ?>
-                 <table class="table">
-                     <tbody>
-                         <!-- Dynamic Miscellaneous Charges -->
-                         <tr id="misc-charges-container">
-                             <td colspan="2">
-                                 <?php
-                                    echo KIT_Commons::miscItemsControl([
-                                        'container_id' => 'misc-items',
-                                        'button_id' => 'add-misc-item',
-                                        'group_name' => 'misc',
-                                        'input_class' => '',
-                                        'existing_items' => [
-                                            /*  ['misc_item' => 'Shipping', 'misc_price' => 15.00, 'qty' => 1],
+        <div class="md:col-span-2 items-section">
+
+            <div class="p-6 rounded-lg bg-slate-100">
+                <?= KIT_Commons::prettyHeading([
+                    'icon' => '<path d="M16 7a4 4 0 1 0-8 0v2a4 4 0 0 0 8 0V7z" /><path d="M12 19v-2m0 0a7 7 0 0 1-7-7V7a7 7 0 0 1 14 0v3a7 7 0 0 1-7 7z" />',
+                    'words' => 'Items'
+                ]) ?>
+                <table class="table">
+                    <tbody>
+                        <!-- Dynamic Miscellaneous Charges -->
+                        <tr id="misc-charges-container">
+                            <td colspan="2">
+                                <?php
+                                echo KIT_Commons::miscItemsControl([
+                                    'container_id' => 'misc-items',
+                                    'button_id' => 'add-misc-item',
+                                    'group_name' => 'misc',
+                                    'input_class' => '',
+                                    'existing_items' => [
+                                        /*  ['misc_item' => 'Shipping', 'misc_price' => 15.00, 'qty' => 1],
                                             ['misc_item' => 'Handling', 'misc_price' => 5.50, 'qty' => 1] */]
-                                    ]);
-                                    ?>
+                                ]);
+                                ?>
 
-                                 <div id="misc-items-container">
-                                     <!-- Existing misc items will be loaded here -->
-                                     <?php
-                                        // Check if we have waybill data with miscellaneous items
-                                        if (isset($waybill) && !empty($waybill->miscellaneous)) {
-                                            $misc_items = maybe_unserialize($waybill->miscellaneous);
-                                            if (is_array($misc_items) && isset($misc_items['others'])) {
-                                                foreach ($misc_items['others'] as $index => $item) {
-                                                    echo '<div class="misc-item" style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
+                                <div id="misc-items-container">
+                                    <!-- Existing misc items will be loaded here -->
+                                    <?php
+                                    // Check if we have waybill data with miscellaneous items
+                                    if (isset($waybill) && !empty($waybill->miscellaneous)) {
+                                        $misc_items = maybe_unserialize($waybill->miscellaneous);
+                                        if (is_array($misc_items) && isset($misc_items['others'])) {
+                                            foreach ($misc_items['others'] as $index => $item) {
+                                                echo '<div class="misc-item" style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
                                                             <input type="text" name="misc_item[]" value="' . esc_attr($item['name'] ?? '') . '" placeholder="Item description" style="flex: 2; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                                                             <input type="number" name="misc_price[]" value="' . esc_attr($item['price'] ?? '') . '" placeholder="Amount" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                                                             <button type="button" class="remove-misc-btn bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-sm font-medium transition-colors duration-200">×</button>
                                                         </div>';
-                                                }
                                             }
                                         }
-                                        ?>
-                                 </div>
+                                    }
+                                    ?>
+                                </div>
 
-                             </td>
-                         </tr>
-                     </tbody>
-                 </table>
-             </div>
-         </div>
-     </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 
-     <div class="flex justify-between mt-8">
-         <?php echo KIT_Commons::renderButton('Back', 'secondary', 'md', [
-             'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 17l-5-5m0 0l5-5m-5 5h12" />',
-             'iconPosition' => 'left',
-             'data-target' => 'step-4',
-             'classes' => 'prev-step'
-         ]); ?>
-         <?php echo KIT_Commons::renderButton($is_edit_mode ? 'Update Waybill' : 'Create Waybill', 'success', 'md', [
-             'type' => 'submit',
-             'classes' => 'submit-btn',
-             'gradient' => true
-         ]); ?>
-     </div>
- </div>
+    <div class="flex justify-between mt-8">
+        <?php echo KIT_Commons::renderButton('Back', 'secondary', 'md', [
+            'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 17l-5-5m0 0l5-5m-5 5h12" />',
+            'iconPosition' => 'left',
+            'data-target' => 'step-4',
+            'classes' => 'prev-step'
+        ]); ?>
+        <?php echo KIT_Commons::renderButton($is_edit_mode ? 'Update Waybill' : 'Create Waybill', 'success', 'md', [
+            'type' => 'submit',
+            'classes' => 'submit-btn',
+            'gradient' => true
+        ]); ?>
+    </div>
+</div>

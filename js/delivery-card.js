@@ -6,18 +6,18 @@
 // Handle delivery card click
 function handleDeliveryClick(directionId) {
     // Remove active state from all delivery cards
-    document.querySelectorAll('.delivery-card').forEach(card => {
+    document.querySelectorAll('.delivery-card').forEach(card function {
         card.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2');
     });
     
     // Add active state to clicked card
-    const selectedCard = document.querySelector(`[data-direction-id="${directionId}"]`);
+    var selectedCard = document.querySelector(`[data-direction-id="${directionId}"]`);
     if (selectedCard) {
         selectedCard.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2');
     }
     
     // Trigger custom event for other components to listen to
-    const event = new CustomEvent('deliverySelected', {
+    var event = new CustomEvent('deliverySelected', {
         detail: { directionId: directionId }
     });
     document.dispatchEvent(event);
@@ -31,12 +31,12 @@ function handleDeliveryChange(directionId) {
 // Clear delivery selection
 function clearDeliverySelection() {
     // Remove active state from all cards
-    document.querySelectorAll('.delivery-card').forEach(card => {
+    document.querySelectorAll('.delivery-card').forEach(card function {
         card.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2');
     });
     
     // Trigger custom event
-    const event = new CustomEvent('deliveryCleared');
+    var event = new CustomEvent('deliveryCleared');
     document.dispatchEvent(event);
 }
 
@@ -50,7 +50,7 @@ function handleGroupingChange(grouping) {
 // Initialize delivery cards when DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
     // Set up grouping select if it exists
-    const groupingSelect = document.getElementById('grouping-option');
+    var groupingSelect = document.getElementById('grouping-option');
     if (groupingSelect) {
         groupingSelect.addEventListener('change', function() {
             handleGroupingChange(this.value);

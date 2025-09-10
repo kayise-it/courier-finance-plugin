@@ -3,47 +3,48 @@
 /**
  * Plugin Name: 08600 Services and Quotations
  * Description: Plugin to manage services and quotations.
- * Version: 1.0
+  * Version: 2.0.0
  * Author: Thando Hlophe kayise it
  * Author URI: https://kayiseit.com
  * Text Domain: 08600-services-quotations
  */
 
-// PHP 8.1+ Deprecation Warning Suppression - TEMPORARILY DISABLED FOR DEBUGGING
-// if (version_compare(PHP_VERSION, '8.1.0', '>=')) {
-//     // Suppress deprecation warnings at plugin level
-//     error_reporting(E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED);
-//     ini_set('display_errors', 0);
-//     
-//     // Set custom error handler to catch and suppress deprecation warnings
-//     set_error_handler(function($severity, $message, $file, $line) {
-//         // Suppress deprecation warnings completely
-//         if ($severity === E_DEPRECATED || $severity === E_USER_DEPRECATED) {
-//             return true; // Don't execute PHP's internal error handler
-//         }
-//         
-//         // Let other errors through normally
-//         return false;
-//     });
-//     
-//     // Start output buffering to catch any warnings that slip through
-//     ob_start(function($buffer) {
-//         // Remove deprecation warnings from the output buffer
-//         $buffer = preg_replace('/Deprecated: .*? in .*? on line \d+/s', '', $buffer);
-//         return $buffer;
-//     });
-//     
-//     // Additional suppression will be registered via proper WordPress hook below
-// }
+// PHP 8.1+ Deprecation Warning Suppression - ENABLED
+if (version_compare(PHP_VERSION, '8.1.0', '>=')) {
+    // Suppress deprecation warnings at plugin level
+    error_reporting(E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED);
+    @ini_set('display_errors', '0');
+
+    // Set custom error handler to catch and suppress deprecation warnings
+    set_error_handler(function($severity, $message, $file, $line) {
+        // Suppress deprecation warnings completely
+        if ($severity === E_DEPRECATED || $severity === E_USER_DEPRECATED) {
+            return true; // Don't execute PHP's internal error handler
+        }
+        return false; // Let other errors through normally
+    });
+
+    // Start output buffering to catch any warnings that slip through
+    if (!headers_sent()) {
+        ob_start(function($buffer) {
+            // Remove deprecation warnings from the output buffer (safety net)
+            $buffer = preg_replace('/Deprecated:\s.*?(?:\n|<br\s*\/?>)/is', '', $buffer);
+            return $buffer;
+        });
+    }
+}
 
 
+
+// Load the bootstrap file for proper WordPress loading and error handling
+require_once plugin_dir_path(__FILE__) . 'bootstrap.php';
 
 // Exit if accessed directly
 if (! defined('ABSPATH')) {
     exit;
 }
-define('COURIER_FINANCE_PLUGIN_PATH', plugin_dir_path(__FILE__));
-define('COURIER_FINANCE_PLUGIN_URL', plugin_dir_url(__FILE__));
+
+// Plugin constants are now defined in bootstrap.php
 
 
 
@@ -92,23 +93,24 @@ function kit_remove_manage_options_from_editor()
 // Initialize the plugin
 Plugin::init();
 
-// Register additional deprecation warning suppression after WordPress is loaded - TEMPORARILY DISABLED
-// if (version_compare(PHP_VERSION, '8.1.0', '>=')) {
-//     add_action('init', function() {
-//         // Suppress deprecation warnings during WordPress initialization
-//         error_reporting(E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED);
-//         ini_set('display_errors', 0);
-//     }, 1);
-//     
-//     // Also suppress on admin pages where these warnings commonly appear
-//     add_action('admin_init', function() {
-//         error_reporting(E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED);
-//         ini_set('display_errors', 0);
-//     }, 1);
-// }
+// Register additional deprecation warning suppression after WordPress is loaded - ENABLED
+if (version_compare(PHP_VERSION, '8.1.0', '>=')) {
+    add_action('init', function() {
+        // Suppress deprecation warnings during WordPress initialization
+        error_reporting(E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED);
+        @ini_set('display_errors', '0');
+    }, 1);
+    
+    // Also suppress on admin pages where these warnings commonly appear
+    add_action('admin_init', function() {
+        error_reporting(E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED);
+        @ini_set('display_errors', '0');
+    }, 1);
+}
 
 // Include the service functions
 include_once plugin_dir_path(__FILE__) . 'includes/commons.php';
+include_once plugin_dir_path(__FILE__) . 'includes/components/toast.php';
 include_once plugin_dir_path(__FILE__) . 'includes/admin-menu.php';
 include_once plugin_dir_path(__FILE__) . 'includes/admin-pages.php';
 include_once(plugin_dir_path(__FILE__) . 'includes/services/services-functions.php');
@@ -151,8 +153,15 @@ function my_plugin_enqueue_scripts()
     wp_enqueue_script('kitscript', plugin_dir_url(__FILE__) . 'js/kitscript.js', ['jquery'], null, true);
     wp_enqueue_script('waybill-pagination', plugin_dir_url(__FILE__) . '/js/waybill-pagination.js', ['jquery'], null, true);
 
+    // Preload cities map for instant city dropdown updates without AJAX
+    if (!class_exists('KIT_Deliveries')) {
+        require_once plugin_dir_path(__FILE__) . 'includes/deliveries/deliveries-functions.php';
+    }
+    $country_cities_map = method_exists('KIT_Deliveries', 'getCountryCitiesMap') ? KIT_Deliveries::getCountryCitiesMap() : [];
+
     $localize_data = [
         'ajax_url' => admin_url('admin-ajax.php'),
+        'countryCities' => $country_cities_map,
         'nonces' => [
             'add'    => wp_create_nonce('add_waybill_nonce'),
             'delete' => wp_create_nonce('delete_waybill_nonce'),
@@ -174,8 +183,10 @@ function my_plugin_enqueue_scripts()
  */
 function plugin_main_page()
 {
-    // Start output buffering
-    ob_start();
+    // Start output buffering (safety)
+    if (!headers_sent()) {
+        ob_start();
+    }
 
     echo KIT_Commons::showingHeader([
         'title' => 'Services',
@@ -406,7 +417,7 @@ function quotation_view_page()
         'contact_name' => '',
         'vat_number' => '',
         'telephone' => '',
-        'warehouse' => '',
+        // Warehouse status now managed by warehouse_items table
         'miscellaneous' => '',
         'include_sad500' => 1,
         'include_sadc' => 0,

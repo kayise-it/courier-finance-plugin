@@ -4,10 +4,10 @@
 require_once plugin_dir_path(__FILE__) . '../user-roles.php';
 ?>
 <input type="hidden" name="origin_country_id" value="2" id="countrydestination_id" />
-<input type="hidden" name="direction_id" id="direction_id" value="<?= esc_attr($direction_id ?? $waybill['direction_id'] ?? '') ?>" />
-<input type="hidden" name="current_rate" id="current_rate" value="<?= isset($waybill['miscellaneous']['others']['mass_rate']) ?>">
-<input type="hidden" name="base_rate" id="base_rate" value="<?= esc_attr($waybill['miscellaneous']['others']['mass_rate'] ?? ($waybill['mass_rate'] ?? '')) ?>">
-<div class="bg-slate-100 p-6 rounded">
+<input type="hidden" name="direction_id" id="direction_id" value="<?= esc_attr($direction_id ?? (isset($waybill) && isset($waybill['direction_id']) ? $waybill['direction_id'] : '') ?? '') ?>" />
+<input type="hidden" name="current_rate" id="current_rate" value="<?= isset($waybill) && isset($waybill['miscellaneous']) && isset($waybill['miscellaneous']['others']) && isset($waybill['miscellaneous']['others']['mass_rate']) ? $waybill['miscellaneous']['others']['mass_rate'] : '' ?>">
+<input type="hidden" name="base_rate" id="base_rate" value="<?= esc_attr((isset($waybill) && isset($waybill['miscellaneous']) && isset($waybill['miscellaneous']['others']) && isset($waybill['miscellaneous']['others']['mass_rate']) ? $waybill['miscellaneous']['others']['mass_rate'] : '') ?? (isset($waybill) && isset($waybill['mass_rate']) ? $waybill['mass_rate'] : '') ?? '') ?>">
+<div class="bg-slate-100">
     <?= KIT_Commons::h2tag(['title' => 'Mass', 'class' => '']) ?>
     
     <!-- ✅ BULLETPROOF: Loading indicator styles -->
@@ -50,7 +50,8 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
     <?php
     $total_mass_kg = null;
 
-    if ($waybill !== null) {
+    // Safety check for $waybill variable
+    if (isset($waybill) && $waybill !== null) {
         if (is_object($waybill) && isset($waybill->total_mass_kg)) {
             $total_mass_kg = $waybill->total_mass_kg;
         } elseif (is_array($waybill) && isset($waybill['total_mass_kg'])) {
@@ -58,7 +59,7 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
         }
     }
     ?>
-    <div class="grid md:grid-cols-2 gap-4 justify-center align-middle">
+    <div class="md:grid md:grid-cols-2 gap-4 justify-center align-middle">
         <div class="items-center">
             <div>
                 <?= KIT_Commons::Linput([
@@ -79,7 +80,7 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
                     'name'  => 'mass_rate',
                     'id'  => 'mass_rate',
                     'type'  => 'number',
-                    'value' => esc_attr($waybill['miscellaneous']['others']['mass_rate'] ?? null),
+                    'value' => esc_attr(isset($waybill) ? ($waybill['miscellaneous']['others']['mass_rate'] ?? null) : null),
                     'class' => '',
                     'special' => 'readonly',
                     'tabindex' => '1',
@@ -101,7 +102,7 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
                     'name'  => 'mass_charge',
                     'id'  => 'mass_charge',
                     'type'  => 'text',
-                    'value' => esc_attr($waybill['mass_charge'] ?? null),
+                    'value' => esc_attr(isset($waybill) ? ($waybill['mass_charge'] ?? null) : null),
                     'class' => '',
                     'special' => 'readonly',
                 ]); ?>
@@ -119,14 +120,14 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
                 <?php $showing = (!empty($checkManny) == 'checked') ? 'block' : 'none'; ?>
                 <div id="price_manipulator_input_container" style="display: <?= $showing ?>;">
                     <?php
-                    $massRate = $waybill['miscellaneous']['others']['mass_rate'] ?? null;
+                    $massRate = isset($waybill) ? ($waybill['miscellaneous']['others']['mass_rate'] ?? null) : null;
 
                     echo KIT_Commons::Linput([
                         'label' => 'Add to Charge  (R)',
                         'name'  => 'mass_charge_manipulator',
                         'id'    => 'mass_charge_manipulator',
                         'type'  => 'number',
-                        'value' =>  $waybill['mass_charge_manipulator'] ?? 0,
+                        'value' => isset($waybill) ? ($waybill['mass_charge_manipulator'] ?? 0) : 0,
                         'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500',
                     ]);
                     ?>
@@ -314,7 +315,7 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
                             });
 
                             // If editing and value exists, show input and check the box
-                            <?php if (!empty($waybill['mass_charge_manipulator'])) : ?>
+                            <?php if (isset($waybill) && !empty($waybill['mass_charge_manipulator'])) : ?>
                                 checkbox.checked = true;
                                 inputContainer.style.display = 'block';
                                 // ✅ BULLETPROOF: Focus and highlight manipulator input when pre-checked
@@ -463,7 +464,7 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
                         
                         // ✅ BULLETPROOF: Additional trigger for edit mode scenarios
                         // Check if we're in edit mode (waybill data exists but rate is missing)
-                        <?php if (!empty($waybill) && (!isset($waybill['miscellaneous']['others']['mass_rate']) || empty($waybill['miscellaneous']['others']['mass_rate']))): ?>
+                        <?php if (isset($waybill) && !empty($waybill) && (!isset($waybill['miscellaneous']['others']['mass_rate']) || empty($waybill['miscellaneous']['others']['mass_rate']))): ?>
                         setTimeout(function() {
                             console.log('Edit mode detected - triggering rate fetch...');
                             autoTriggerRateFetch();

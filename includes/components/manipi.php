@@ -8,7 +8,7 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
 
         <div>
             <label class="inline-flex items-center">
-                <input type="checkbox" id="enable_volume_price_manipulator" name="enable_volume_price_manipulator" class="form-checkbox h-4 w-4 text-blue-600">
+                <input type="checkbox" id="enable_price_manipulator" name="enable_price_manipulator" class="form-checkbox h-4 w-4 text-blue-600">
                 <span class="ml-2 text-sm text-gray-700">Custom Pricing</span>
             </label>
         </div>
@@ -16,25 +16,25 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
             <?php
             echo KIT_Commons::Linput([
                 'label' => 'Volume Rate Manipulator (R)',
-                'name'  => 'volume_charge_manipulator',
-                'id'    => 'volume_charge_manipulator',
+                'name'  => 'manny_volume_rate',
+                'id'    => 'manny_volume_rate',
                 'type'  => 'number',
                 'step'  => '0.01',
-                'value' => isset($waybill->volume_charge_manipulator) ? esc_attr($waybill->volume_charge_manipulator) : '',
+                'value' => isset($waybill->manny_volume_rate) ? esc_attr($waybill->manny_volume_rate) : '',
                 'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500',
             ]);
             ?>
         </div>
         <script>
             document.addEventListener('DOMContentLoaded', function() {
-                const checkbox = document.getElementById('enable_volume_price_manipulator');
+                const checkbox = document.getElementById('enable_price_manipulator');
                 const inputContainer = document.getElementById('volume_price_manipulator_input_container');
                 if (checkbox && inputContainer) {
                     checkbox.addEventListener('change', function() {
                         inputContainer.style.display = this.checked ? 'block' : 'none';
                     });
                     // If editing and value exists, show input and check the box
-                    <?php if (!empty($waybill->volume_charge_manipulator)) : ?>
+                    <?php if (!empty($waybill->manny_volume_rate)) : ?>
                         checkbox.checked = true;
                         inputContainer.style.display = 'block';
                     <?php endif; ?>
@@ -46,8 +46,8 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
     <script>
     // Custom pricing for volume: allow admin to add a manipulator to the volume rate
     document.addEventListener('DOMContentLoaded', function(){
-        const volCheckbox = document.getElementById('enable_volume_price_manipulator');
-        const manipInput = document.getElementById('volume_charge_manipulator');
+        const volCheckbox = document.getElementById('enable_price_manipulator');
+        const manipInput = document.getElementById('manny_volume_rate');
         const totalVolInput = document.getElementById('total_volume');
         const volChargeInput = document.getElementById('volume_charge');
         const rateDisplay = document.getElementById('volume_charge_display');

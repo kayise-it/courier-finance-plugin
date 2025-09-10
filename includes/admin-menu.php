@@ -209,8 +209,9 @@ function add_customer_page() {
 // Handle add customer form submission
 function handle_add_customer_form() {
     // Debug: Log form submission
-    error_log('Add customer form submitted');
-    error_log('POST data: ' . print_r($_POST, true));
+    // Optional debug
+    // error_log('Add customer form submitted');
+    // error_log('POST data: ' . print_r($_POST, true));
     
     if (wp_verify_nonce($_POST['customer_nonce'], 'add_customer_nonce')) {
         // Include customer functions

@@ -1,6 +1,6 @@
 //file location: js/kitscript.js
 function toggleDropdownDeliveryStatus(delivery_id) {
-    const dropdown = document.getElementById('delivery-status-dropdown-' + delivery_id);
+    var dropdown = document.getElementById('delivery-status-dropdown-' + delivery_id);
     dropdown.classList.toggle('hidden');
 }
 
@@ -11,11 +11,11 @@ function hello() {
 function fetchRatePerKg() {
     // ✅ BULLETPROOF: Comprehensive input validation and sanitization
     try {
-        const rawMass = jQuery('#total_mass_kg').val() || '';
-        const total_mass_kg = parseFloat(rawMass) || 0;
-        const direction_id = jQuery('#direction_id').val() || '';
-        const origin_country_id = jQuery('#countrydestination_id').val() || '';
-        let current_rate = jQuery('#current_rate').val() || '';
+        var rawMass = jQuery('#total_mass_kg').val() || '';
+        var total_mass_kg = parseFloat(rawMass) || 0;
+        var direction_id = jQuery('#direction_id').val() || '';
+        var origin_country_id = jQuery('#countrydestination_id').val() || '';
+        var current_rate = jQuery('#current_rate').val() || '';
 
         // ✅ BULLETPROOF: Comprehensive validation
         if (rawMass !== '' && (isNaN(total_mass_kg) || total_mass_kg <= 0)) {
@@ -43,7 +43,7 @@ function fetchRatePerKg() {
         }
 
         // ✅ BULLETPROOF: Show loading indicator
-        const massInput = document.getElementById('total_mass_kg');
+        var massInput = document.getElementById('total_mass_kg');
         if (massInput) {
             massInput.classList.add('loading');
         }
@@ -68,8 +68,8 @@ function fetchRatePerKg() {
                     }
                     
                     if (response && response.success && response.data) {
-                        const rate = parseFloat(response.data.rate_per_kg);
-                        const total_charge = parseFloat(response.data.total_charge);
+                        var rate = parseFloat(response.data.rate_per_kg);
+                        var total_charge = parseFloat(response.data.total_charge);
                         
                         // ✅ BULLETPROOF: Validate response data
                         if (!Number.isFinite(rate) || rate <= 0) {
@@ -105,7 +105,7 @@ function fetchRatePerKg() {
                         
                     } else {
                         console.error('Rate fetch failed:', response);
-                        const errorMsg = (response && response.data && response.data.message) 
+                        var errorMsg = (response && response.data && response.data.message) 
                             ? response.data.message 
                             : 'Unable to fetch rate from server.';
                         showRateFetchError(errorMsg);
@@ -119,7 +119,7 @@ function fetchRatePerKg() {
                     
                     console.error('AJAX Error:', {xhr, status, error});
                     
-                    let errorMessage = 'Network error. Please check your connection and try again.';
+                    var errorMessage = 'Network error. Please check your connection and try again.';
                     
                     if (status === 'timeout') {
                         errorMessage = 'Request timed out. Please try again.';
@@ -138,7 +138,7 @@ function fetchRatePerKg() {
         
     } catch (error) {
         // ✅ BULLETPROOF: Hide loading indicator
-        const massInput = document.getElementById('total_mass_kg');
+        var massInput = document.getElementById('total_mass_kg');
         if (massInput) {
             massInput.classList.remove('loading');
         }
@@ -149,12 +149,12 @@ function fetchRatePerKg() {
 }
 
 document.addEventListener('DOMContentLoaded', function () {
-    const massInput = document.getElementById('total_mass_kg');
+    var massInput = document.getElementById('total_mass_kg');
     if (massInput) {
         massInput.addEventListener('click', fetchRatePerKg);
     }
 
-    let timeout;
+    var timeout;
     jQuery('#total_mass_kg').on('input', function () {
         clearTimeout(timeout);
         timeout = setTimeout(fetchRatePerKg, 500); // Wait 500ms after user stops typing
@@ -163,27 +163,19 @@ document.addEventListener('DOMContentLoaded', function () {
     // ✅ BULLETPROOF: Auto-trigger rate fetch on page load if mass is present but rate is missing
     jQuery(document).ready(function() {
         setTimeout(function() {
-            const massValue = parseFloat(jQuery('#total_mass_kg').val()) || 0;
-            const rateValue = parseFloat(jQuery('#mass_rate').val()) || 0;
-            const directionId = jQuery('#direction_id').val();
-            const originCountryId = jQuery('#countrydestination_id').val();
+            var massValue = parseFloat(jQuery('#total_mass_kg').val()) || 0;
+            var rateValue = parseFloat(jQuery('#mass_rate').val()) || 0;
+            var directionId = jQuery('#direction_id').val();
+            var originCountryId = jQuery('#countrydestination_id').val();
             
-            console.log('kitscript.js auto-trigger check:', {
-                mass: massValue,
-                rate: rateValue,
-                directionId: directionId,
-                originCountryId: originCountryId
-            });
             
             if (massValue > 0 && rateValue <= 0 && directionId) {
-                console.log('kitscript.js: Auto-triggering rate fetch on page load...');
                 fetchRatePerKg();
             } else if (massValue > 0 && rateValue <= 0 && !directionId) {
                 console.warn('kitscript.js: Cannot auto-trigger - direction_id missing');
                 // Try to find direction_id from form
-                const formDirectionId = jQuery('input[name="direction_id"]').val();
+                var formDirectionId = jQuery('input[name="direction_id"]').val();
                 if (formDirectionId) {
-                    console.log('kitscript.js: Found direction_id in form, updating...');
                     jQuery('#direction_id').val(formDirectionId);
                     fetchRatePerKg();
                 }
@@ -191,8 +183,8 @@ document.addEventListener('DOMContentLoaded', function () {
         }, 1000); // 1 second delay to ensure all elements are loaded
     });
     // Dispatch date validation
-    const dispatchDateInput = document.getElementById('dispatch_date');
-    const today = new Date().toISOString().split('T')[0];
+    var dispatchDateInput = document.getElementById('dispatch_date');
+    var today = new Date().toISOString().split('T')[0];
 
     if (dispatchDateInput) {
         // Set min date attribute
@@ -200,7 +192,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Additional validation on form submission
         document.querySelector('form').addEventListener('submit', function (e) {
-            const selectedDate = dispatchDateInput.value;
+            var selectedDate = dispatchDateInput.value;
             if (selectedDate < today) {
                 e.preventDefault();
                 dispatchDateInput.focus();
@@ -209,12 +201,12 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // VAT checkbox functionality
-    const vatCheckbox2 = document.getElementById('vat_include2');
-    const vatCheckbox = document.getElementById('vat_include');
-    const SADC = document.getElementById('sadc_certificate');
-    const optionz = document.querySelectorAll('.optionz');
-    const nextStep3 = document.getElementById('next-step-3');
-    const addWaybillItemBtn = document.getElementById('add-waybill-item-btn');
+    var vatCheckbox2 = document.getElementById('vat_include2');
+    var vatCheckbox = document.getElementById('vat_include');
+    var SADC = document.getElementById('sadc_certificate');
+    var optionz = document.querySelectorAll('.optionz');
+    var nextStep3 = document.getElementById('next-step-3');
+    var addWaybillItemBtn = document.getElementById('add-waybill-item-btn');
 
     function toggleVatDisabled() {
         if (SADC && SADC.checked) {
@@ -226,6 +218,11 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
     function toggleOptionzDisabled() {
+        // Only run this function if we're on a step that has VAT checkboxes
+        if (!vatCheckbox && !vatCheckbox2) {
+            return; // Exit early if no VAT checkboxes exist on this step
+        }
+        
         if (vatCheckbox && vatCheckbox.checked || vatCheckbox2 && vatCheckbox2.checked) {
             //bg-gray-300 text-gray-500 rounded-md hover:bg-gray-400
             if (nextStep3) {
@@ -234,8 +231,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 nextStep3.classList.remove('bg-blue-600', 'text-white');
             }
 
-            SADC.disabled = true;
-            SADC.checked = 0;
+            if (SADC) {
+                SADC.disabled = true;
+                SADC.checked = 0;
+            }
         } else {
             
             if (nextStep3) {
@@ -243,7 +242,9 @@ document.addEventListener('DOMContentLoaded', function () {
             nextStep3.classList.remove('bg-gray-300', 'text-gray-500');
             nextStep3.classList.add('bg-blue-600', 'text-white');
             }
-            SADC.disabled = false;
+            if (SADC) {
+                SADC.disabled = false;
+            }
         }
     }
 
@@ -251,6 +252,7 @@ document.addEventListener('DOMContentLoaded', function () {
         vatCheckbox2.addEventListener('change', toggleOptionzDisabled);
         //vatCheckbox2.addEventListener('change', deleteAllItems);
         // Run on page load in case VAT is pre-checked
+        toggleOptionzDisabled();
     }
 
     if (vatCheckbox) {
@@ -258,8 +260,6 @@ document.addEventListener('DOMContentLoaded', function () {
         // Run on page load in case VAT is pre-checked
         toggleOptionzDisabled();
     }
-
-    
 
     if (SADC) {
         SADC.addEventListener('change', toggleVatDisabled);
@@ -272,13 +272,13 @@ document.addEventListener('DOMContentLoaded', function () {
     jQuery(document).on('click', '.delete-waybill', function (e) {
         e.preventDefault();
 
-        const $form = jQuery(this).closest('form');
-        const waybillId = $form.find('input[name="waybill_id"]').val();
-        const waybillNo = $form.find('input[name="waybill_no"]').val();
-        const deliveryId = $form.find('input[name="delivery_id"]').val();
-        const userId = $form.find('input[name="user_id"]').val();
-        const nonce = $form.find('input[name="_wpnonce"]').val();
-        const $row = jQuery(this).closest('tr');
+        var $form = jQuery(this).closest('form');
+        var waybillId = $form.find('input[name="waybill_id"]').val();
+        var waybillNo = $form.find('input[name="waybill_no"]').val();
+        var deliveryId = $form.find('input[name="delivery_id"]').val();
+        var userId = $form.find('input[name="user_id"]').val();
+        var nonce = $form.find('input[name="_wpnonce"]').val();
+        var $row = jQuery(this).closest('tr');
 
         if (!confirm('Are you sure you want to delete this waybill?')) {
             return;
@@ -317,11 +317,11 @@ document.addEventListener('DOMContentLoaded', function () {
     // Select all rows
     jQuery(document).on('change', '.selectRow', function () {
         // Check if all rows are checked
-        const allChecked = jQuery('.selectRow:checked').length === jQuery('.selectRow').length;
+        var allChecked = jQuery('.selectRow:checked').length === jQuery('.selectRow').length;
         jQuery('.selectAllRows').prop('checked', allChecked);
     });
     jQuery(document).on('click', '#add-waybill-item', function () {
-        const nextStep3 = document.getElementById('next-step-3');
+        var nextStep3 = document.getElementById('next-step-3');
         if (nextStep3) {
             nextStep3.disabled = false;
             //hidden md:block next-step px-4 py-2 rounded-md hover:bg-blue-700 bg-gray-300 text-gray-500
@@ -333,14 +333,14 @@ document.addEventListener('DOMContentLoaded', function () {
     // Select all rows
     jQuery(document).on('change', '.selectAllRows', function () {
         // Check if all rows are checked
-        const allChecked = jQuery(this).prop('checked');
+        var allChecked = jQuery(this).prop('checked');
         jQuery('.selectRow').prop('checked', allChecked);
     });
 
     // Delete delivery
     jQuery(document).on('click', '.delete-delivery', function (e) {
         e.preventDefault();
-        const deliveryId = jQuery(this).data('delivery-id');
+        var deliveryId = jQuery(this).data('delivery-id');
         if (!confirm('Are you sure you want to delete this delivery?')) {
             return;
         }
@@ -348,14 +348,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Helpers for Step 4 next button styling
     function setStep4NextState(enabled) {
-        const btn = document.getElementById('step4NextBtn');
+        var btn = document.getElementById('step4NextBtn');
         if (!btn) return;
-        const active = [
+        var active = [
             'inline-flex','items-center','px-6','py-3','bg-gradient-to-r','from-blue-600','to-indigo-600',
             'hover:from-blue-700','hover:to-indigo-700','text-white','font-semibold','rounded-xl','shadow-lg',
             'hover:shadow-xl','transform','hover:-translate-y-0.5','transition-all','duration-200'
         ];
-        const disabled = ['opacity-50','cursor-not-allowed','pointer-events-none','bg-blue-400','bg-gray-300','text-gray-500'];
+        var disabled = ['opacity-50','cursor-not-allowed','pointer-events-none','bg-blue-400','bg-gray-300','text-gray-500'];
         if (enabled) {
             btn.classList.add(...active);
             btn.classList.remove(...disabled);
@@ -371,12 +371,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Warehoused checkbox
     jQuery(document).on('change', '#warehoused_option', function () {
-        const scheduledDeliveriesList = document.getElementById('scheduled-deliveries-list');
-        const nextBtn = document.getElementById('step4NextBtn');
-        const destinationCountry = document.getElementById('stepDestinationSelect');
-        const destinationCity = document.getElementById('destination_city');
-        const destinationCountryHelp = document.getElementById('destination-country-help');
-        const destinationCityHelp = document.getElementById('destination-city-help');
+        var scheduledDeliveriesList = document.getElementById('scheduled-deliveries-list');
+        var nextBtn = document.getElementById('step4NextBtn');
+        var destinationCountry = document.getElementById('stepDestinationSelect');
+        var destinationCity = document.getElementById('destination_city');
+        var destinationCountryHelp = document.getElementById('destination-country-help');
+        var destinationCityHelp = document.getElementById('destination-city-help');
         
         if (jQuery(this).is(':checked')) {
             // Hide scheduled deliveries when warehoused is checked
@@ -418,12 +418,12 @@ document.addEventListener('DOMContentLoaded', function () {
     
     // Function to validate destination selection
     function validateDestinationSelection() {
-        const warehousedCheckbox = document.getElementById('warehoused_option');
-        const nextBtn = document.getElementById('step4NextBtn');
-        const destinationCountry = document.getElementById('stepDestinationSelect');
-        const destinationCity = document.getElementById('destination_city');
-        const destinationCountryHelp = document.getElementById('destination-country-help');
-        const destinationCityHelp = document.getElementById('destination-city-help');
+        var warehousedCheckbox = document.getElementById('warehoused_option');
+        var nextBtn = document.getElementById('step4NextBtn');
+        var destinationCountry = document.getElementById('stepDestinationSelect');
+        var destinationCity = document.getElementById('destination_city');
+        var destinationCountryHelp = document.getElementById('destination-country-help');
+        var destinationCityHelp = document.getElementById('destination-city-help');
         
         // If warehoused is checked, no validation needed
         if (warehousedCheckbox && warehousedCheckbox.checked) {
@@ -432,8 +432,8 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         
         // Check if both country and city are selected
-        const countrySelected = destinationCountry && destinationCountry.value && destinationCountry.value !== '';
-        const citySelected = destinationCity && destinationCity.value && destinationCity.value !== '';
+        var countrySelected = destinationCountry && destinationCountry.value && destinationCountry.value !== '';
+        var citySelected = destinationCity && destinationCity.value && destinationCity.value !== '';
         
         // Update helper text colors based on selection
         if (destinationCountryHelp) {
@@ -469,9 +469,9 @@ document.addEventListener('DOMContentLoaded', function () {
         validateDestinationSelection();
         
         // Set initial state for helper text visibility
-        const warehousedCheckbox = document.getElementById('warehoused_option');
-        const destinationCountryHelp = document.getElementById('destination-country-help');
-        const destinationCityHelp = document.getElementById('destination-city-help');
+        var warehousedCheckbox = document.getElementById('warehoused_option');
+        var destinationCountryHelp = document.getElementById('destination-country-help');
+        var destinationCityHelp = document.getElementById('destination-city-help');
         
         if (warehousedCheckbox && warehousedCheckbox.checked) {
             if (destinationCountryHelp) destinationCountryHelp.style.display = 'none';
@@ -483,14 +483,14 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 // Global spinner management system
-const SpinnerManager = {
+var SpinnerManager = {
     // Store active spinners to prevent duplicates
     activeSpinners: new Set(),
 
     // CSS for the spinner (injected once)
     injectStyles: function () {
         if (!document.getElementById('spinner-styles')) {
-            const style = document.createElement('style');
+            var style = document.createElement('style');
             style.id = 'spinner-styles';
             style.textContent = `
                 .input-spinner {
@@ -536,7 +536,8 @@ const SpinnerManager = {
 
     // Hide all spinners
     hideAll: function () {
-        this.activeSpinners.forEach(input => {
+        var self = this;
+        this.activeSpinners.forEach(function(input) {
             input.classList.remove('input-spinner');
         });
         this.activeSpinners.clear();
@@ -546,27 +547,27 @@ const SpinnerManager = {
 // Customer Dashboard Tab Functionality
 function switchCustomerTab(tabName) {
     // Hide all customer tab contents only
-    const customerTabContents = document.querySelectorAll('.customer-tabs .tab-content');
-    customerTabContents.forEach(content => {
+    var customerTabContents = document.querySelectorAll('.customer-tabs .tab-content');
+    customerTabContents.forEach(function(content) {
         content.style.display = 'none';
     });
 
     // Remove active class from all customer tab buttons only
-    const customerTabButtons = document.querySelectorAll('.customer-tabs .tab-btn');
-    customerTabButtons.forEach(btn => {
+    var customerTabButtons = document.querySelectorAll('.customer-tabs .tab-btn');
+    customerTabButtons.forEach(function(btn) {
         btn.classList.remove('active');
         btn.style.background = 'transparent';
         btn.style.color = '#6b7280';
     });
 
     // Show selected tab content
-    const selectedContent = document.getElementById(tabName + '-content');
+    var selectedContent = document.getElementById(tabName + '-content');
     if (selectedContent) {
         selectedContent.style.display = 'block';
     }
 
     // Add active class to selected tab button
-    const selectedButton = document.getElementById(tabName + '-tab');
+    var selectedButton = document.getElementById(tabName + '-tab');
     if (selectedButton) {
         selectedButton.classList.add('active');
         selectedButton.style.background = 'white';
@@ -577,22 +578,22 @@ function switchCustomerTab(tabName) {
 // Initialize customer dashboard tabs
 document.addEventListener('DOMContentLoaded', function() {
     // Customer dashboard tab functionality
-    const customerTabButtons = document.querySelectorAll('.customer-tabs .tab-btn');
-    customerTabButtons.forEach(btn => {
+    var customerTabButtons = document.querySelectorAll('.customer-tabs .tab-btn');
+    customerTabButtons.forEach(function(btn) {
         btn.addEventListener('click', function() {
-            const tabName = this.id.replace('-tab', '');
+            var tabName = this.id.replace('-tab', '');
             switchCustomerTab(tabName);
         });
     });
 
     // Handle inline customer form submission
-    const inlineCustomerForm = document.getElementById('inlineCustomerForm');
+    var inlineCustomerForm = document.getElementById('inlineCustomerForm');
     if (inlineCustomerForm) {
         inlineCustomerForm.addEventListener('submit', function(e) {
             e.preventDefault();
             
-            const submitBtn = document.getElementById('saveCustomerBtn');
-            let messagesDiv = document.getElementById('customerFormMessages');
+            var submitBtn = document.getElementById('saveCustomerBtn');
+            var messagesDiv = document.getElementById('customerFormMessages');
             if (!messagesDiv) {
                 // Create a messages container if it doesn't exist
                 messagesDiv = document.createElement('div');
@@ -607,11 +608,11 @@ document.addEventListener('DOMContentLoaded', function() {
             submitBtn.textContent = 'Saving...';
             
             // Collect form data
-            const formData = new FormData(this);
+            var formData = new FormData(this);
             formData.append('action', 'save_customer_ajax');
             formData.append('nonce', customerAjax.nonce);
-            const safeVal = (id) => {
-                const el = document.getElementById(id);
+            var safeVal = function(id) {
+                var el = document.getElementById(id);
                 return el ? el.value : '';
             };
             formData.append('name', safeVal('name'));
@@ -632,8 +633,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 method: 'POST',
                 body: formData
             })
-            .then(response => response.json())
-            .then(data => {
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
                 if (data.success) {
                     // Show success message
                     messagesDiv.innerHTML = '<div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">' + data.data.message + '</div>';
@@ -642,10 +643,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     inlineCustomerForm.reset();
                     
                     // Redirect to the manage-customers tab after 1.5 seconds
-                    setTimeout(() => {
+                    setTimeout(function() {
                         messagesDiv.innerHTML = '';
                         // Redirect to the manage-customers tab with a refresh parameter
-                        const currentUrl = new URL(window.location);
+                        var currentUrl = new URL(window.location);
                         currentUrl.searchParams.set('tab', 'manage-customers');
                         currentUrl.searchParams.set('customer_added', '1');
                         window.location.href = currentUrl.toString();
@@ -655,10 +656,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     messagesDiv.innerHTML = '<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">Error: ' + (data.data || 'Unknown error occurred') + '</div>';
                 }
             })
-            .catch(error => {
+            .catch(function(error) {
                 messagesDiv.innerHTML = '<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">Network error: ' + error.message + '</div>';
             })
-            .finally(() => {
+            .finally(function() {
                 // Reset button state
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Save Customer';
@@ -667,12 +668,12 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Handle country change for city loading
-    const countrySelect = document.getElementById('country_id');
-    const citySelect = document.getElementById('city_id');
+    var countrySelect = document.getElementById('country_id');
+    var citySelect = document.getElementById('city_id');
     
     if (countrySelect && citySelect) {
         countrySelect.addEventListener('change', function() {
-            const countryId = this.value;
+            var countryId = this.value;
             
             // Clear city options
             citySelect.innerHTML = '<option value="">Select City</option>';
@@ -690,18 +691,18 @@ document.addEventListener('DOMContentLoaded', function() {
                         nonce: customerAjax.nonce
                     })
                 })
-                .then(response => response.json())
-                .then(data => {
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
                     if (data.success && data.data) {
-                        data.data.forEach(city => {
-                            const option = document.createElement('option');
+                        data.data.forEach(function(city) {
+                            var option = document.createElement('option');
                             option.value = city.id;
                             option.textContent = city.city_name;
                             citySelect.appendChild(option);
                         });
                     }
                 })
-                .catch(error => {
+                .catch(function(error) {
                     console.error('Error loading cities:', error);
                 });
             }
@@ -714,7 +715,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // ✅ ADD ERROR HANDLING FUNCTION
 function showRateFetchError(message) {
-    let errorDiv = jQuery('#rate-fetch-error');
+    var errorDiv = jQuery('#rate-fetch-error');
     if (errorDiv.length === 0) {
         errorDiv = jQuery('<div id="rate-fetch-error" class="text-red-600 text-sm mt-2"></div>');
         jQuery('#mass_rate').parent().append(errorDiv);
@@ -722,7 +723,7 @@ function showRateFetchError(message) {
     errorDiv.text(message);
     
     // Auto-hide after 5 seconds
-    setTimeout(() => {
+    setTimeout(function() {
         errorDiv.fadeOut(500, function() {
             jQuery(this).remove();
         });

@@ -45,22 +45,6 @@ function kit_render_waybill_multiform($atts)
     $customer = $atts['customer'];
 
     ob_start(); ?>
-    <style>
-        /* Inline validation styles for immediate use */
-        .border-red-500 { border-color: #ef4444 !important; }
-        .bg-red-50 { background-color: #fef2f2 !important; }
-        .text-red-600 { color: #dc2626 !important; }
-        .text-red-800 { color: #991b1b !important; }
-        .text-green-600 { color: #059669 !important; }
-        .text-green-800 { color: #166534 !important; }
-        .bg-green-50 { background-color: #f0fdf4 !important; }
-        .border-green-200 { border-color: #bbf7d0 !important; }
-        .border-red-200 { border-color: #fecaca !important; }
-        .text-red-400 { color: #f87171 !important; }
-        .text-green-400 { color: #4ade80 !important; }
-        .animate-spin { animation: spin 1s linear infinite; }
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-    </style>
     
     <form method="POST" action="<?php echo esc_attr($form_action); ?>" class="" id="multi-step-waybill-form" data-ajax-url="<?php echo admin_url('admin-ajax.php'); ?>">
         <?php if ($is_edit_mode): ?>
@@ -106,20 +90,20 @@ function kit_render_waybill_multiform($atts)
         </div>
 
         <!-- Step 1: Waybill Header -->
-        <div class="step step-1 active" id="step-1" style="min-width: 500px;">
+        <div class="step step-1 active" id="step-1">
             <?php require __DIR__ . '/waybill/steps/step1.php'; ?>
         </div>
         
         <!-- Step 3: Items -->
-        <div class="step step-3 hidden" id="step-3" style="min-width: 500px;">
+        <div class="step step-3 hidden" id="step-3">
             <?php require __DIR__ . '/waybill/steps/step3.php'; ?>
         </div>
         <!-- Step 4: Item Section -->
-        <div class="step step-4 hidden" id="step-4" style="min-width: 500px;">
+        <div class="step step-4 hidden" id="step-4">
             <?php require __DIR__ . '/waybill/steps/step4.php'; ?>
         </div>
         <!-- Step 5: Charge Basis Section -->
-        <div class="step step-5 hidden" id="step-5" style="min-width: 500px;">
+        <div class="step step-5 hidden" id="step-5">
             <?php require __DIR__ . '/waybill/steps/step5.php'; ?>
         </div>
     </form>
@@ -307,6 +291,35 @@ function kit_render_waybill_multiform($atts)
                     }
                 }, { capture: true });
             }
+
+            // Defensive: delegate submit guard in case the direct listener misses
+            document.addEventListener('submit', function(e) {
+                const form = e.target;
+                if (!form) return;
+                if (form.id === 'multi-step-waybill-form' || form.getAttribute('data-role') === 'waybill-form') {
+                    if (typeof validateForm === 'function') {
+                        if (!validateForm()) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            return false;
+                        }
+                    } else {
+                        // Minimal fallback: ensure all [required] have values
+                        const requiredFields = form.querySelectorAll('[required]');
+                        let ok = true;
+                        requiredFields.forEach(function(f) {
+                            if (ok && (!f.value || String(f.value).trim() === '')) {
+                                ok = false;
+                            }
+                        });
+                        if (!ok) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            return false;
+                        }
+                    }
+                }
+            }, true);
 
             // Real-time validation on field blur
             Object.keys(validationRules).forEach(fieldId => {

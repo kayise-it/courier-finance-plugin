@@ -12,3 +12,4 @@ CREATE TABLE IF NOT EXISTS `wp_kit_waybill_delivery_assignments` (
   KEY `delivery_id` (`delivery_id`),
   KEY `assigned_by` (`assigned_by`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+

@@ -3,6 +3,9 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// Include the DeliveryCard component
+require_once plugin_dir_path(__FILE__) . '../components/deliveryCard.php';
+
 class KIT_Deliveries
 {
     public static function init()
@@ -373,8 +376,6 @@ class KIT_Deliveries
      */
     public static function render_scheduled_delivery_card($delivery, $options = [])
     {
-        // Include our reusable component
-        require_once plugin_dir_path(__FILE__) . '../components/deliveryCard.php';
         
         // Convert delivery data to match our component format
         $component_delivery = (object)[
@@ -387,9 +388,8 @@ class KIT_Deliveries
             'description' => $delivery->description ?? ''
         ];
         
-        // Debug: Log what we're getting from the database
-        error_log('Delivery data: ' . print_r($delivery, true));
-        error_log('Component delivery: ' . print_r($component_delivery, true));
+        // Reduce noisy logs: keep a single concise line (id + ref) during development
+        // error_log('Delivery loaded: id=' . ($delivery->delivery_id ?? 'n/a') . ' ref=' . ($delivery->delivery_reference ?? '')); // Uncomment if needed for debugging
         
         // Use our reusable component with radio button options
         $radio_options = [
@@ -790,10 +790,34 @@ class KIT_Deliveries
         $query = $wpdb->prepare("SELECT * FROM $table_name WHERE country_id = %d ORDER BY city_name ASC", $country_id);
         $results = $wpdb->get_results($query);
 
-        // Debug logging
-        error_log("Getting cities for country ID: $country_id, found: " . count($results));
+        // Optional debug (disabled in production)
+        // error_log("Getting cities for country ID: $country_id, found: " . count($results));
 
         return $results;
+    }
+    /**
+     * Returns a map of country_id => list of cities [{id, city_name}], limited to active countries
+     * for efficient client-side population of city selects without AJAX.
+     */
+    public static function getCountryCitiesMap()
+    {
+        global $wpdb;
+        $cities_table = $wpdb->prefix . 'kit_operating_cities';
+        $rows = $wpdb->get_results("SELECT id, country_id, city_name FROM $cities_table ORDER BY country_id ASC, city_name ASC");
+
+        $map = [];
+        foreach ($rows as $row) {
+            $key = (string) intval($row->country_id);
+            if (!isset($map[$key])) {
+                $map[$key] = [];
+            }
+            $map[$key][] = [
+                'id' => intval($row->id),
+                'city_name' => (string) $row->city_name,
+            ];
+        }
+
+        return $map;
     }
     public static function CountrySelect($name = '', $id = '', $delivery_id = null, $required = true)
     {
@@ -1415,9 +1439,6 @@ class KIT_Deliveries
                         <?php if (!empty($deliveries)): ?>
                             <!-- Block View -->
                             <?php
-                            // Include the DeliveryCard component
-                            require_once plugin_dir_path(__FILE__) . '../components/deliveryCard.php';
-
                             // Use the component to render the delivery grid
                             echo KIT_DeliveryCard::renderGrid($deliveries, [
                                 'show_actions' => true,
@@ -2484,28 +2505,27 @@ class KIT_Deliveries
 
     public static function handle_get_cities_for_country_callback()
     {
-        // Debug: Log the POST data
-        error_log('AJAX request received: ' . print_r($_POST, true));
-
         // Verify nonce
         if (!isset($_POST['nonce'])) {
-            error_log('Nonce not found in POST data');
-            wp_send_json_error('Nonce not found');
+            wp_send_json_error(['message' => 'Nonce not found']);
+            return;
         }
 
         if (!wp_verify_nonce($_POST['nonce'], 'get_waybills_nonce')) {
-            error_log('Nonce verification failed. Received: ' . $_POST['nonce']);
-            wp_send_json_error('Invalid security token');
+            wp_send_json_error(['message' => 'Invalid security token']);
+            return;
         }
 
         if (!isset($_POST['country_id'])) {
-            wp_send_json_error('Country ID is required');
+            wp_send_json_error(['message' => 'Country ID is required']);
+            return;
         }
 
         $country_id = intval($_POST['country_id']);
 
         if (!$country_id) {
-            wp_send_json_error('Invalid country ID');
+            wp_send_json_error(['message' => 'Invalid country ID']);
+            return;
         }
 
         // Get cities for the country
@@ -2514,7 +2534,7 @@ class KIT_Deliveries
         if ($cities && is_array($cities) && count($cities) > 0) {
             wp_send_json_success($cities);
         } else {
-            wp_send_json_error('No cities found for this country');
+            wp_send_json_error(['message' => 'No cities found for this country']);
         }
     }
 }

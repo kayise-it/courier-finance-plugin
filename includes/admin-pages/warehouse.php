@@ -30,7 +30,7 @@ if (isset($_POST['create_sample_warehouse']) && wp_verify_nonce($_POST['sample_n
                 'delivery_id' => 1, // Warehouse delivery
                 'product_invoice_amount' => rand(500, 5000),
                 'total_mass_kg' => rand(10, 100),
-                'warehouse' => 1, // This puts it in warehouse
+                // Warehouse status now managed by warehouse_items table
                 'status' => 'warehoused',
                 'created_at' => current_time('mysql'),
                 'created_by' => get_current_user_id() ?: 1,
@@ -79,7 +79,7 @@ if (isset($_POST['assign_waybills']) && wp_verify_nonce($_POST['nonce'], 'assign
                 [
                     'delivery_id' => $delivery_id,
                     'status' => 'assigned',
-                    'warehouse' => 0, // Remove from warehouse
+                    // Warehouse status now managed by warehouse_items table
                     'last_updated_at' => current_time('mysql'),
                     'last_updated_by' => get_current_user_id()
                 ],
@@ -118,12 +118,13 @@ global $wpdb;
 $waybills_table = $wpdb->prefix . 'kit_waybills';
 $customers_table = $wpdb->prefix . 'kit_customers';
 
-// Get waybills that are in warehouse (warehouse = 1)
+// Get waybills that have warehouse items
 $warehouse_waybills_query = "
-    SELECT w.*, c.name as customer_name, c.surname as customer_surname, c.company_name
+    SELECT DISTINCT w.*, c.name as customer_name, c.surname as customer_surname, c.company_name
     FROM $waybills_table w
     LEFT JOIN $customers_table c ON w.customer_id = c.cust_id
-    WHERE w.warehouse = 1
+    INNER JOIN {$wpdb->prefix}kit_warehouse_items wi ON w.id = wi.waybill_id
+    WHERE wi.status = 'in_warehouse'
     ORDER BY w.created_at DESC
 ";
 $warehouse_waybills = $wpdb->get_results($warehouse_waybills_query);
@@ -157,7 +158,7 @@ $warehouse_count = count($warehouse_waybills_filtered);
 
     <?php
     // Get statistics for the warehouse
-    $total_warehouse_waybills = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}kit_waybills WHERE warehouse = 1");
+    $total_warehouse_waybills = $wpdb->get_var("SELECT COUNT(DISTINCT waybill_id) FROM {$wpdb->prefix}kit_warehouse_items WHERE status = 'in_warehouse'");
     $total_deliveries = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}kit_deliveries");
     $scheduled_deliveries = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}kit_deliveries WHERE status = 'scheduled'");
     $in_transit_deliveries = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}kit_deliveries WHERE status = 'in_transit'");

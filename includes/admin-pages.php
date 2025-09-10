@@ -92,10 +92,10 @@ function plugin_Waybill_list_page()
 
                         $modal_path = realpath(plugin_dir_path(__FILE__) . './components/modal.php');
 
-                        if (file_exists($modal_path)) {
+                        if ($modal_path && file_exists($modal_path)) {
                             require_once $modal_path;
                         } else {
-                            error_log("Modal.php not found at: " . $modal_path);
+                            error_log("Modal.php not found at: " . ($modal_path ?: '(null)'));
                             // Optional: Show a safe error or fallback content
                         }
 

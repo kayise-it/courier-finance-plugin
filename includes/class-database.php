@@ -15,16 +15,17 @@ class Database
             cust_id MEDIUMINT(10) UNSIGNED NOT NULL,
             name VARCHAR(255) NOT NULL,
             surname VARCHAR(255) NOT NULL,
-            cell VARCHAR(20) NOT NULL,
-            email_address VARCHAR(255) NOT NULL,
+            cell VARCHAR(20) NULL,
+            telephone VARCHAR(20) NULL,
+            email_address VARCHAR(255) NULL,
             country_id INT UNSIGNED NULL,
             city_id INT UNSIGNED NULL,
-            vat_number VARCHAR(50),
-            address TEXT NOT NULL,
-            company_name VARCHAR(255) NOT NULL,
+            vat_number VARCHAR(50) NULL,
+            address TEXT NULL,
+            company_name VARCHAR(255) NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
-            UNIQUE KEY cust_id (cust_id) -- ✅ This is the missing part!
+            UNIQUE KEY cust_id (cust_id)
         ) $charset_collate;";
 
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
@@ -335,6 +336,7 @@ class Database
             ['Malawi', 'MW', 0, 2],
             ['Eswatini', 'SZ', 0, 2],
             ['Lesotho', 'LS', 0, 2],
+            ['Uganda', 'UG', 0, 2],
         ];
 
         foreach ($countries as $country) {
@@ -385,7 +387,7 @@ class Database
 
         $cities = [
             'ZA' => ['Johannesburg', 'Cape Town', 'Durban', 'Pretoria', 'Port Elizabeth'],
-            'TZ' => ['Dar es Salaam', 'Dodoma', 'Arusha', 'Mbeya', 'Mwanza'],
+            'TZ' => ['Dar es Salaam', 'Dodoma', 'Arusha', 'Mbeya', 'Mwanza', 'Iringa', 'Kilombero', 'Mafinga', 'Makambako', 'Mfundi', 'Mikumi', 'Morogoro', 'Moshi', 'Sao Hill', 'Sumbawanga', 'Tanga', 'Zanzibar', 'Gombe Kinshasa'],
             'BW' => ['Gaborone', 'Francistown', 'Maun', 'Molepolole', 'Serowe'],
             'ZW' => ['Harare', 'Bulawayo', 'Mutare', 'Gweru', 'Kwekwe'],
             'MZ' => ['Maputo', 'Matola', 'Beira', 'Nampula', 'Chimoio'],
@@ -393,7 +395,8 @@ class Database
             'NA' => ['Windhoek', 'Swakopmund', 'Walvis Bay', 'Otjiwarongo', 'Rundu'],
             'MW' => ['Lilongwe', 'Blantyre', 'Mzuzu', 'Zomba', 'Kasungu'],
             'SZ' => ['Mbabane', 'Manzini', 'Lobamba', 'Siteki', 'Piggs Peak'],
-            'LS' => ['Maseru', 'Teyateyaneng', 'Leribe', 'Maputsoe', 'Mohales Hoek']
+            'LS' => ['Maseru', 'Teyateyaneng', 'Leribe', 'Maputsoe', 'Mohales Hoek'],
+            'UG' => ['Kampala']
         ];
 
         foreach ($cities as $country_code => $city_list) {
@@ -767,6 +770,46 @@ class Database
         dbDelta($sql);
     }
 
+    public static function create_warehouse_items_table()
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'kit_warehouse_items';
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE $table_name (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            waybill_id INT UNSIGNED NOT NULL,
+            customer_id MEDIUMINT(10) UNSIGNED NOT NULL,
+            item_description TEXT,
+            weight_kg DECIMAL(10,2) DEFAULT 0.00,
+            length_cm DECIMAL(10,2) DEFAULT 0.00,
+            width_cm DECIMAL(10,2) DEFAULT 0.00,
+            height_cm DECIMAL(10,2) DEFAULT 0.00,
+            volume_cm3 DECIMAL(10,2) DEFAULT 0.00,
+            status ENUM('in_warehouse', 'assigned', 'shipped', 'delivered') DEFAULT 'in_warehouse',
+            assigned_delivery_id INT UNSIGNED NULL,
+            assigned_by INT UNSIGNED NULL,
+            assigned_at DATETIME NULL,
+            shipped_at DATETIME NULL,
+            delivered_at DATETIME NULL,
+            notes TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            FOREIGN KEY (waybill_id) REFERENCES {$wpdb->prefix}kit_waybills(id) ON DELETE CASCADE,
+            FOREIGN KEY (customer_id) REFERENCES {$wpdb->prefix}kit_customers(cust_id) ON DELETE CASCADE,
+            FOREIGN KEY (assigned_delivery_id) REFERENCES {$wpdb->prefix}kit_deliveries(id) ON DELETE SET NULL,
+            FOREIGN KEY (assigned_by) REFERENCES {$wpdb->users}(ID) ON DELETE SET NULL,
+            INDEX (status),
+            INDEX (waybill_id),
+            INDEX (customer_id),
+            INDEX (assigned_delivery_id)
+        ) $charset_collate;";
+        
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+    }
+
     public static function delete_table($name)
     {
         global $wpdb;
@@ -795,6 +838,7 @@ class Database
         self::create_discounts_table();
         self::create_company_details_table();
         self::create_warehouse_tracking_table();
+        self::create_warehouse_items_table();
     }
     public static function deactivate()
     {

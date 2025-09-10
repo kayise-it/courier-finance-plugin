@@ -17,6 +17,11 @@ if (!KIT_User_Roles::can_access_settings()) {
 
 // Handle form submissions
 if ($_POST && isset($_POST['action'])) {
+    // Handle seeding action
+    if ($_POST['action'] === 'seed_customers' && wp_verify_nonce($_POST['seeding_nonce'], 'seed_customers')) {
+        $seeding_result = handle_customer_seeding();
+    }
+    
     if (wp_verify_nonce($_POST['settings_nonce'], 'save_settings')) {
         global $wpdb; 
         $table = $wpdb->prefix . 'kit_company_details';
@@ -90,6 +95,85 @@ if ($_POST && isset($_POST['action'])) {
         }
     }
 }
+
+// Function to handle customer seeding
+function handle_customer_seeding() {
+    global $wpdb;
+    
+    // Check if already seeded
+    $already_seeded = get_option('kit_customers_seeded', false);
+    if ($already_seeded) {
+        return [
+            'success' => false,
+            'message' => 'Customers have already been seeded. This can only be done once per plugin installation.'
+        ];
+    }
+    
+    // Check if customers table has data
+    $existing_count = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}kit_customers WHERE cust_id >= 100001");
+    if ($existing_count > 0) {
+        return [
+            'success' => false,
+            'message' => 'Customer data already exists in the database. Seeding is not allowed.'
+        ];
+    }
+    
+    try {
+        // Read and execute the customers.sql file
+        $sql_file = plugin_dir_path(__FILE__) . '../../assets/customers.sql';
+        
+        if (!file_exists($sql_file)) {
+            return [
+                'success' => false,
+                'message' => 'Customer SQL file not found at: ' . $sql_file
+            ];
+        }
+        
+        $sql_content = file_get_contents($sql_file);
+        
+        // Split SQL into individual statements
+        $statements = array_filter(array_map('trim', explode(';', $sql_content)));
+        
+        $executed_count = 0;
+        $error_count = 0;
+        $errors = [];
+        
+        foreach ($statements as $statement) {
+            if (empty($statement) || strpos($statement, '--') === 0) {
+                continue; // Skip empty statements and comments
+            }
+            
+            $result = $wpdb->query($statement);
+            if ($result === false) {
+                $error_count++;
+                $errors[] = $wpdb->last_error;
+            } else {
+                $executed_count++;
+            }
+        }
+        
+        if ($error_count > 0) {
+            return [
+                'success' => false,
+                'message' => "Seeding completed with errors. Executed: $executed_count statements, Errors: $error_count. First error: " . ($errors[0] ?? 'Unknown error')
+            ];
+        }
+        
+        // Mark as seeded
+        update_option('kit_customers_seeded', true);
+        
+        return [
+            'success' => true,
+            'message' => "Successfully seeded customers! Executed $executed_count SQL statements."
+        ];
+        
+    } catch (Exception $e) {
+        return [
+            'success' => false,
+            'message' => 'Seeding failed: ' . $e->getMessage()
+        ];
+    }
+}
 ?>
 
 <div class="wrap">
@@ -110,6 +194,7 @@ if ($_POST && isset($_POST['action'])) {
             <?php echo KIT_Commons::renderButton('Company Details', 'ghost', 'sm', ['id' => 'tab-company', 'classes' => 'tab-button', 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>', 'iconPosition' => 'left']); ?>
             <?php echo KIT_Commons::renderButton('VAT & Charges', 'ghost', 'sm', ['id' => 'tab-charges', 'classes' => 'tab-button', 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"></path>', 'iconPosition' => 'left']); ?>
             <?php echo KIT_Commons::renderButton('Color Scheme', 'ghost', 'sm', ['id' => 'tab-colors', 'classes' => 'tab-button', 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7a4 4 0 018 0v10a4 4 0 11-8 0V7zm8 0a4 4 0 018 0v4a4 4 0 01-4 4h-4" />', 'iconPosition' => 'left']); ?>
+            <?php echo KIT_Commons::renderButton('Seeding', 'ghost', 'sm', ['id' => 'tab-seeding', 'classes' => 'tab-button', 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>', 'iconPosition' => 'left']); ?>
         </nav>
     </div>
 
@@ -441,6 +526,132 @@ if ($_POST && isset($_POST['action'])) {
                 </div>
             </div>
         </div>
+
+        <!-- Seeding Tab -->
+        <div id="content-seeding" class="tab-panel hidden">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+                <div class="px-6 py-4 border-b border-gray-200">
+                    <h2 class="text-xl font-semibold text-gray-900">Customer Data Seeding</h2>
+                    <p class="text-sm text-gray-600 mt-1">Seed customer data from CSV file to the database. This can only be done once per plugin installation.</p>
+                </div>
+                
+                <div class="p-6">
+                    <?php
+                    // Check seeding status
+                    $already_seeded = get_option('kit_customers_seeded', false);
+                    $existing_count = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}kit_customers WHERE cust_id >= 100001");
+                    $can_seed = !$already_seeded && $existing_count == 0;
+                    ?>
+                    
+                    <!-- Seeding Status -->
+                    <div class="mb-6 p-4 rounded-lg border <?php echo $already_seeded ? 'bg-green-50 border-green-200' : ($existing_count > 0 ? 'bg-yellow-50 border-yellow-200' : 'bg-blue-50 border-blue-200'); ?>">
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0">
+                                <?php if ($already_seeded): ?>
+                                    <svg class="h-5 w-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                    </svg>
+                                <?php elseif ($existing_count > 0): ?>
+                                    <svg class="h-5 w-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                                    </svg>
+                                <?php else: ?>
+                                    <svg class="h-5 w-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                <?php endif; ?>
+                            </div>
+                            <div class="ml-3">
+                                <h3 class="text-sm font-medium <?php echo $already_seeded ? 'text-green-800' : ($existing_count > 0 ? 'text-yellow-800' : 'text-blue-800'); ?>">
+                                    <?php if ($already_seeded): ?>
+                                        ✅ Customers Already Seeded
+                                    <?php elseif ($existing_count > 0): ?>
+                                        ⚠️ Customer Data Exists
+                                    <?php else: ?>
+                                        ℹ️ Ready to Seed
+                                    <?php endif; ?>
+                                </h3>
+                                <div class="mt-2 text-sm <?php echo $already_seeded ? 'text-green-700' : ($existing_count > 0 ? 'text-yellow-700' : 'text-blue-700'); ?>">
+                                    <?php if ($already_seeded): ?>
+                                        <p>Customer data has been successfully seeded and is protected from re-seeding.</p>
+                                    <?php elseif ($existing_count > 0): ?>
+                                        <p>Customer data already exists in the database (<?php echo $existing_count; ?> records). Seeding is not allowed to prevent data duplication.</p>
+                                    <?php else: ?>
+                                        <p>No customer data found. You can safely seed the customer data from the CSV file.</p>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Seeding Form -->
+                    <?php if ($can_seed): ?>
+                        <form method="post" action="" id="seeding-form">
+                            <?php wp_nonce_field('seed_customers', 'seeding_nonce'); ?>
+                            <input type="hidden" name="action" value="seed_customers">
+                            
+                            <div class="bg-gray-50 rounded-lg p-4 mb-6">
+                                <h4 class="text-sm font-medium text-gray-900 mb-2">What will be seeded:</h4>
+                                <ul class="text-sm text-gray-600 space-y-1">
+                                    <li>• Customer data from <code>assets/customers.sql</code></li>
+                                    <li>• All foreign key relationships will be respected</li>
+                                    <li>• Data will be validated against existing countries and cities</li>
+                                    <li>• This operation can only be performed once per plugin installation</li>
+                                </ul>
+                            </div>
+                            
+                            <div class="flex items-center justify-between">
+                                <div class="text-sm text-gray-600">
+                                    <p><strong>Warning:</strong> This action cannot be undone and can only be performed once.</p>
+                                </div>
+                                <div>
+                                    <?php echo KIT_Commons::renderButton('Seed Customer Data', 'primary', 'lg', ['type' => 'submit', 'gradient' => true, 'id' => 'seed-button']); ?>
+                                </div>
+                            </div>
+                        </form>
+                    <?php else: ?>
+                        <div class="text-center py-8">
+                            <div class="text-gray-500">
+                                <?php if ($already_seeded): ?>
+                                    <p class="text-lg font-medium">Seeding is not available</p>
+                                    <p class="text-sm mt-2">Customer data has already been seeded and is protected from re-seeding.</p>
+                                <?php else: ?>
+                                    <p class="text-lg font-medium">Seeding is not available</p>
+                                    <p class="text-sm mt-2">Customer data already exists in the database. Please clear the data first if you need to re-seed.</p>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+
+                    <!-- Seeding Result -->
+                    <?php if (isset($seeding_result)): ?>
+                        <div class="mt-6 p-4 rounded-lg border <?php echo $seeding_result['success'] ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'; ?>">
+                            <div class="flex">
+                                <div class="flex-shrink-0">
+                                    <?php if ($seeding_result['success']): ?>
+                                        <svg class="h-5 w-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                        </svg>
+                                    <?php else: ?>
+                                        <svg class="h-5 w-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                        </svg>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="ml-3">
+                                    <h3 class="text-sm font-medium <?php echo $seeding_result['success'] ? 'text-green-800' : 'text-red-800'; ?>">
+                                        <?php echo $seeding_result['success'] ? 'Seeding Successful' : 'Seeding Failed'; ?>
+                                    </h3>
+                                    <div class="mt-2 text-sm <?php echo $seeding_result['success'] ? 'text-green-700' : 'text-red-700'; ?>">
+                                        <p><?php echo esc_html($seeding_result['message']); ?></p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Security Notice -->
@@ -567,6 +778,34 @@ document.addEventListener('DOMContentLoaded', function() {
     // Fetch exchange rate on page load and every 5 minutes
     fetchExchangeRate();
     setInterval(fetchExchangeRate, 5 * 60 * 1000); // Update every 5 minutes
+    
+    // Seeding form confirmation
+    const seedingForm = document.getElementById('seeding-form');
+    const seedButton = document.getElementById('seed-button');
+    
+    if (seedingForm && seedButton) {
+        seedingForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const confirmed = confirm(
+                'Are you sure you want to seed customer data?\n\n' +
+                'This action:\n' +
+                '• Cannot be undone\n' +
+                '• Can only be performed once per plugin installation\n' +
+                '• Will insert customer data from the CSV file\n\n' +
+                'Click OK to continue or Cancel to abort.'
+            );
+            
+            if (confirmed) {
+                // Show loading state
+                seedButton.disabled = true;
+                seedButton.innerHTML = '<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Seeding...';
+                
+                // Submit the form
+                this.submit();
+            }
+        });
+    }
     
     // Database Migration Functionality
     const migrateButton = document.getElementById('migrate-db');
