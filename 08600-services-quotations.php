@@ -3,7 +3,7 @@
 /**
  * Plugin Name: 08600 Services and Quotations
  * Description: Plugin to manage services and quotations.
-  * Version: 2.0.0
+  * Version: 3.0.0
  * Author: Thando Hlophe kayise it
  * Author URI: https://kayiseit.com
  * Text Domain: 08600-services-quotations
