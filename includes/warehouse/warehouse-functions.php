@@ -20,10 +20,16 @@ class KIT_Warehouse
         $warehouse_table = $wpdb->prefix . 'kit_warehouse_items';
         $waybill_items_table = $wpdb->prefix . 'kit_waybill_items';
         
-        // Get waybill items
+        // Get waybill number from waybill_data (not the database ID)
+        $waybill_no = $waybill_data['waybill_no'] ?? null;
+        if (!$waybill_no) {
+            return new WP_Error('missing_waybill_no', 'Waybill number is required');
+        }
+        
+        // Get waybill items using waybill number (not database ID)
         $items = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM $waybill_items_table WHERE waybill_id = %d",
-            $waybill_id
+            "SELECT * FROM $waybill_items_table WHERE waybillno = %d",
+            $waybill_no
         ));
         
         if (empty($items)) {
@@ -97,7 +103,7 @@ class KIT_Warehouse
         }
         
         return $wpdb->get_results(
-            "SELECT wi.*, w.waybill_no, c.customer_name, c.customer_surname, d.delivery_reference, d.dispatch_date
+            "SELECT wi.*, w.waybill_no, c.name as customer_name, c.surname as customer_surname, d.delivery_reference, d.dispatch_date
              FROM $warehouse_table wi
              LEFT JOIN $waybills_table w ON wi.waybill_id = w.id
              LEFT JOIN $customers_table c ON wi.customer_id = c.cust_id
@@ -221,6 +227,7 @@ class KIT_Warehouse
                  LEFT JOIN {$wpdb->prefix}kit_shipping_directions sd ON d.direction_id = sd.id
                  LEFT JOIN {$wpdb->prefix}kit_operating_countries oc2 ON sd.destination_country_id = oc2.id
                  WHERE oc2.country_name = %s 
+                 AND oc2.is_active = 1
                  AND d.dispatch_date >= CURDATE()
                  AND d.status = 'scheduled'
                  AND d.delivery_reference != 'warehoused'
@@ -238,6 +245,7 @@ class KIT_Warehouse
                  LEFT JOIN {$wpdb->prefix}kit_shipping_directions sd ON d.direction_id = sd.id
                  LEFT JOIN {$wpdb->prefix}kit_operating_countries oc2 ON sd.destination_country_id = oc2.id
                  WHERE oc2.country_name = %s 
+                 AND oc2.is_active = 1
                  AND d.dispatch_date >= CURDATE()
                  AND d.status = 'scheduled'
                  AND d.delivery_reference != 'warehoused'
@@ -257,10 +265,15 @@ class KIT_Warehouse
         global $wpdb;
         $tracking_table = $wpdb->prefix . 'kit_warehouse_tracking';
         
+        // Resolve customer id for tracking (avoid FK violations)
+        $customer_id = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT customer_id FROM {$wpdb->prefix}kit_waybills WHERE id = %d",
+            $waybill_id
+        ));
         $wpdb->insert($tracking_table, [
             'waybill_id' => $waybill_id,
             'waybill_no' => $waybill_no,
-            'customer_id' => 0, // Will be updated if needed
+            'customer_id' => $customer_id,
             'action' => $action,
             'previous_status' => $previous_status,
             'new_status' => $new_status,

@@ -319,14 +319,19 @@ class KIT_Deliveries
 
         ob_start();
         foreach ($deliveries as $delivery): ?>
-            <label class="delivery-card bg-white w-[100px] h-[100px] rounded-[5px] border-2 border-gray-300 cursor-pointer relative flex items-center justify-center text-center text-[11px] font-medium leading-tight hover:shadow-md transition-all duration-200" data-delivery-id="<?= esc_attr($delivery->id) ?>">
-                <input type="radio" name="delivery_id" value="<?= esc_attr($delivery->id) ?>" class="sr-only" <?= $delivery->id == 1 ? 'checked' : '' ?>>
-                <div>
-                    <div class="font-bold text-[12px]"><?= esc_html(date('d M Y', strtotime($delivery->dispatch_date))) ?></div>
-                    <div class="text-gray-500"><?= esc_html(ucfirst($delivery->status)) ?></div>
-                    <div class="text-gray-600 mt-1"><?= esc_html($delivery->origin_country) ?> → <?= esc_html($delivery->destination_country) ?></div>
-                </div>
-            </label>
+            <?php
+                renderDeliveryCard(
+                    $delivery,
+                    'scheduled',
+                    true,
+                    'handleDeliveryClick',
+                    [
+                        'type' => 'radio',
+                        'name' => 'delivery_id',
+                        'checked_id' => 1
+                    ]
+                );
+            ?>
         <?php endforeach;
         $html = ob_get_clean();
 
@@ -417,9 +422,9 @@ class KIT_Deliveries
         $deliveryTable = $wpdb->prefix . 'kit_deliveries';
         $shipDirectionTable = $wpdb->prefix . 'kit_shipping_directions';
 
-        // Validate country ID
+        // Validate country ID and ensure it's active
         $destinationCountry_id = $wpdb->get_var($wpdb->prepare(
-            "SELECT id FROM {$wpdb->prefix}kit_operating_countries WHERE id = %d",
+            "SELECT id FROM {$wpdb->prefix}kit_operating_countries WHERE id = %d AND is_active = 1",
             $country_id
         ));
 
@@ -559,7 +564,8 @@ class KIT_Deliveries
                 LEFT JOIN {$wpdb->prefix}kit_operating_countries oc2 
                     ON sd.destination_country_id = oc2.id 
                 WHERE $table_name.status = 'scheduled'
-                AND  $table_name.delivery_reference != 'warehoused'";
+                AND  $table_name.delivery_reference != 'warehoused'
+                AND oc2.is_active = 1";
 
         if (!empty($country_code)) {
             // Filter by the joined destination country name column
@@ -716,7 +722,7 @@ class KIT_Deliveries
                                 $waybillsandItems = KIT_Waybills::truckWaybills($delivery->id);
 
                                 $options = [
-                                    'itemsPerPage' => 5,
+                                    'itemsPerPage' => 20,
                                     'currentPage' => $_GET['paged'] ?? 1,
                                     'tableClass' => 'min-w-full text-left text-xs text-gray-700',
                                     'emptyMessage' => 'No customers records found',
@@ -758,7 +764,16 @@ class KIT_Deliveries
                                 };
 
 
-                                echo KIT_Commons::render_versatile_table($waybillsandItems, $columns, $waybill_actions, $options);
+                                echo KIT_Unified_Table::simple($waybillsandItems, $columns, [
+                                    'title' => 'Delivery Waybills',
+                                    'actions' => [
+                                        [
+                                            'label' => 'View',
+                                            'href' => '?page=08600-Waybill-view&waybill_id={waybill_id}',
+                                            'class' => 'text-blue-600 hover:text-blue-800'
+                                        ]
+                                    ]
+                                ]);
 
                                 ?>
                             </div>
@@ -1327,6 +1342,7 @@ class KIT_Deliveries
             echo KIT_Commons::showingHeader([
                 'title' => 'Deliveries Management',
                 'desc' => 'Manage and track all delivery operations',
+                'icon' => KIT_Commons::icon('truck')
             ]);
             ?>
 
@@ -2360,6 +2376,12 @@ class KIT_Deliveries
         $table = $wpdb->prefix . 'kit_shipping_directions';
         $countries_table = $wpdb->prefix . 'kit_operating_countries';
 
+        // If this direction already exists, return it immediately (idempotent)
+        $existing_id = self::get_direction_id($origin_country_id, $destination_country_id);
+        if (!empty($existing_id)) {
+            return intval($existing_id);
+        }
+
         // Fetch country names
         $origin_country_name = KIT_Routes::get_country_name_by_id($origin_country_id);
         $destination_country_name = KIT_Routes::get_country_name_by_id($destination_country_id);
@@ -2396,14 +2418,32 @@ class KIT_Deliveries
             );
         }
 
-        // Insert route/direction
-        $wpdb->insert($table, [
+        // Insert route/direction with duplicate handling
+        $inserted = $wpdb->insert($table, [
             'origin_country_id' => $origin_country_id,
             'destination_country_id' => $destination_country_id,
             'description' => $origin_country_name . ' to ' . $destination_country_name
         ]);
 
-        return $wpdb->insert_id;
+        if ($inserted === false) {
+            // If duplicate key (direction_pair) or any race condition, re-select and return
+            $last_error = isset($wpdb->last_error) ? strtolower($wpdb->last_error) : '';
+            if (strpos($last_error, 'duplicate') !== false) {
+                $existing_id = self::get_direction_id($origin_country_id, $destination_country_id);
+                if (!empty($existing_id)) {
+                    return intval($existing_id);
+                }
+            }
+            // As a safe fallback, try once more to read existing row
+            $existing_id = self::get_direction_id($origin_country_id, $destination_country_id);
+            if (!empty($existing_id)) {
+                return intval($existing_id);
+            }
+            // Could not create or find; surface a failure (return 0 to let caller handle WP_Error)
+            return 0;
+        }
+
+        return intval($wpdb->insert_id);
     }
 
     public static function save_delivery($data)
@@ -2456,7 +2496,7 @@ class KIT_Deliveries
 
     public static function selectAllCountries($name, $id, $country_id, $required = true, $type = 'origin')
     {
-        $countries = self::getAllCountries();
+        $countries = self::getCountriesObject(); // Use active countries only
         ob_start();
     ?>
         <select class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"

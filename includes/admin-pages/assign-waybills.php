@@ -216,7 +216,7 @@ $total_available_deliveries = count($available_deliveries);
             <strong>Manage Deliveries</strong>
         </a>
         <a href="?page=08600-waybill-manage" style="display: block; padding: 15px; background: #dc2626; color: white; text-decoration: none; border-radius: 6px; text-align: center;">
-            <strong>All Waybills</strong>
+            <strong>All Wa78ybills</strong>
         </a>
     </div>
 </div>

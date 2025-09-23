@@ -105,7 +105,10 @@ $scheduled_deliveries = KIT_Deliveries::getScheduledDeliveries();
 
 <div class="wrap">
     <?php
-    echo do_shortcode('[showheader title="Capture New Waybill" desc=""]');
+    echo KIT_Commons::showingHeader([
+        'title' => 'Capturess New Waybill',
+        'desc' => ''
+    ]);
     ?>
     <div class="mx-auto max-w-7xl">
         <?php

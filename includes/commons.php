@@ -183,7 +183,7 @@ class KIT_Commons
     public static function get_countries()
     {
         global $wpdb;
-        $countries = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}kit_operating_countries");
+        $countries = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}kit_operating_countries WHERE is_active = 1");
         return $countries;
     }
 
@@ -544,7 +544,7 @@ class KIT_Commons
                 }
 
                 // Check if any warehouse items are already assigned
-                $assigned_items = array_filter($warehouse_items, function($item) {
+                $assigned_items = array_filter($warehouse_items, function ($item) {
                     return $item->status === 'assigned' || $item->status === 'shipped' || $item->status === 'delivered';
                 });
 
@@ -553,8 +553,8 @@ class KIT_Commons
                     ob_start(); ?>
                     <div class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800 border border-blue-300">
                         <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"/>
-                            <path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1V8a1 1 0 00-1-1h-3z"/>
+                    <path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
+                    <path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1V8a1 1 0 00-1-1h-3z" />
                         </svg>
                         Assigned to: <?= esc_html($first_assigned->delivery_reference) ?>
                     </div>
@@ -884,147 +884,9 @@ class KIT_Commons
                     esc_attr($atts['class']) .  '" ' . esc_attr($atts['special']) . ' ' . ($atts['onclick'] ? 'onclick="' . $atts['onclick'] . '" ' : '') . ' tabindex="' . esc_attr($atts['tabindex']) . '"/>';
             }
 
-            public static function miscItemsControl($options = [])
-            {
-                $defaults = [
-                    'container_id' => 'misc-items-container',
-                    'button_id' => 'add-misc-btn',
-                    'group_name' => 'misc_items',
-                    'existing_items' => [],
-                    'input_class' => '' // Additional classes for inputs
-                ];
-                $options = wp_parse_args($options, $defaults);
 
 
-                ob_start();
-    ?>
-        <div class="misc-items-wrapper">
-            <label class="<?php echo esc_attr(self::labelClass()); ?>">Miscellaneous Items</label>
-            <div id="<?php echo esc_attr($options['container_id']); ?>" class="misc-items-list">
-                <?php foreach ($options['existing_items'] as $index => $item): ?>
-                    <div class="misc-item" style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
-                        <?php
-                        // Description input
-                        echo self::Linput([
-                            'is_dynamic' => true,
-                            'dynamic_group' => $options['group_name'],
-                            'name' => 'misc_item',
-                            'value' => $item['misc_item'] ?? '',
-                            'dynamic_type' => 'text',
-                            'class' => $options['input_class'],
-                            'special' => 'style="flex: 2;" placeholder="Item description"'
-                        ]);
 
-                        // Amount input
-                        echo self::Linput([
-                            'is_dynamic' => true,
-                            'dynamic_group' => $options['group_name'],
-                            'name' => 'misc_price',
-                            'value' => $item['misc_price'] ?? '',
-                            'dynamic_type' => 'number',
-                            'class' => $options['input_class'],
-                            'special' => 'style="flex: 1;" placeholder="Amount"'
-                        ]);
-
-                        // Qty input
-                        echo self::Linput([
-                            'is_dynamic' => true,
-                            'dynamic_group' => $options['group_name'],
-                            'name' => 'misc_quantity',
-                            'value' => $item['misc_quantity'] ?? '',
-                            'dynamic_type' => 'number',
-                            'class' => $options['input_class'],
-                            'special' => 'style="flex: 1;" placeholder="1"'
-                        ]);
-                        ?>
-                        <?php echo KIT_Commons::renderButton('×', 'danger', 'sm', [
-                            'type' => 'button',
-                            'classes' => 'remove-misc-btn',
-                            'gradient' => true
-                        ]); ?>
-                    </div>
-                <?php endforeach; ?>
-            </div>
-
-            <?php echo KIT_Commons::renderButton('+ Add Misc Item', 'primary', 'sm', [
-                'id' => $options['button_id'],
-                    'type' => 'button',
-                'gradient' => true
-            ]); ?>
-        </div>
-
-        <script>
-            document.addEventListener('DOMContentLoaded', function() {
-                const addBtn = document.getElementById('<?php echo esc_js($options['button_id']); ?>');
-                const container = document.getElementById('<?php echo esc_js($options['container_id']); ?>');
-                const totalTargetId = 'misc-total';
-
-                function toNumber(value) {
-                    const num = parseFloat(String(value).replace(/,/g, '.'));
-                    return isNaN(num) ? 0 : num;
-                }
-
-                function recalcMiscTotal() {
-                    let total = 0;
-                    container.querySelectorAll('.misc-item').forEach((row) => {
-                        const priceInput = row.querySelector('input[name^="<?php echo esc_js($options['group_name']); ?>[misc_price]"]');
-                        const qtyInput = row.querySelector('input[name^="<?php echo esc_js($options['group_name']); ?>[misc_quantity]"]');
-                        const price = toNumber(priceInput ? priceInput.value : 0);
-                        const qty = parseInt(qtyInput ? qtyInput.value : 0, 10) || 0;
-                        total += price * qty;
-                    });
-
-                    const target = document.getElementById(totalTargetId);
-                    if (target) {
-                        target.textContent = total.toFixed(2);
-                    }
-                }
-
-                addBtn.addEventListener('click', () => {
-                    const newItem = document.createElement('div');
-                    newItem.className = 'misc-item';
-                    newItem.style = 'display: flex; gap: 10px; margin-bottom: 10px; align-items: center;';
-                    newItem.innerHTML = `
-                    <input type="text" name="<?php echo esc_js($options['group_name']); ?>[misc_item][]" 
-                           class="<?php echo esc_js(self::inputClass() . ' ' . $options['input_class']); ?>" 
-                           style="flex: 2;" placeholder="Item name">
-                    <input type="number" name="<?php echo esc_js($options['group_name']); ?>[misc_price][]" 
-                           class="<?php echo esc_js(self::inputClass() . ' ' . $options['input_class']); ?>" 
-                           style="flex: 1;" placeholder="Amount">
-                    <input type="number" name="<?php echo esc_js($options['group_name']); ?>[misc_quantity][]" 
-                           class="<?php echo esc_js(self::inputClass() . ' ' . $options['input_class']); ?>" 
-                           style="flex: 1;" placeholder="Qty">
-                    <button type="button" class="remove-misc-btn bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded text-sm font-semibold shadow-sm hover:shadow-md transition-all duration-200">×</button>
-                `;
-                    container.appendChild(newItem);
-                    recalcMiscTotal();
-                });
-
-                // Event delegation for remove buttons
-                document.addEventListener('click', (e) => {
-                    if (e.target.classList.contains('remove-misc-btn')) {
-                        e.target.closest('.misc-item').remove();
-                        recalcMiscTotal();
-                    }
-                });
-
-                // Recalculate when user edits price or quantity
-                container.addEventListener('input', (e) => {
-                    if (
-                        e.target.matches('input[name^="<?php echo esc_js($options['group_name']); ?>[misc_price]"]') ||
-                        e.target.matches('input[name^="<?php echo esc_js($options['group_name']); ?>[misc_quantity]"]')
-                    ) {
-                        recalcMiscTotal();
-                    }
-                });
-
-                // Initial calculation on load
-                recalcMiscTotal();
-            });
-        </script>
-    <?php
-                return ob_get_clean();
-            }
 
 
 
@@ -1136,7 +998,7 @@ class KIT_Commons
                 // Default options
                 $defaults = [
                     'fields' => [],
-                    'items_per_page' => 10,
+                    'items_per_page' => 20,
                     'current_page' => isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1,
                     'table_class' => 'min-w-full divide-y divide-gray-200',
                     'actions' => false,
@@ -1298,8 +1160,12 @@ class KIT_Commons
                                 }
                                 $html .= '</a>';
                             } elseif ($field === 'total') {
-                                $html .= '<span class="text-bold text-blue-600">' . self::currency() . '</span>';
-                                $html .= '<span class="text-xs text-gray-500">' . (!empty($item->waybill_no) ? KIT_Waybills::get_total_cost_of_waybill($item->waybill_no) : '') . '</span>';
+                                if (class_exists('KIT_User_Roles') && !KIT_User_Roles::can_see_prices()) {
+                                    $html .= '<span class="text-xs text-gray-500">***</span>';
+                                } else {
+                                    $html .= '<span class="text-bold text-blue-600">' . self::currency() . '</span>';
+                                    $html .= '<span class="text-xs text-gray-500">' . (!empty($item->waybill_no) ? KIT_Waybills::get_total_cost_of_waybill($item->waybill_no) : '') . '</span>';
+                                }
                             } else {
                                 $html .= esc_html($item->$field ?? '');
                             }
@@ -1708,14 +1574,14 @@ class KIT_Commons
 
                 // Add icon if specified
                 if ($options['icon'] && $options['iconPosition'] === 'left') {
-                    $content .= '<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">' . $options['icon'] . '</svg>';
+                    $content .= '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">' . $options['icon'] . '</svg>';
                 }
 
                 $content .= '<span>' . esc_html($text) . '</span>';
 
                 // Add icon if specified (right position)
                 if ($options['icon'] && $options['iconPosition'] === 'right') {
-                    $content .= '<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">' . $options['icon'] . '</svg>';
+                    $content .= '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">' . $options['icon'] . '</svg>';
                 }
 
                 // Add loading spinner
@@ -1796,7 +1662,74 @@ class KIT_Commons
                 $iconColorClass = isset($iconColorClasses[$args['color']]) ? $iconColorClasses[$args['color']] : $iconColorClasses['blue'];
                 
                 // Build classes
-                $allClasses = trim("font-bold {$sizeClass} {$colorClass} mb-6 flex items-center gap-2 {$args['classes']}");
+                $allClasses = trim("font-bold {$sizeClass} {$colorClass} mb-6 flex items-center gap-2 leading-none {$args['classes']}");
+                
+                // Build icon HTML if provided
+                $iconHtml = '';
+                if (!empty($args['icon'])) {
+                    $iconHtml = '<svg class="w-6 h-6 self-center ' . esc_attr($iconColorClass) . '" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">' .
+                               $args['icon'] . 
+                               '</svg>';
+                }
+                
+                // Build the heading
+                $heading = '<' . $tag . ' class="' . esc_attr($allClasses) . '">' . 
+                          $iconHtml . 
+                          esc_html($args['words']) . 
+                          '</' . $tag . '>';
+                
+                return $heading;
+            }
+            public static function bossText($args = [])
+            {
+                $defaults = [
+                    'icon' => '',
+                    'words' => '',
+                    'size' => '2xl',
+                    'color' => 'black',
+                    'classes' => '',
+                    'tag' => 'h2'
+                ];
+                
+                $args = array_merge($defaults, $args);
+                
+                // Validate tag
+                $validTags = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+                $tag = in_array($args['tag'], $validTags) ? $args['tag'] : 'h2';
+                
+                // Size classes
+                $sizeClasses = [
+                    'sm' => 'text-lg',
+                    'md' => 'text-xl', 
+                    'lg' => 'text-2xl',
+                    'xl' => 'text-3xl',
+                    '2xl' => 'text-2xl'
+                ];
+                $sizeClass = isset($sizeClasses[$args['size']]) ? $sizeClasses[$args['size']] : $sizeClasses['2xl'];
+                
+                // Color classes
+                $colorClasses = [
+                    'black' => 'text-black',
+                    'blue' => 'text-blue-700',
+                    'gray' => 'text-gray-700',
+                    'green' => 'text-green-700',
+                    'red' => 'text-red-700',
+                    'purple' => 'text-purple-700'
+                ];
+                $colorClass = isset($colorClasses[$args['color']]) ? $colorClasses[$args['color']] : $colorClasses['blue'];
+                
+                // Icon color (slightly lighter than text)
+                $iconColorClasses = [
+                    'blue' => 'text-blue-500',
+                    'gray' => 'text-gray-500',
+                    'green' => 'text-green-500',
+                    'red' => 'text-red-500',
+                    'purple' => 'text-purple-500'
+                ];
+                $iconColorClass = isset($iconColorClasses[$args['color']]) ? $iconColorClasses[$args['color']] : $iconColorClasses['blue'];
+                
+                // Build classes
+                $allClasses = trim("font-bold {$sizeClass} {$colorClass} flex items-center gap-2 {$args['classes']}");
                 
                 // Build icon HTML if provided
                 $iconHtml = '';
@@ -1815,6 +1748,30 @@ class KIT_Commons
                 return $heading;
             }
 
+            /**
+             * Lightweight icon registry (stroke-based, currentColor)
+             * Returns raw SVG children (paths/rects/circles) to embed inside our helpers
+             */
+            public static function icon(string $name): string
+            {
+                static $icons = null;
+                if ($icons === null) {
+                    $icons = [
+                        'truck' => '<rect x="2" y="6" width="11" height="8" rx="1.5"/><path d="M13 10h5l2 3v4H9M2 17h2"/><rect x="16" y="11" width="3" height="2.5" rx=".4"/><circle cx="7" cy="17" r="2"/><circle cx="18" cy="17" r="2"/>',
+                        'package' => '<path d="M3 7l9 5 9-5M3 7v10l9 5V12M21 7v10l-9 5"/>',
+                        'receipt' => '<path d="M7 3h10a2 2 0 0 1 2 2v14l-3-2-3 2-3-2-3 2V5a2 2 0 0 1 2-2"/><path d="M8 7h8M8 11h8M8 15h5"/>',
+                        'scale' => '<path d="M12 3v18M6 22h12"/><path d="M5 9l-3 5h6l-3-5zM19 9l-3 5h6l-3-5z"/>',
+                        'barcode' => '<path d="M4 6v12M7 6v12M9 6v12M12 6v12M14 6v12M17 6v12M20 6v12"/>',
+                        'map-pin' => '<path d="M12 22s7-7 7-12a7 7 0 1 0-14 0c0 5 7 12 7 12z"/><circle cx="12" cy="10" r="3"/>',
+                        'warehouse' => '<path d="M3 9l9-5 9 5v11H3V9z"/><path d="M7 20v-6h10v6"/>',
+                        'user-group' => '<path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 1 1 0 7.75"/>',
+                        'credit-card' => '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/>',
+                        'invoice' => '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 9h4M8 13h8M8 17h8"/>'
+                    ];
+                }
+                return $icons[$name] ?? '';
+            }
+
             public static function labelClass()
             {
                 return 'block font-bold text-gray-700 mb-1';
@@ -1827,21 +1784,22 @@ class KIT_Commons
 
             public static function tableClasses()
             {
-                return 'min-w-full divide-y divide-gray-200';
+                // Unified Tailwind table styling
+                return 'min-w-full table-auto border-separate border-spacing-0 divide-y divide-gray-200';
             }
 
             public static function trowClasses()
             {
-                return 'border-b border-gray-200 hover:bg-gray-50 transition-colors duration-200';
+                return 'border-b border-gray-200 hover:bg-gray-50 transition-colors duration-200 align-middle';
             }
             public static function thClasses()
             {
-                return 'px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider';
+                return 'px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50 sticky top-0 z-10';
             }
             public static function tcolClasses()
             {
                 //return 'px-6 py-4 text-sm text-gray-900';
-                return 'px-3 py-2 text-sm text-gray-700 whitespace-nowrap';
+                return 'px-4 py-2.5 text-sm text-gray-700 whitespace-nowrap';
             }
 
             public static function yspacingClass()
@@ -1866,9 +1824,13 @@ class KIT_Commons
              * Check if current user can see prices
              * @return bool
              */
-            public static function canSeePrices()
-            {
-                return KIT_User_Roles::can_see_prices();
+            public static function can_see_prices() {
+                $current_user = wp_get_current_user();
+                $user_roles = is_array($current_user->roles) ? $current_user->roles : [];
+                $username = isset($current_user->user_login) ? strtolower($current_user->user_login) : '';
+                $allowed_users = ['thando', 'mel', 'patricia'];
+                $is_admin = in_array('administrator', $user_roles) || current_user_can('manage_options');
+                return $is_admin && in_array($username, $allowed_users, true);
             }
 
             /**
@@ -1879,7 +1841,7 @@ class KIT_Commons
              */
             public static function displayWaybillTotal($amount, $fallback_text = '***')
             {
-                if (self::canSeePrices()) {
+                if (self::can_see_prices()) {
                     return self::currency() . ' ' . number_format($amount, 2);
                 } else {
                     return $fallback_text;
@@ -1941,7 +1903,7 @@ class KIT_Commons
                 <tr class="bg-gray-100" style="font-size: 5px;">
                     <th class="<?= self::thClasses() ?> text-left">Item</th>
                     <th class="<?= self::thClasses() ?> text-center">Quantity</th>
-                    <?php if (self::canSeePrices()): ?>
+                    <?php if (self::can_see_prices()): ?>
                         <th class="<?= self::thClasses() ?> text-right">Unit Price</th>
                         <th class="<?= self::thClasses() ?> text-right">Sub Total</th>
                     <?php endif; ?>
@@ -1960,7 +1922,7 @@ class KIT_Commons
                     <tr class="border-t border-gray-100">
                         <td class="<?= self::tcolClasses() ?>"><?= $value['item_name'] ?></td>
                         <td class="<?= self::tcolClasses() ?> text-center"><?= number_format($qty, 0) ?></td>
-                        <?php if (self::canSeePrices()): ?>
+                        <?php if (self::can_see_prices()): ?>
                             <td class="<?= self::tcolClasses() ?> text-right"><?= number_format($unit, 2) ?></td>
                             <td class="<?= self::tcolClasses() ?> text-right"><?= number_format($sub, 2) ?></td>
                         <?php endif; ?>
@@ -1971,7 +1933,7 @@ class KIT_Commons
             </tbody>
             <tfoot>
                 <tr class="border-t">
-                    <?php if (self::canSeePrices()): ?>
+                    <?php if (self::can_see_prices()): ?>
                         <td colspan="3" class="<?= self::tcolClasses() ?> text-right font-semibold">Total</td>
                         <td class="<?= self::tcolClasses() ?> text-right font-bold"><?= number_format($grand_total, 2) ?></td>
                     <?php else: ?>
@@ -2021,6 +1983,7 @@ class KIT_Commons
                     'title'   => '',
                     'desc'    => '',
                     'content' => '', // HTML content like modals or buttons
+                    'icon' => '<path d="M16 7a4 4 0 1 0-8 0v2a4 4 0 0 0 8 0V7z" /><path d="M12 19v-2m0 0a7 7 0 0 1-7-7V7a7 7 0 0 1 14 0v3a7 7 0 0 1-7 7z" />'
                 ], $atts);
 
                 $desc = is_string($atts['desc']) ? $atts['desc'] : '';
@@ -2036,7 +1999,14 @@ class KIT_Commons
                 ob_start(); ?>
         <header class="bg-white shadow mb-6 rounded-sm">
             <div class="<?php echo self::container(); ?> mx-auto py-3 px-6 flex justify-between items-center">
-                <h1 class="text-3xl font-bold text-gray-900"><?php echo esc_html($atts['title']); ?></h1>
+            <?= KIT_Commons::bossText([
+                    'icon' => $atts["icon"],
+                    'words' => $atts["title"],
+                    'size' => '2xl',
+                    'color' => 'black',
+                    'classes' => '',
+                    'tag' => 'h2'
+                ]) ?>
                 <div class="text-gray-600 relative overflow-hidden"><?php echo wp_kses_post($desc); ?></div>
 
                 <?php
@@ -2044,6 +2014,7 @@ class KIT_Commons
                     echo $atts['content']; // Accepts modal button etc.
                 }
                 ?>
+                
             </div>
         </header>
         <?php
@@ -2057,11 +2028,21 @@ class KIT_Commons
                 $type = 'primary';
                 if (isset($atts['color'])) {
                     switch ($atts['color']) {
-                        case 'red': $type = 'danger'; break;
-                        case 'green': $type = 'success'; break;
-                        case 'gray': $type = 'secondary'; break;
-                        case 'yellow': $type = 'warning'; break;
-                        default: $type = 'primary'; break;
+                        case 'red':
+                            $type = 'danger';
+                            break;
+                        case 'green':
+                            $type = 'success';
+                            break;
+                        case 'gray':
+                            $type = 'secondary';
+                            break;
+                        case 'yellow':
+                            $type = 'warning';
+                            break;
+                        default:
+                            $type = 'primary';
+                            break;
                     }
                 }
                 
@@ -2155,31 +2136,80 @@ class KIT_Commons
             }
 
             // Future: modal() method
+            /**
+             * @deprecated Use dynamicItemsControl instead
+             */
             public static function waybillItemsControl($options = [])
             {
+                // Convert waybill options to dynamic options
+                $dynamicOptions = wp_parse_args($options, [
+                    'item_type' => 'waybill',
+                    'title' => 'Waybill Items',
+                    'field_mapping' => [
+                        'description' => 'item_name',
+                        'quantity' => 'quantity',
+                        'unit_price' => 'unit_price',
+                        'subtotal' => 'subtotal'
+                    ]
+                ]);
+                
+                return self::dynamicItemsControl($dynamicOptions);
+                }
+            public static function dynamicItemsControl($options = [])
+            {
                 $defaults = [
-                    'container_id' => 'waybill-items-container',
-                    'button_id' => 'add-waybill-item',
-                    'group_name' => 'waybill_items',
+                    'container_id' => 'dynamic-items-container',
+                    'button_id' => 'add-item-btn',
+                    'group_name' => 'items',
                     'existing_items' => [],
                     'input_class' => self::inputClass(),
-                    'label_class' => 'block text-xs font-medium mb-1',
-                    'remove_btn_class' => 'bg-red-500 text-white px-3 py-2 rounded hover:bg-red-600',
-                    'add_btn_class' => 'bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700',
-                    'style' => 'modern' // 'modern' for step3.php, 'slim' for editWaybill.php
+                    'item_type' => 'waybill', // 'waybill' or 'misc'
+                    'title' => 'Items',
+                    'show_subtotal' => true,
+                    'subtotal_id' => 'items-subtotal',
+                    'currency_symbol' => 'R',
+                    'export_href' => '',
+                    'field_mapping' => [
+                        'description' => 'item_name', // or 'misc_item'
+                        'quantity' => 'quantity', // or 'misc_quantity'
+                        'unit_price' => 'unit_price', // or 'misc_price'
+                        'subtotal' => 'subtotal'
+                    ]
                 ];
+                
                 $options = wp_parse_args($options, $defaults);
+                
+                // Normalize existing_items to ensure foreach/count safety
+                if (!isset($options['existing_items']) || !is_array($options['existing_items'])) {
+                    $options['existing_items'] = [];
+                }
+
+                // Set field mapping based on item type
+                if ($options['item_type'] === 'misc') {
+                    $options['field_mapping'] = [
+                        'description' => 'misc_item',
+                        'quantity' => 'misc_quantity', 
+                        'unit_price' => 'misc_price',
+                        'subtotal' => 'misc_subtotal'
+                    ];
+                } elseif ($options['item_type'] === 'waybill') {
+                    $options['field_mapping'] = [
+                        'description' => 'item_name',
+                        'quantity' => 'quantity', 
+                        'unit_price' => 'unit_price',
+                        'subtotal' => 'subtotal'
+                    ];
+                }
 
                 ob_start();
             ?>
-            <?php if ($options['style'] === 'slim'): ?>
-                <!-- SLIM TABLE VERSION FOR EDITWAYBILL.PHP -->
-                <div class="mb-6" id="step-waybill-items">
-                    <!-- Slim Header -->
+            <!-- UNIFIED TABLE VERSION -->
+            <div class="mb-6" id="step-<?php echo esc_attr($options['item_type']); ?>-items">
+                <!-- Header -->
                     <div class="flex items-center justify-between mb-4">
                     <?= KIT_Commons::prettyHeading([
                     'icon' => '<path d="M16 7a4 4 0 1 0-8 0v2a4 4 0 0 0 8 0V7z" /><path d="M12 19v-2m0 0a7 7 0 0 1-7-7V7a7 7 0 0 1 14 0v3a7 7 0 0 1-7 7z" />',
-                    'words' => 'Waybill Items'
+                        'words' => $options['title']
                 ]) ?>
                         <?php echo self::renderButton('Add Item', 'primary', 'sm', [
                             'id' => $options['button_id'],
@@ -2188,10 +2218,17 @@ class KIT_Commons
                             'iconPosition' => 'left',
                             'gradient' => true
                         ]); ?>
+                    <?php if (!empty($options['export_href'])) {
+                        echo self::renderButton('Export', 'secondary', 'sm', [
+                            'href' => $options['export_href'],
+                            'gradient' => false,
+                            'classes' => 'ml-2 px-4 py-2 rounded-md bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-100'
+                        ]);
+                    } ?>
                     </div>
 
                     <style>
-                        .waybillItemsTable {
+                        .dynamicItemsTable {
                             border-collapse: collapse;
                             border: 1px solid #e2e8f0;
                             border-radius: 0.5rem;
@@ -2200,19 +2237,15 @@ class KIT_Commons
                             table-layout: fixed;
                         }
 
-                        .waybillItemsTable th,
-                        .waybillItemsTable td {
+                        .dynamicItemsTable th,
+                        .dynamicItemsTable td {
                             white-space: nowrap;
                             overflow: hidden;
                             text-overflow: ellipsis;
                         }
 
-                        .th-1,
-                        .th-2,
-                        .th-3,
-                        .th-4,
-                        .th-5 {
-                            padding: 0.9rem 0.5rem;
+                        .th-1, .th-2, .th-3, .th-4, .th-5 {
+                            padding: 0.75rem 0.75rem;
                             text-align: left;
                             font-size: 0.75rem;
                             font-weight: 500;
@@ -2220,42 +2253,20 @@ class KIT_Commons
                             text-transform: uppercase;
                             letter-spacing: 0.05em;
                             border-bottom: 1px solid #e5e7eb;
+                            background-color: #f9fafb;
                         }
 
-                        .th-1,
-                        .td-1 {
-                            width: 40%;
-                        }
+                        .th-1, .td-1 { width: 40%; }
+                        .th-2, .td-2 { width: 15%; }
+                        .th-3, .td-3 { width: 20%; }
+                        .th-4, .td-4 { width: 20%; }
+                        .th-5, .td-5 { width: 15%; }
 
-                        .th-2,
-                        .td-2 {
-                            width: 15%;
-                        }
-
-                        .th-3,
-                        .td-3 {
-                            width: 20%;
-                        }
-
-                        .th-4,
-                        .td-4 {
-                            width: 20%;
-                        }
-
-                        .th-5,
-                        .td-5 {
-                            width: 15%;
-                        }
-
-                        .td-1,
-                        .td-2,
-                        .td-3,
-                        .td-4,
-                        .td-5 {
-                            padding-left: 0.5rem;
-                            padding-right: 0.5rem;
-                            padding-top: 0rem;
-                            padding-bottom: 0rem;
+                        .td-1, .td-2, .td-3, .td-4, .td-5 {
+                            padding-left: 0.75rem;
+                            padding-right: 0.75rem;
+                            padding-top: 0.5rem;
+                            padding-bottom: 0.5rem;
                             text-align: left;
                             font-size: 0.75rem;
                             font-weight: 500;
@@ -2265,57 +2276,63 @@ class KIT_Commons
                             border-bottom: 1px solid #e5e7eb;
                         }
 
-                        /* Right-align numeric columns for readability */
-                        .th-2, .td-2,
-                        .th-3, .td-3,
-                        .th-4, .td-4 { text-align: right; }
-                        .td-2 input, .td-3 input { text-align: right; }
+                        .th-2, .td-2, .th-3, .td-3, .th-4, .td-4 {
+                        text-align: right;
+                    }
+
+                        .td-2 input, .td-3 input {
+                        text-align: right;
+                    }
+
+                        tbody tr.dynamic-item:nth-child(even) {
+                        background-color: #fafafa;
+                    }
                     </style>
 
                     <!-- Slim Table -->
                     <div class="bg-white border border-gray-200 rounded-lg overflow-x-auto">
-                        <table class="waybillItemsTable w-full border-collapse table-fixed">
+                        <table class="dynamicItemsTable w-full border-collapse table-fixed">
                             <thead class="bg-gray-50">
                                 <tr>
-                                    <th class="th-1">Item Description</th>
+                                    <th class="th-1"><?php echo esc_html($options['title']); ?> Description</th>
                                     <th class="th-2">QTY</th>
-                                    <th class="th-3">Unit Price (R)</th>
+                                    <th class="th-3">Unit Price (<?php echo esc_html($options['currency_symbol']); ?>)</th>
                                     <th class="th-4">Total</th>
                                     <th class="th-5">Action</th>
                                 </tr>
                             </thead>
                             <tbody id="<?php echo esc_attr($options['container_id']); ?>" class="bg-white">
                                 <?php foreach ($options['existing_items'] as $index => $item): ?>
-                                    <tr class="waybill-item hover:bg-gray-50 border-b border-gray-100">
+                                    <tr class="dynamic-item hover:bg-gray-50 border-b border-gray-100">
                                         <td class="td-1">
                                             <input type="text"
-                                                name="<?php echo esc_attr($options['group_name']); ?>[<?php echo esc_attr($index); ?>][item_name]"
-                                                value="<?php echo esc_attr($item['item_name'] ?? ''); ?>"
+                                                name="<?php echo esc_attr($options['group_name']); ?>[<?php echo esc_attr($index); ?>][<?php echo esc_attr($options['field_mapping']['description']); ?>]"
+                                                value="<?php echo esc_attr($item[$options['field_mapping']['description']] ?? ''); ?>"
                                                 placeholder="Item description"
                                                 class="w-full px-1 py-0.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
                                         </td>
                                         <td class="td-2">
                                             <input type="number"
-                                                name="<?php echo esc_attr($options['group_name']); ?>[<?php echo esc_attr($index); ?>][quantity]"
-                                                value="<?php echo esc_attr($item['quantity'] ?? 1); ?>"
+                                                name="<?php echo esc_attr($options['group_name']); ?>[<?php echo esc_attr($index); ?>][<?php echo esc_attr($options['field_mapping']['quantity']); ?>]"
+                                                value="<?php echo esc_attr($item[$options['field_mapping']['quantity']] ?? 1); ?>"
                                                 min="1"
                                                 class="w-full px-1 py-0.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-center" />
                                         </td>
                                         <td class="td-3">
                                             <input type="number"
-                                                name="<?php echo esc_attr($options['group_name']); ?>[<?php echo esc_attr($index); ?>][unit_price]"
-                                                value="<?php echo esc_attr($item['unit_price'] ?? 0); ?>"
+                                                name="<?php echo esc_attr($options['group_name']); ?>[<?php echo esc_attr($index); ?>][<?php echo esc_attr($options['field_mapping']['unit_price']); ?>]"
+                                                value="<?php echo esc_attr($item[$options['field_mapping']['unit_price']] ?? 0); ?>"
                                                 step="0.01"
                                                 min="0"
                                                 class="w-full px-1 py-0.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
                                         </td>
                                         <td class="px-2 py-1 text-sm text-gray-900 text-center border-r border-gray-100">
-                                            R <?php echo number_format(($item['quantity'] ?? 1) * ($item['unit_price'] ?? 0), 2); ?>
+                                            <?php echo esc_html($options['currency_symbol']); ?> <?php echo number_format(($item[$options['field_mapping']['quantity']] ?? 1) * ($item[$options['field_mapping']['unit_price']] ?? 0), 2); ?>
                                         </td>
                                         <td class="px-2 py-1 text-center">
                                             <?php echo self::renderButton('', 'danger', 'sm', [
                                                 'type' => 'button',
-                                                'classes' => 'remove-item bg-red-500 hover:bg-red-600 text-white p-2 rounded shadow-md',
+                                                'classes' => 'remove-item inline-flex items-center justify-center w-8 h-8 rounded-md border border-red-300 text-red-600 hover:bg-red-50',
                                                 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>',
                                                 'gradient' => false
                                             ]); ?>
@@ -2332,1026 +2349,167 @@ class KIT_Commons
                                     </tr>
                                 <?php endif; ?>
                             </tbody>
+                            <?php if ($options['show_subtotal']): ?>
                             <tfoot>
                                 <tr class="bg-gray-50">
                                     <td class="px-2 py-2" colspan="3" style="border-top: 1px solid #e5e7eb; text-align:right; font-weight:600; color:#374151;">Subtotal</td>
-                                    <td class="px-2 py-2 text-right" style="border-top: 1px solid #e5e7eb; font-weight:600; color:#111827;" id="slim-subtotal">R 0.00</td>
+                                    <td class="px-2 py-2 text-right" style="border-top: 1px solid #e5e7eb; font-weight:600; color:#111827;" id="<?php echo esc_attr($options['subtotal_id']); ?>"><?php echo esc_html($options['currency_symbol']); ?> 0.00</td>
                                     <td style="border-top: 1px solid #e5e7eb;"></td>
                                 </tr>
                             </tfoot>
+                            <?php endif; ?>
                         </table>
                     </div>
                 </div>
 
-            <?php else: ?>
-                <!-- COMPLETELY NEW MODERN WAYBILL ITEMS DESIGN -->
-                <div class="bg-gradient-to-br from-blue-50 via-white to-indigo-50 rounded-2xl shadow-lg border border-blue-100 p-6 mb-6" id="step-waybill-items">
-                    <!-- Modern Header with Icon and Stats -->
-                    <div class="flex items-center justify-between mb-6">
-                        <div class="flex items-center space-x-3">
-                            <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
-                                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
-                                </svg>
-                            </div>
-                            <div>
-                                <h2 class="text-xl font-bold text-gray-900">Waybill Items</h2>
-                                <p class="text-sm text-gray-600">Add items being shipped with details and pricing</p>
-                            </div>
-                        </div>
 
-                        <!-- Enhanced Add Item Button -->
-                        <?php echo KIT_Commons::renderButton('Add New Item', 'primary', 'lg', [
-                            'id' => $options['button_id'],
-                            'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>',
-                            'iconPosition' => 'left',
-                            'gradient' => true
-                        ]); ?>
-                    </div>
-
-                    <!-- Items Container with Modern Card Design -->
-                    <div id="<?php echo esc_attr($options['container_id']); ?>" class="space-y-4">
-                        <?php foreach ($options['existing_items'] as $index => $item): ?>
-                            <div class="waybill-item bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-all duration-200">
-                                <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-                                    <!-- Item Description -->
-                                    <div class="md:col-span-6">
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Item Description</label>
-                                        <input type="text"
-                                            name="<?php echo esc_attr($options['group_name']); ?>[<?php echo esc_attr($index); ?>][item_name]"
-                                            value="<?php echo esc_attr($item['item_name'] ?? ''); ?>"
-                                            placeholder="Enter item description..."
-                                            class="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200" />
-                                    </div>
-
-                                    <!-- Quantity -->
-                                    <div class="md:col-span-2">
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Quantity</label>
-                                        <input type="number"
-                                            name="<?php echo esc_attr($options['group_name']); ?>[<?php echo esc_attr($index); ?>][quantity]"
-                                            value="<?php echo esc_attr($item['quantity'] ?? 1); ?>"
-                                            min="1"
-                                            class="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200" />
-                                    </div>
-
-                                    <!-- Unit Price -->
-                                    <div class="md:col-span-3">
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Unit Price (R)</label>
-                                        <div class="relative">
-                                            <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">R</span>
-                                            <input type="number"
-                                                name="<?php echo esc_attr($options['group_name']); ?>[<?php echo esc_attr($index); ?>][unit_price]"
-                                                value="<?php echo esc_attr($item['unit_price'] ?? 0); ?>"
-                                                step="0.01"
-                                                min="0"
-                                                class="w-full pl-8 pr-4 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200" />
-                                        </div>
-                                        <div class="mt-1 text-right text-sm text-gray-700">
-                                            Total: <span class="row-total">R <?php echo number_format((($item['quantity'] ?? 1) * ($item['unit_price'] ?? 0)), 2); ?></span>
-                                        </div>
-                                    </div>
-
-                                    <!-- Remove Button -->
-                                    <div class="md:col-span-1 flex justify-end">
-                                        <?php echo self::renderButton('', 'danger', 'sm', [
-                                            'type' => 'button',
-                                            'classes' => 'remove-item w-10 h-10 rounded-xl shadow-md hover:shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center justify-center',
-                                            'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>',
-                                            'gradient' => true
-                                        ]); ?>
-                                    </div>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-
-                    <!-- Empty State -->
-                    <div id="empty-state" class="<?php echo empty($options['existing_items']) ? 'block' : 'hidden'; ?> text-center py-12">
-                        <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
-                            </svg>
-                        </div>
-                        <h3 class="text-lg font-medium text-gray-900 mb-2">No items added yet</h3>
-                        <p class="text-gray-600">Click "Add New Item" to start building your waybill</p>
-                    </div>
-
-                    <!-- Subtotal summary (modern style) -->
-                    <div id="modern-summary" class="<?php echo empty($options['existing_items']) ? 'hidden' : 'flex'; ?> justify-end mt-4">
-                        <div class="bg-white border border-gray-200 rounded-xl px-4 py-2 text-sm font-semibold text-gray-800 shadow-sm">
-                            Subtotal: <span id="modern-subtotal">R 0.00</span>
-                        </div>
-                    </div>
-                </div>
-            <?php endif; ?>
             <script>
                 document.addEventListener('DOMContentLoaded', function() {
-                    let itemIndex = <?php echo count($options['existing_items']); ?>;
+                    let itemIndex = <?php echo is_array($options['existing_items']) ? count($options['existing_items']) : 0; ?>;
                     const container = document.getElementById('<?php echo esc_js($options['container_id']); ?>');
                     const addBtn = document.getElementById('<?php echo esc_js($options['button_id']); ?>');
+                    const subtotalId = '<?php echo esc_js($options['subtotal_id']); ?>';
+                    const currencySymbol = '<?php echo esc_js($options['currency_symbol']); ?>';
+                    const groupName = '<?php echo esc_js($options['group_name']); ?>';
+                    const fieldMapping = <?php echo json_encode($options['field_mapping']); ?>;
 
-                    console.log('Container found:', container);
-                    console.log('Add button found:', addBtn);
-                    console.log('Initial item index:', itemIndex);
+                    function toNumber(value) {
+                        const num = parseFloat(String(value).replace(/,/g, '.'));
+                        return isNaN(num) ? 0 : num;
+                    }
+
+                    function calculateSubtotal() {
+                        let total = 0;
+                        container.querySelectorAll('.dynamic-item').forEach((row) => {
+                            const priceInput = row.querySelector(`input[name*="[${fieldMapping.unit_price}]"]`);
+                            const qtyInput = row.querySelector(`input[name*="[${fieldMapping.quantity}]"]`);
+                            const price = toNumber(priceInput ? priceInput.value : 0);
+                            const qty = parseInt(qtyInput ? qtyInput.value : 0, 10) || 0;
+                            const rowTotal = price * qty;
+                            total += rowTotal;
+                            
+                            // Update individual row total display
+                            const totalCell = row.querySelector('td:nth-child(4)');
+                            if (totalCell) {
+                                totalCell.textContent = currencySymbol + ' ' + rowTotal.toFixed(2);
+                            }
+                        });
+
+                        // Update subtotal display
+                        const subtotalElement = document.getElementById(subtotalId);
+                        if (subtotalElement) {
+                            const currentText = subtotalElement.textContent;
+                            const currencySymbolMatch = currentText.match(/^[^\d]*/);
+                            const existingCurrency = currencySymbolMatch ? currencySymbolMatch[0] : currencySymbol + ' ';
+                            subtotalElement.textContent = existingCurrency + total.toFixed(2);
+                        }
+                    }
+
+                    function updateEmptyState() {
+                        const emptyStateSlim = document.getElementById('empty-state-slim');
+                        const hasItems = container.querySelectorAll('.dynamic-item').length > 0;
+                        
+                        if (emptyStateSlim) {
+                            emptyStateSlim.style.display = hasItems ? 'none' : 'block';
+                        }
+                    }
 
                     function rowTemplate(idx) {
-                        <?php if ($options['style'] === 'slim'): ?>
-                            // Slim table row template
                             return `
-                        <tr class="waybill-item hover:bg-gray-50">
+                        <tr class="dynamic-item hover:bg-gray-50">
                             <td class="td-1">
                                 <input type="text" 
-                                       name="<?php echo esc_js($options['group_name']); ?>[${idx}][item_name]" 
+                                       name="${groupName}[${idx}][${fieldMapping.description}]" 
                                        placeholder="Item description" 
                                        class="w-full px-1 py-0.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
                             </td>
                             <td class="td-2">
                                 <input type="number" 
-                                       name="<?php echo esc_js($options['group_name']); ?>[${idx}][quantity]" 
+                                       name="${groupName}[${idx}][${fieldMapping.quantity}]" 
                                        value="1" 
                                        min="1"
                                        class="w-full px-1 py-0.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-center" />
                             </td>
                             <td class="td-3">
                                 <input type="number" 
-                                       name="<?php echo esc_js($options['group_name']); ?>[${idx}][unit_price]" 
+                                       name="${groupName}[${idx}][${fieldMapping.unit_price}]" 
                                        value="0" 
                                        step="0.01"
                                        min="0"
                                        class="w-full px-1 py-0.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
                             </td>
                             <td class="td-4">
-                                R 0.00
+                                ${currencySymbol} 0.00
                             </td>
                             <td class="td-5">
-                                <?php echo self::renderButton('', 'danger', 'sm', [
-                                    'type' => 'button',
-                                    'classes' => 'remove-item p-5 rounded',
-                                    'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>',
-                                    'gradient' => true
-                                ]); ?>
+                                <button type="button" class="remove-item inline-flex items-center justify-center w-8 h-8 rounded-md border border-red-300 text-red-600 hover:bg-red-50">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                    </svg>
+                                </button>
                             </td>
                         </tr>`;
-                        <?php else: ?>
-                            // Modern card row template
-                            return `
-                        <div class="waybill-item bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-all duration-200">
-                            <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-                                <!-- Item Description -->
-                                <div class="md:col-span-6">
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">Item Description</label>
-                                    <input type="text" 
-                                           name="<?php echo esc_js($options['group_name']); ?>[${idx}][item_name]" 
-                                           placeholder="Enter item description..." 
-                                           class="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200" />
-                                </div>
-                                
-                                <!-- Quantity -->
-                                <div class="md:col-span-2">
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">Quantity</label>
-                                    <input type="number" 
-                                           name="<?php echo esc_js($options['group_name']); ?>[${idx}][quantity]" 
-                                           value="1" 
-                                           min="1"
-                                           class="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200" />
-                                </div>
-                                
-                                <!-- Unit Price -->
-                                <div class="md:col-span-3">
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">Unit Price (R)</label>
-                                    <div class="relative">
-                                        <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">R</span>
-                                        <input type="number" 
-                                               name="<?php echo esc_js($options['group_name']); ?>[${idx}][unit_price]" 
-                                               value="0" 
-                                               step="0.01"
-                                               min="0"
-                                               class="w-full pl-8 pr-4 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200" />
-                                    </div>
-                                </div>
-                                
-                                <!-- Remove Button -->
-                                <div class="md:col-span-1 flex justify-end">
-                                    <?php echo self::renderButton('', 'danger', 'sm', [
-                                        'type' => 'button',
-                                        'classes' => 'remove-item w-10 h-10 rounded-xl shadow-md hover:shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center justify-center',
-                                        'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>',
-                                        'gradient' => true
-                                    ]); ?>
-                                </div>
-                            </div>
-                        </div>`;
-                        <?php endif; ?>
                     }
 
                     addBtn.addEventListener('click', function() {
-                        console.log('Add button clicked, adding item...');
+                        // Hide empty state immediately
+                        const emptyStateSlim = document.getElementById('empty-state-slim');
+                        if (emptyStateSlim && emptyStateSlim.parentNode) {
+                            emptyStateSlim.parentNode.removeChild(emptyStateSlim);
+                        }
+
                         const newRow = rowTemplate(itemIndex++);
-                        console.log('New row HTML:', newRow);
                         container.insertAdjacentHTML('beforeend', newRow);
-                        console.log('Row added to container');
-                        validateItems();
                         updateEmptyState();
-                        <?php if ($options['style'] === 'slim'): ?>
-                            updateSlimTableTotals();
-                        <?php else: ?>
-                            updateModernTotals();
-                        <?php endif; ?>
+                        calculateSubtotal();
                     });
 
-                    container.addEventListener('click', function(e) {
-                        const btn = e.target.closest('.remove-item');
-                        if (btn) {
-                            const row = btn.closest('.waybill-item');
-                            if (row) {
-                                row.remove();
-                            }
-                            validateItems();
+                    // Event delegation for remove buttons
+                    document.addEventListener('click', (e) => {
+                        if (e.target.closest('.remove-item')) {
+                            e.target.closest('.dynamic-item').remove();
                             updateEmptyState();
-                            <?php if ($options['style'] === 'slim'): ?>
-                                updateSlimTableTotals();
-                            <?php else: ?>
-                                updateModernTotals();
-                            <?php endif; ?>
+                            calculateSubtotal();
                         }
                     });
 
-                    // Function to update empty state visibility
-                    function updateEmptyState() {
-                        const items = container.querySelectorAll('.waybill-item');
-                        let emptyStateElem;
-                        <?php if ($options['style'] === 'slim'): ?>
-                            // For slim table, look for the empty state row
-                            emptyStateElem = document.getElementById('empty-state-slim') || container.querySelector('.empty-state');
-                        <?php else: ?>
-                            // For modern version, look for the empty state div
-                            emptyStateElem = document.getElementById('empty-state');
-                        <?php endif; ?>
+                    // Recalculate when user edits price or quantity
+                    container.addEventListener('input', (e) => {
+                        if (
+                            e.target.matches(`input[name*="[${fieldMapping.unit_price}]"]`) ||
+                            e.target.matches(`input[name*="[${fieldMapping.quantity}]"]`)
+                        ) {
+                            calculateSubtotal();
+                        }
+                    });
 
-                        if (emptyStateElem) {
-                            if (items.length === 0) {
-                                emptyStateElem.classList.remove('hidden');
-                                emptyStateElem.style.display = '';
-                            } else {
-                                emptyStateElem.classList.add('hidden');
-                                emptyStateElem.style.display = 'none';
-                            }
-                        }
-                        // Toggle subtotal visibility based on rows
-                        var subtotalCell = document.getElementById('slim-subtotal');
-                        if (subtotalCell && subtotalCell.closest('tfoot')) {
-                            subtotalCell.closest('tfoot').style.display = (items.length === 0) ? 'none' : '';
-                        }
-                        // Toggle modern summary
-                        var modernSummary = document.getElementById('modern-summary');
-                        if (modernSummary) {
-                            modernSummary.style.display = (items.length === 0) ? 'none' : '';
-                        }
-                    }
-
-                    // Initialize empty state
+                    // Initial calculation on load
+                    calculateSubtotal();
                     updateEmptyState();
-
-                    // Note: Button state is now controlled solely by server-side logic.
-                    // We intentionally do not auto-disable/enable buttons here.
-                    // Recalculate slim totals on input changes (no button toggling).
-                    container.addEventListener('input', function(e) {
-                        <?php if ($options['style'] === 'slim'): ?>
-                            updateSlimTableTotals();
-                        <?php else: ?>
-                            updateModernTotals();
-                        <?php endif; ?>
-                    });
-                    <?php if ($options['style'] === 'slim'): ?>
-                        updateSlimTableTotals();
-
-                        // Function to update totals in slim table
-                        function updateSlimTableTotals() {
-                            const rows = container.querySelectorAll('.waybill-item');
-                            let subtotal = 0;
-                            rows.forEach(row => {
-                                const quantityInput = row.querySelector('input[name*="[quantity]"]');
-                                const priceInput = row.querySelector('input[name*="[unit_price]"]');
-                                const totalCell = row.querySelector('td:nth-child(4)');
-
-                                if (quantityInput && priceInput && totalCell) {
-                                    const quantity = parseFloat(quantityInput.value) || 0;
-                                    const price = parseFloat(priceInput.value) || 0;
-                                    const total = quantity * price;
-                                    subtotal += total;
-                                    totalCell.textContent = `R ${total.toFixed(2)}`;
-                                }
-                            });
-                            const subtotalCell = document.getElementById('slim-subtotal');
-                            if (subtotalCell) {
-                                subtotalCell.textContent = `R ${subtotal.toFixed(2)}`;
-                            }
-                        }
-                    <?php endif; ?>
-                    <?php if ($options['style'] !== 'slim'): ?>
-                        updateModernTotals();
-
-                        function updateModernTotals() {
-                            const rows = container.querySelectorAll('.waybill-item');
-                            let subtotal = 0;
-                            rows.forEach(row => {
-                                const quantityInput = row.querySelector('input[name*="[quantity]"]');
-                                const priceInput = row.querySelector('input[name*="[unit_price]"]');
-                                const totalSpan = row.querySelector('.row-total');
-
-                                if (quantityInput && priceInput && totalSpan) {
-                                    const quantity = parseFloat(quantityInput.value) || 0;
-                                    const price = parseFloat(priceInput.value) || 0;
-                                    const total = quantity * price;
-                                    subtotal += total;
-                                    totalSpan.textContent = `R ${total.toFixed(2)}`;
-                                }
-                            });
-                            const modernSubtotal = document.getElementById('modern-subtotal');
-                            if (modernSubtotal) {
-                                modernSubtotal.textContent = `R ${subtotal.toFixed(2)}`;
-                            }
-                        }
-                    <?php endif; ?>
                 });
             </script>
         <?php
                 return ob_get_clean();
             }
 
-            public static function customerSelect($customers)
+            /**
+             * @deprecated Use dynamicItemsControl instead
+             */
+            public static function miscItemsControl($options = [])
             {
-                $atts = shortcode_atts([
-                    'label' => 'Select Customer',
-                    'name' => 'customer_select',
-                    'id' => 'customer-select',
-                    'customer' => [],
-                    'existing_customer' => "", // New parameter to check if customer is existing
-                ], $customers);
-                $customer_id = 0;
-                if ($customers["existing_customer"]) {
-                    $customer_id = $customers['existing_customer'];
-                }
-
-                $selectedCustomerId = (isset($customer_id) && $customer_id !== 0) ? $customer_id : 'new';
-
-
-                $labelClass = self::labelClass();
-                $selectClass = self::selectClass();
-                $html = '<label for="' . esc_attr($atts['id']) . '" class="' . esc_attr($labelClass) . '">' . esc_html($atts['label']) . '</label>';
-                $html .= '<select name="' . esc_attr($atts['name']) . '" id="' . esc_attr($atts['id']) . '" class="' . esc_attr($selectClass) . '" autocomplete="off">';
-                $html .= '<option value="new"' . selected($selectedCustomerId, 'new', false) . '>Add New Customer</option>';
-                if (!empty($atts['customer'])) {
-                    foreach ($atts['customer'] as $customer) {
-                        $html .= '<option value="' . esc_attr($customer->cust_id) . '"';
-                        $html .= selected($selectedCustomerId, $customer->cust_id, false);
-                        $html .= selected($atts['id'], $customer->cust_id, false); // Compare to cust_id and echo manually
-                        $html .= ' data-name="' . esc_attr($customer->name) . '"';
-                        $html .= ' data-surname="' . esc_attr($customer->surname) . '"';
-                        $html .= ' data-cell="' . esc_attr($customer->cell) . '"';
-                        $html .= ' data-address="' . esc_attr($customer->address) . '"';
-                        $html .= ' data-email="' . esc_attr($customer->email_address) . '"';
-                        $html .= ' data-company-name="' . esc_attr($customer->company_name) . '"';
-                        $html .= ' data-country-id="' . esc_attr($customer->country_id ?? '') . '"';
-                        $html .= ' data-city-id="' . esc_attr($customer->city_id ?? '') . '"';
-                        $html .= '>';
-                        $html .= esc_html($customer->name . ' ' . $customer->surname); // Optional: visible name
-                        $html .= '</option>';
-                    }
-                }
-                $html .= '</select>';
-                return $html;
-            }
-
-            public static function download_pdf_button($waybillNo, $atts = [])
-            {
-                // Only administrators who can see prices can access PDFs
-                if (!KIT_User_Roles::can_see_prices()) {
-                    return '<span class="text-gray-500 text-sm">PDF access restricted to administrators</span>';
-                }
-
-                $atts = shortcode_atts([
-                    'buttonType' => 'full', // 'icon-only' or 'full'
-                    'text' => 'Download PDF',
-                ], $atts);
-
-                $downloadIcon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />';
-
-                if ($atts['buttonType'] === 'icon-only') {
-                    return self::renderButton('', 'primary', 'sm', [
-                        'href' => admin_url('admin-ajax.php?action=generate_pdf&waybill_no=' . $waybillNo . '&pdf_nonce=' . wp_create_nonce("pdf_nonce")),
-                        'icon' => $downloadIcon,
-                        'classes' => 'p-2',
-                        'gradient' => true
-                    ]);
-                } else {
-                    return self::renderButton($atts['text'], 'primary', 'md', [
-                        'href' => admin_url('admin-ajax.php?action=generate_pdf&waybill_no=' . $waybillNo . '&pdf_nonce=' . wp_create_nonce("pdf_nonce")),
-                        'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />',
-                        'iconPosition' => 'left',
-                        'gradient' => true
-                    ]);
-                }
-            }
-
-            //selectAllCountries($name = '', $id = '', $country_id = null, $required = true, $type = 'origin')
-            public static function originCC($selectCountryName, $id, $country_id, $selectCityName, $idCity, $city_id)
-            {
-                $html = '';
-                $html .= '<div class="">';
-
-                $html .= '<div class="">';
-                $html .= KIT_Deliveries::selectAllCountries($selectCountryName, $id, $country_id, $required = "required", 'origin');
-                $html .= '</div>';
-                $html .= '<div class="">';
-                $html .= KIT_Deliveries::selectAllCitiesByCountry('origin_city', 'origin_city_select', $country_id, $city_id);
-                $html .= '</div>';
-
-                $html .= '</div>';
-                return $html;
-            }
-
-            public static function render_versatile_table($data, $columns, $cell_callback = null, $options = [])
-            {
-                // Generate unique table ID for search functionality
-                $table_id = $options['id'] ?? 'versatile-table-' . uniqid();
-                $use_datatables = isset($options['use_datatables']) ? (bool)$options['use_datatables'] : true;
-
-                // Handle bulk actions
-                if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['bulk_action'])) {
-                    $selectedRows = $_POST['selected_rows'];
-                    $action = $_POST['bulk_action'];
-                    if ($action === 'delete') {
-
-                        // Perform deletion using $selectedRows
-                        foreach ($selectedRows as $row) {
-                            if ($options['role'] === 'delivery') {
-                                KIT_Deliveries::delete_delivery($row);
-                                $redir = admin_url('admin.php?page=kit-deliveries&per_page=' . (isset($_GET['per_page']) ? intval($_GET['per_page']) : 10) . '&deleted=1');
-                                if (!headers_sent()) { wp_safe_redirect($redir); exit; }
-                                echo '<script>window.location.replace(' . json_encode($redir) . ');</script>';
-                                echo '<noscript><meta http-equiv="refresh" content="0;url=' . esc_url($redir) . '"></noscript>';
-                                exit;
-                            }
-                            if ($options['role'] === 'waybills') {
-                                KIT_Waybills::delete_waybill($row);
-                                $redir2 = admin_url('admin.php?page=08600-Waybill&per_page=' . (isset($_GET['per_page']) ? intval($_GET['per_page']) : 10) . '&deleted=1');
-                                if (!headers_sent()) { wp_safe_redirect($redir2); exit; }
-                                echo '<script>window.location.replace(' . json_encode($redir2) . ');</script>';
-                                echo '<noscript><meta http-equiv="refresh" content="0;url=' . esc_url($redir2) . '"></noscript>';
-                                exit;
-                            }
-                        }
-
-                        exit();
-                    } elseif ($action === 'bulkInvoice') {
-                        $selectedRows = $_POST['selected_rows'];
-
-                        // Redirect to the PDF generation page with selected rows via GET or POST
-                        $url = admin_url('admin.php?page=all-customer-waybills&cust_id=' . $_GET['cust_id']);
-
-                        // Encode selected rows as comma-separated string
-                        $ids = implode(',', array_map('intval', $selectedRows)); // sanitize IDs
-
-                        // Use GET or POST (GET for now)
-                        wp_redirect(add_query_arg('selected_ids', $ids, $url));
-                        exit();
-                    } elseif ($action === 'export') {
-                        // Export or download logic here (placeholder)
-                        wp_redirect(add_query_arg('export', '1', admin_url('admin.php?page=all-customer-waybills')));
-                        exit();
-                    }
-                }
-
-
-                $itemsPerPage = isset($_GET['per_page']) ? (int) $_GET['per_page'] : ($options['itemsPerPage'] ?? 10);
-                $itemsPerPage = in_array($itemsPerPage, [5, 10, 20, 50]) ? $itemsPerPage : 10;
-                $currentPage = max(1, intval($_GET['paged'] ?? 1));
-
-                $totalItems = count($data);
-                $totalPages = $use_datatables ? 1 : ceil($totalItems / $itemsPerPage);
-
-                $offset = ($currentPage - 1) * $itemsPerPage;
-                $pagedData = $use_datatables ? $data : array_slice($data, $offset, $itemsPerPage);
-
-                if ($totalItems === 0) {
-                    echo '<div class="text-gray-500 py-4 text-center">No records found</div>';
-                    return;
-                }
-
-                if (!$use_datatables) {
-                echo KIT_Commons::paginationSelect($itemsPerPage, $totalPages, $currentPage);
-                }
-
-                // ✅ Bulk Actions Form START (POST)
-                echo '<form method="POST" action="' . esc_url($_SERVER['REQUEST_URI']) . '&bulk_action=delete" id="bulkActionForm">';
-
-                // Modern Table Container
-                echo '<div class="bg-white shadow-sm border border-gray-200 rounded-lg overflow-hidden">';
-                echo '<table id="' . $table_id . '" class="min-w-full divide-y divide-gray-200">';
-                echo '<thead class="bg-gray-50">';
-                echo '<tr>';
-
-                // Select All Checkbox Header
-                echo '<th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">';
-                echo '<input type="checkbox" class="selectAllRows w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">';
-                echo '</th>';
-
-                foreach ($columns as $key => $header) {
-                    $label = $header['label'];
-                    $align = $header['align'];
-                    echo '<th scope="col" class="' . $align . ' px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">';
-                    echo htmlspecialchars($label);
-                    echo '</th>';
-                }
-
-                echo '</tr>';
-                echo '</thead>';
-                echo '<tbody class="bg-white divide-y divide-gray-200">';
-
-                foreach ($pagedData as $row) {
-
-
-                    if (isset($options['role']) && $options['role'] === 'customers') {
-                        $rowId = $row->cust_id;
-                    } elseif (isset($options['role']) && $options['role'] === 'deliveries') {
-                        $rowId = $row->delivery_id;
-                    } elseif (isset($options['role']) && $options['role'] === 'waybills') {
-                        $rowId = $row->waybill_no;
-                    } else {
-                        $rowId = htmlspecialchars($row->id ?? '');
-                    }
-
-                    echo '<tr class="hover:bg-gray-50 transition-colors duration-200" data-row-id="' . $rowId . '">';
-
-                    // Checkbox with name and value for bulk actions
-                    echo '<td class="px-6 py-4 whitespace-nowrap">';
-                    echo '<input type="checkbox" name="selected_rows[]" value="' . $rowId . '" class="selectRow w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">';
-                    echo '</td>';
-
-                    foreach ($columns as $key => $label) {
-                        $alignment = $label['align'];
-                        echo '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">';
-                        if ($cell_callback && is_callable($cell_callback)) {
-                            echo $cell_callback($key, $row);
-                        } else {
-                            echo htmlspecialchars(($row->$key ?? '') ?: '');
-                        }
-                        echo '</td>';
-                    }
-
-                    echo '</tr>';
-                }
-
-                echo '</tbody>';
-                echo '</table>';
-                echo '</div>';
-
-                // Modern Bulk Actions
-                echo '<div class="bg-gray-50 px-6 py-3 border-t border-gray-200">';
-                echo '<div class="flex items-center justify-between">';
-                echo '<div class="flex items-center space-x-3">';
-                echo '<select name="bulk_action" class="rounded-md border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500">';
-                echo '<option value="">Bulk Actions</option>';
-                if (isset($options['bulk_actions'])) {
-                    foreach ($options['bulk_actions'] as $action => $label) {
-                        echo '<option value="' . $action . '">' . $label . '</option>';
-                    }
-                } else {
-                    if (isset($invoicing) && $invoicing) {
-                        echo '<option value="bulkInvoice">Bulk Invoice</option>';
-                    }
-                    echo '<option value="delete">Delete</option>';
-                    echo '<option value="export">Export</option>';
-                }
-                echo '</select>';
-                echo self::renderButton('Apply', 'primary', 'sm', [
-                    'type' => 'submit',
-                    'gradient' => true
+                // Convert misc options to dynamic options
+                $dynamicOptions = wp_parse_args($options, [
+                    'item_type' => 'misc',
+                    'title' => 'Miscellaneous Items',
+                    'field_mapping' => [
+                        'description' => 'misc_item',
+                        'quantity' => 'misc_quantity',
+                        'unit_price' => 'misc_price',
+                        'subtotal' => 'misc_subtotal'
+                    ]
                 ]);
-                echo '</div>';
-                echo '<div class="text-sm text-gray-500">';
-                echo '<span id="selected-count-' . $table_id . '">0</span> items selected';
-                echo '</div>';
-                echo '</div>';
-                echo '</div>';
+                
+                return self::dynamicItemsControl($dynamicOptions);
+            }
 
-                echo '</form>';  // ✅ Bulk Actions Form END
-
-                // Enhanced JavaScript: Select All, DataTables init and Dynamic Search
-        ?>
-            <script>
-                document.addEventListener('DOMContentLoaded', function() {
-                    var tableId = '<?php echo $table_id; ?>';
-                    var table = document.getElementById(tableId);
-                    var searchInput = document.getElementById('search-' + tableId);
-                    var statusFilter = document.getElementById('status-filter-' + tableId);
-                    var dateFilter = document.getElementById('date-filter-' + tableId);
-                    var selectAll = table.querySelector('.selectAllRows');
-                    var rowCheckboxes = table.querySelectorAll('.selectRow');
-                    var selectedCountSpan = document.getElementById('selected-count-' + tableId);
-
-                    // Select All functionality
-                    if (selectAll) {
-                        selectAll.addEventListener('change', function() {
-                            Array.prototype.forEach.call(rowCheckboxes, function(cb){ cb.checked = selectAll.checked; });
-                            updateSelectedCount();
-                        });
-                    }
-
-                    Array.prototype.forEach.call(rowCheckboxes, function(cb){
-                        cb.addEventListener('change', function() {
-                            var allChecked = true;
-                            Array.prototype.forEach.call(rowCheckboxes, function(checkbox){
-                                if (!checkbox.checked) { allChecked = false; }
-                            });
-                            if (selectAll) { selectAll.checked = allChecked; }
-                            updateSelectedCount();
-                        });
-                    });
-
-                    function updateSelectedCount() {
-                        var selectedCount = table.querySelectorAll('.selectRow:checked').length;
-                        if (selectedCountSpan) {
-                            selectedCountSpan.textContent = selectedCount;
-                        }
-                    }
-
-                    var useDT = <?php echo $use_datatables ? 'true' : 'false'; ?>;
-                    var disableSearch = <?php echo isset($options['disable_search']) && $options['disable_search'] ? 'true' : 'false'; ?>;
-                    var disableFilters = <?php echo isset($options['disable_filters']) && $options['disable_filters'] ? 'true' : 'false'; ?>;
-
-                    if (useDT && window.jQuery && jQuery.fn && jQuery.fn.DataTable) {
-                        var $ = jQuery;
-                        var dt = $('#' + tableId).DataTable({
-                            paging: true,
-                            searching: true,
-                            info: true,
-                            order: [],
-                            lengthMenu: [[5, 10, 20, 50, -1], [5, 10, 20, 50, 'All']],
-                        });
-
-                        if (searchInput && !disableSearch) {
-                            searchInput.addEventListener('input', function(){
-                                dt.search(this.value).draw();
-                            });
-                        }
-
-                        if (statusFilter && !disableFilters) {
-                            statusFilter.addEventListener('change', function(){
-                                var val = this.value || '';
-                                // Try find Status column by header text
-                                var colIndex = -1;
-                                $('#' + tableId + ' thead th').each(function(i){
-                                    var t = (this.textContent || '').trim().toLowerCase();
-                                    if (t === 'status' || t === 'approval' || t === 'country') colIndex = i;
-                                });
-                                if (colIndex >= 0) {
-                                    dt.column(colIndex).search(val, false, false).draw();
-                                } else {
-                                    dt.search(val).draw();
-                                }
-                            });
-                        }
-
-                        if (dateFilter && !disableFilters) {
-                            dateFilter.addEventListener('change', function(){
-                                var dateVal = this.value || '';
-                                // naive filter across table text
-                                dt.search(dateVal).draw();
-                            });
-                        }
-                    } else {
-                        // Fallback: native filtering
-                        if (searchInput && !disableSearch) {
-                            searchInput.addEventListener('input', function() { filterTable(); });
-                        }
-                        if (statusFilter && !disableFilters) {
-                            statusFilter.addEventListener('change', function() { filterTable(); });
-                        }
-                        if (dateFilter && !disableFilters) {
-                            dateFilter.addEventListener('change', function() { filterTable(); });
-                        }
-
-                    function filterTable() {
-                        var searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
-                        var statusValue = statusFilter ? statusFilter.value.toLowerCase() : '';
-                        var dateValue = dateFilter ? dateFilter.value : '';
-                        var rows = table.querySelectorAll('tbody tr');
-                        Array.prototype.forEach.call(rows, function(row){
-                            var text = row.textContent.toLowerCase();
-                            var statusCell = row.querySelector('[data-status]');
-                            var dateCell = row.querySelector('[data-date]');
-                            var showRow = true;
-                            if (searchTerm && text.indexOf(searchTerm) === -1) showRow = false;
-                            <?php if (isset($options['filterOverride']) && $options['filterOverride'] === 'country') { ?>
-                                if (statusFilter && statusFilter.value) {
-                                    var ths = table.querySelectorAll('thead th');
-                                    var idx = -1;
-                                    for (var i = 0; i < ths.length; i++) {
-                                        if ((ths[i].textContent || '').trim().toLowerCase() === 'country') { idx = i; break; }
-                                    }
-                                    if (idx >= 0) {
-                                        var cCell = row.querySelector('td:nth-child(' + (idx + 1) + ')');
-                                        var cText = (cCell && cCell.textContent ? cCell.textContent : '').trim().toLowerCase();
-                                        var sel = '';
-                                        if (statusFilter && typeof statusFilter.selectedIndex !== 'undefined' && statusFilter.selectedIndex >= 0) {
-                                            var opt = statusFilter.options[statusFilter.selectedIndex];
-                                            if (opt) {
-                                                var optText = opt.getAttribute('data-text') || opt.textContent || '';
-                                                sel = (optText + '').toLowerCase();
-                                            }
-                                        }
-                                        if (sel && cText !== sel) showRow = false;
-                                    }
-                                }
-                            <?php } else { ?>
-                                if (statusValue) {
-                                    if (statusCell) {
-                                        var rowStatus = statusCell.getAttribute('data-status').toLowerCase();
-                                        if (rowStatus !== statusValue) showRow = false;
-                                    } else {
-                                        var ths2 = table.querySelectorAll('thead th');
-                                        var idx2 = -1;
-                                        for (var j = 0; j < ths2.length; j++) {
-                                            var l = (ths2[j].textContent || '').trim().toLowerCase();
-                                            if (l === 'status' || l === 'approval') { idx2 = j; break; }
-                                        }
-                                        if (idx2 >= 0) {
-                                            var sCell = row.querySelector('td:nth-child(' + (idx2 + 1) + ')');
-                                            var sText = (sCell && sCell.textContent ? sCell.textContent : '').trim().toLowerCase();
-                                            if (sText !== statusValue) showRow = false;
-                                        }
-                                    }
-                                }
-                            <?php } ?>
-                            if (dateValue && dateCell) {
-                                var rowDate = dateCell.getAttribute('data-date') || '';
-                                if ((rowDate + '') !== (dateValue + '')) showRow = false;
-                            }
-                            row.style.display = showRow ? '' : 'none';
-                        });
-                        }
-                    }
-
-                    // Initialize
-                    updateSelectedCount();
-                });
-            </script><?php
-                    }
-
-                    public static function customer_cell_callback($key, $row)
-                    {
-                        if ($key === 'actions') {
-                            return '<a href="?page=edit-customer&edit_customer=' . urlencode($row->id) . '" class="text-blue-600 hover:underline">Edit</a>';
-                        }
-                        // Default: just show the value
-                        return htmlspecialchars(property_exists($row, $key) ? $row->$key : '');
-                    }
-
-
-
-                    public static function paginationSelect($itemsPerPage, $totalPages, $currentPage)
-                    {
-                        // ✅ Separate Rows-Per-Page + Pagination Form (GET) - OUTSIDE the previous form
-                        echo '<div class="bg-slate-100 rounded p-3 mt-4 flex flex-wrap items-center justify-between gap-2 text-sm text-gray-100">';
-
-                        // Rows per page form (GET)
-                        echo '<form method="GET" class="flex items-center gap-2">';
-                        foreach ($_GET as $key => $value) {
-                            if ($key !== 'per_page') {
-                                echo '<input type="hidden" name="' . htmlspecialchars($key) . '" value="' . htmlspecialchars($value) . '">';
-                            }
-                        }
-                        echo '<label for="per_page" class="text-black">Rows per page:</label>';
-                        echo '<select name="per_page" id="per_page" onchange="this.form.submit()" class="rounded-md border-gray-300 bg-white px-3 py-1 text-sm text-gray-800 shadow-sm">';
-                        foreach ([5, 10, 20, 50] as $option) {
-                            $selected = ($option == $itemsPerPage) ? 'selected' : '';
-                            echo '<option value="' . $option . '" ' . $selected . '>' . $option . '</option>';
-                        }
-                        echo '</select>';
-                        echo '</form>';
-
-                        // Pagination links (GET)
-                        echo '<div class="flex items-center gap-1">';
-                        for ($i = 1; $i <= $totalPages; $i++) {
-                            $isActive = $i === $currentPage;
-                            $url = add_query_arg(['paged' => $i, 'per_page' => $itemsPerPage]);
-                            echo '<a href="' . esc_url($url) . '" class="px-3 py-1 rounded-md border text-sm ' .
-                                ($isActive
-                                    ? 'bg-blue-600 text-white border-blue-600'
-                                    : 'bg-white text-gray-700 border-gray-300 hover:bg-blue-50') .
-                                '">' . $i . '</a>';
-                        }
-                        echo '</div>';
-
-                        echo '</div>'; // End rows-per-page + pagination container
-
-                    }
-
-                    /**
-                     * Creates an AJAX-based status change select that works within versatile tables
-                     * 
-                     * @param string $current_status Current status value
-                     * @param int $item_id ID of the item to update
-                     * @param string $item_type Type of item (delivery, waybill, etc.)
-                     * @param array $status_options Array of status options ['value' => 'label']
-                     * @return string HTML for the status select
-                     */
-                    public static function create_ajax_status_select($current_status, $item_id, $item_type, $status_options = [])
-                    {
-                        // Default status options if none provided
-                        if (empty($status_options)) {
-                            $status_options = [
-                                'pending' => 'Pending',
-                                'scheduled' => 'Scheduled',
-                                'in_transit' => 'In Transit',
-                                'delivered' => 'Delivered',
-                                'cancelled' => 'Cancelled'
-                            ];
-                        }
-
-                        $select_id = 'status-select-' . $item_type . '-' . $item_id;
-                        $nonce = wp_create_nonce('update_status_' . $item_type);
-
-                        $html = '<select id="' . $select_id . '" class="text-xs border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" data-item-id="' . $item_id . '" data-item-type="' . $item_type . '" data-nonce="' . $nonce . '">';
-
-                        foreach ($status_options as $value => $label) {
-                            $selected = ($current_status === $value) ? ' selected' : '';
-                            $html .= '<option value="' . esc_attr($value) . '"' . $selected . '>' . esc_html($label) . '</option>';
-                        }
-
-                        $html .= '</select>';
-
-                        // Add JavaScript for AJAX handling
-                        $html .= '<script>
-                    document.addEventListener("DOMContentLoaded", function() {
-                        const select = document.getElementById("' . $select_id . '");
-                        if (select) {
-                            select.addEventListener("change", function() {
-                                const itemId = this.dataset.itemId;
-                                const itemType = this.dataset.itemType;
-                                const newStatus = this.value;
-                                const nonce = this.dataset.nonce;
-                                const originalValue = this.getAttribute("data-original-value") || "' . $current_status . '";
-                                
-                                // Show loading state
-                                this.disabled = true;
-                                this.style.opacity = "0.5";
-                                
-                                // Make AJAX request
-                                fetch(ajaxurl, {
-                                    method: "POST",
-                                    headers: {
-                                        "Content-Type": "application/x-www-form-urlencoded",
-                                    },
-                                    body: new URLSearchParams({
-                                        action: "update_" + itemType + "_status",
-                                        item_id: itemId,
-                                        new_status: newStatus,
-                                        nonce: nonce
-                                    })
-                                })
-                                .then(response => response.json())
-                                .then(data => {
-                                    if (data.success) {
-                                        // Update original value
-                                        this.setAttribute("data-original-value", newStatus);
-                                        
-                                        // Show success indicator
-                                        this.style.borderColor = "#10b981";
-                                        setTimeout(() => {
-                                            this.style.borderColor = "";
-                                        }, 2000);
-                                        
-                                        // Optional: Show success message
-                                        if (data.data && data.data.message) {
-                                            const successMsg = document.createElement("div");
-                                            successMsg.className = "fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg z-50 text-sm";
-                                            successMsg.textContent = data.data.message;
-                                            document.body.appendChild(successMsg);
-                                            setTimeout(() => successMsg.remove(), 3000);
-                                        }
-                                    } else {
-                                        // Revert to original value
-                                        this.value = originalValue;
-                                        alert("Error: " + (data.data || "Failed to update status"));
-                                    }
-                                })
-                                .catch(error => {
-                                    // Revert to original value
-                                    this.value = originalValue;
-                                    alert("Network error: " + error.message);
-                                })
-                                .finally(() => {
-                                    // Re-enable select
-                                    this.disabled = false;
-                                    this.style.opacity = "1";
-                                });
-                            });
-                            
-                            // Store original value
-                            select.setAttribute("data-original-value", "' . $current_status . '");
-                        }
-                    });
-                    </script>';
-
-                        return $html;
-                    }
-
-                    /**
-                     * AJAX handler for updating delivery status
-                     */
-                    public static function ajax_update_delivery_status()
-                    {
-                        // Verify nonce
-                        if (!wp_verify_nonce($_POST['nonce'], 'update_status_delivery')) {
-                            wp_send_json_error('Invalid nonce');
-                        }
-
-                        // Check permissions
-                        if (!current_user_can('edit_posts')) {
-                            wp_send_json_error('Insufficient permissions');
-                        }
-
-                        $delivery_id = intval($_POST['item_id']);
-                        $new_status = sanitize_text_field($_POST['new_status']);
-
-                        // Validate status
-                        $valid_statuses = ['scheduled', 'in_transit', 'delivered', 'cancelled'];
-                        if (!in_array($new_status, $valid_statuses)) {
-                            wp_send_json_error('Invalid status');
-                        }
-
-                        global $wpdb;
-                        $result = $wpdb->update(
-                            $wpdb->prefix . 'kit_deliveries',
-                            [
-                                'status' => $new_status,
-                                'last_updated_at' => current_time('mysql')
-                            ],
-                            ['id' => $delivery_id],
-                            ['%s', '%s'],
-                            ['%d']
-                        );
-
-                        if ($result !== false) {
-                            wp_send_json_success(['message' => 'Delivery status updated successfully']);
-                        } else {
-                            wp_send_json_error('Failed to update delivery status');
-                        }
-                    }
-
-                    /**
-                     * AJAX handler for updating waybill status
-                     */
-                    public static function ajax_update_waybill_status()
-                    {
-                        // Verify nonce
-                        if (!wp_verify_nonce($_POST['nonce'], 'update_status_waybill')) {
-                            wp_send_json_error('Invalid nonce');
-                        }
-
-                        // Check permissions
-                        if (!current_user_can('edit_posts')) {
-                            wp_send_json_error('Insufficient permissions');
-                        }
-
-                        $waybill_id = intval($_POST['item_id']);
-                        $new_status = sanitize_text_field($_POST['new_status']);
-
-                        // Validate status
-                        $valid_statuses = ['pending', 'quoted', 'paid', 'completed', 'invoiced', 'rejected', 'warehoused', 'assigned'];
-                        if (!in_array($new_status, $valid_statuses)) {
-                            wp_send_json_error('Invalid status');
-                        }
-
-                        global $wpdb;
-                        $result = $wpdb->update(
-                            $wpdb->prefix . 'kit_waybills',
-                            [
-                                'status' => $new_status,
-                                'last_updated_at' => current_time('mysql'),
-                                'last_updated_by' => get_current_user_id()
-                            ],
-                            ['id' => $waybill_id],
-                            ['%s', '%s', '%d'],
-                            ['%d']
-                        );
-
-                        if ($result !== false) {
-                            wp_send_json_success(['message' => 'Waybill status updated successfully']);
-                        } else {
-                            wp_send_json_error('Failed to update waybill status');
-                        }
-                    }
-                }
-                KIT_Commons::init();
-
-                // Fallback for esc_attr if not in WordPress
-                if (!function_exists('esc_attr')) {
-                    function esc_attr($text)
-                    {
-                        return htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
-                    }
-                }
+        }

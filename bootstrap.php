@@ -42,6 +42,18 @@ if (!defined('ABSPATH')) {
     }
 }
 
+// Load Composer autoloader if available (for libraries like plugin-update-checker)
+if (!class_exists('Composer\\Autoload\\ClassLoader')) {
+    $composerAutoload = __DIR__ . '/vendor/autoload.php';
+    if (!file_exists($composerAutoload)) {
+        // Also try plugin root vendor for safety (in case of different include path)
+        $composerAutoload = dirname(__FILE__) . '/vendor/autoload.php';
+    }
+    if (file_exists($composerAutoload)) {
+        require_once $composerAutoload;
+    }
+}
+
 // Load KIT_Commons for color helpers if available
 if (class_exists('KIT_Commons')) {
     // KIT_Commons is already loaded

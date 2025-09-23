@@ -3,6 +3,9 @@
 // Include user roles for permission checking
 require_once plugin_dir_path(__FILE__) . '../user-roles.php';
 
+// Use passed waybill data or fall back to global
+$waybill = isset($dimensions_waybill) ? $dimensions_waybill : (isset($GLOBALS['waybill']) ? $GLOBALS['waybill'] : null);
+
 // Enqueue required scripts for this component
 KIT_Commons::enqueueComponentScripts(['kitscript']);
 ?>
@@ -14,6 +17,7 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
             ['field' => 'item_width',  'label' => 'Width (cm)'],
             ['field' => 'item_height', 'label' => 'Height (cm)'],
         ];
+
 
         foreach ($dimensions as $dim):
             $field = $dim['field'];
@@ -48,12 +52,23 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
             <!-- Auto-calculated Volume -->
         </div>
         <div>
+            <?php
+            // Support both array and object $waybill when prefilling
+            $prefill_volume_charge = 0;
+            if (isset($waybill)) {
+                if (is_array($waybill) && isset($waybill['volume_charge'])) {
+                    $prefill_volume_charge = $waybill['volume_charge'];
+                } elseif (is_object($waybill) && isset($waybill->volume_charge)) {
+                    $prefill_volume_charge = $waybill->volume_charge;
+                }
+            }
+            ?>
             <?= KIT_Commons::Linput([
                 'label' => 'Total Volume Charge (R)',
                 'name'  => 'volume_charge',
                 'id'  => 'volume_charge',
                 'type'  => 'text',
-                'value' => esc_attr($waybill->volume_charge ?? 0),
+                'value' => esc_attr($prefill_volume_charge),
                 'class' => '',
                 'special' => 'readonly',
             ]); ?>
@@ -61,24 +76,49 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
     </div>
     <!-- Dimension Manipulator (Admin only) -->
     <div class="mt-4">
+        <?php
+        // Prefill from stored snapshot if available
+        $prefill_use_custom = false;
+        $prefill_custom_rate = '';
+        if (isset($waybill) && isset($waybill->miscellaneous) && !empty($waybill->miscellaneous)) {
+            $__misc = maybe_unserialize($waybill->miscellaneous);
+            if (is_array($__misc) && isset($__misc['others'])) {
+                $prefill_use_custom = !empty($__misc['others']['use_custom_volume_rate']);
+                if (isset($__misc['others']['custom_volume_rate_per_m3'])) {
+                    $prefill_custom_rate = $__misc['others']['custom_volume_rate_per_m3'];
+                }
+            }
+        }
+        ?>
         <label class="inline-flex items-center">
-            <input type="checkbox" id="enable_price_manipulator" name="enable_price_manipulator" class="form-checkbox h-4 w-4 text-blue-600">
+            <input type="checkbox" id="enable_volume_price_manipulator" name="use_custom_volume_rate" class="form-checkbox h-4 w-4 text-blue-600" <?= $prefill_use_custom ? 'checked' : ''; ?>>
             <span class="ml-2 text-sm text-gray-700">Custom Volume Rate</span>
         </label>
-        <div id="dimension_manipulator_input_container" style="display: none; margin-top: 1rem;">
+        <div id="dimension_manipulator_input_container" style="display: <?= $prefill_use_custom ? 'block' : 'none'; ?>; margin-top: 1rem;">
             <?= KIT_Commons::Linput([
                 'label' => 'Volume Rate Manipulator (R)',
-                'name'  => 'manny_volume_rate',
-                'id'    => 'manny_volume_rate',
+                'name'  => 'custom_volume_rate_per_m3',
+                'id'    => 'custom_volume_rate_per_m3',
                 'type'  => 'number',
+                'min'   => '0',
                 'step'  => '0.01',
-                'value' => isset($waybill->manny_volume_rate) ? esc_attr($waybill->manny_volume_rate) : '',
+                'value' => esc_attr($prefill_custom_rate),
                 'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 focus:ring-1 focus:ring-blue-500',
             ]); ?>
         </div>
     </div>
+    <?php
+    $prefill_volume_rate_display = '0.00';
+    if (isset($waybill)) {
+        if (is_array($waybill) && isset($waybill['volume_charge'])) {
+            $prefill_volume_rate_display = $waybill['volume_charge'];
+        } elseif (is_object($waybill) && isset($waybill->volume_charge)) {
+            $prefill_volume_rate_display = $waybill->volume_charge;
+        }
+    }
+    ?>
     <div id="ttt" class="text-sm text-gray-700 col-span-2">
-        = R<span id="volume_charge_display"><?= htmlspecialchars($waybill->volume_charge ?? '0.00'); ?></span> per m3
+        = R<span id="volume_charge_display"><?= htmlspecialchars($prefill_volume_rate_display); ?></span> per m3
     </div>
     <?php endif; ?>
 </div>
@@ -98,9 +138,9 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
             volumeCharge: document.getElementById('volume_charge'),
             volumeChargeDisplay: document.getElementById('volume_charge_display'),
             countrySelect: document.getElementById('countrydestination_id'),
-            // Manipulator controls
-            manipCheckbox: document.getElementById('enable_price_manipulator'),
-            manipInput: document.getElementById('manny_volume_rate'),
+            // Manipulator controls (unique IDs/names for volume)
+            manipCheckbox: document.getElementById('enable_volume_price_manipulator'),
+            manipInput: document.getElementById('custom_volume_rate_per_m3'),
             manipInputContainer: document.getElementById('dimension_manipulator_input_container')
         };
 
@@ -110,7 +150,9 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
         let lastBaseRate = null; // to restore when unchecking manipulator
 
         function validateDimension(value) {
-            const num = parseFloat(value);
+            // Handle both comma and dot decimal separators
+            const normalizedValue = String(value).replace(',', '.');
+            const num = parseFloat(normalizedValue);
             return !isNaN(num) && num > 0 ? num : null;
         }
 
@@ -119,8 +161,19 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
             const width = validateDimension(elements.widthInput.value);
             const height = validateDimension(elements.heightInput.value);
 
+            // If any dimension is invalid/missing, do NOT overwrite existing
+            // total_volume/volume_charge. This prevents charge-basis changes from
+            // wiping a previously calculated volume.
+            const allEmpty = (
+                (elements.lengthInput.value === '' || elements.lengthInput.value === null) &&
+                (elements.widthInput.value === '' || elements.widthInput.value === null) &&
+                (elements.heightInput.value === '' || elements.heightInput.value === null)
+            );
             if ([length, width, height].some(val => val === null)) {
-                clearForm();
+                // Do not clear here. This function is also triggered by charge-basis
+                // changes; if all fields are empty, we want to preserve any existing
+                // prefilled volume/charge values. Actual clearing is handled in the
+                // dimension input handler when the user empties the fields.
                 return;
             }
 
@@ -178,7 +231,9 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
             let rate = fetchedRate;
             // If manipulator is enabled, add manip value
             if (elements.manipCheckbox && elements.manipCheckbox.checked) {
-                const manip = parseFloat(elements.manipInput.value) || 0;
+                // Handle both comma and dot decimal separators
+                const normalizedManipValue = String(elements.manipInput.value).replace(',', '.');
+                const manip = parseFloat(normalizedManipValue) || 0;
                 rate = (baseRate !== null ? baseRate : rate) + manip;
             }
             if (elements.volumeChargeDisplay) {
@@ -223,6 +278,16 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
             // Manipulator input changes
             elements.manipInput.addEventListener('input', function() {
                 if (!elements.manipCheckbox.checked) return;
+                
+                // Normalize the manipulator input value (handle comma/dot separators)
+                const normalizedManipValue = String(this.value).replace(',', '.');
+                this.value = normalizedManipValue;
+                // Prevent negative values
+                const parsed = parseFloat(this.value);
+                if (!isNaN(parsed) && parsed < 0) {
+                    this.value = '0';
+                }
+                
                 const length = validateDimension(elements.lengthInput.value);
                 const width = validateDimension(elements.widthInput.value);
                 const height = validateDimension(elements.heightInput.value);
@@ -232,7 +297,7 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
             });
 
             // If editing and value exists, show input and check the box
-            <?php if (!empty($waybill->manny_volume_rate)) : ?>
+            <?php if (isset($prefill_use_custom) && $prefill_use_custom) : ?>
             elements.manipCheckbox.checked = true;
             elements.manipInputContainer.style.display = 'block';
             <?php endif; ?>
@@ -240,9 +305,31 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
 
         // Set up event listeners
         elements.inputs.forEach(input => {
-            input.addEventListener('input', () => calculateVolume(false));
+            input.addEventListener('input', function() {
+                // Normalize comma decimal separators to dots for consistent parsing
+                const normalizedValue = String(this.value).replace(',', '.');
+                if (normalizedValue !== this.value) {
+                    this.value = normalizedValue;
+                }
+
+                // If user cleared all fields, explicitly clear computed volume/charge
+                const l = elements.lengthInput.value;
+                const w = elements.widthInput.value;
+                const h = elements.heightInput.value;
+                if ((l === '' || l === null) && (w === '' || w === null) && (h === '' || h === null)) {
+                    clearForm();
+                    return;
+                }
+
+                calculateVolume(false);
+            });
             input.addEventListener('blur', () => calculateVolume(true));
         });
+
+        // Re-evaluate volume when charge basis changes so choosing 'volume' doesn't
+        // accidentally zero-out fields
+        // Detach charge-basis from dimension recalculation to avoid unintended clears
+        // (preferred select no longer affects calculation choice)
 
         // Initial calculation
         calculateVolume(true);

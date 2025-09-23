@@ -25,16 +25,18 @@ global $waybill_items;
 
     <!-- Waybill Items Control -->
     <?=
-    KIT_Commons::waybillItemsControl([
+    KIT_Commons::dynamicItemsControl([
         'container_id' => 'custom-waybill-items',
         'button_id' => 'add-waybill-item',
         'group_name' => 'custom_items',
         'existing_items' => $waybill_items ?? [],
         'input_class' => 'border border-gray-300 rounded px-3 py-2 bg-white',
-        'remove_btn_class' => 'bg-red-500 text-white px-3 py-2 rounded hover:bg-red-600 transition-colors duration-200',
+        'remove_btn_class' => 'bg-red-50 text-white px-3 py-2 rounded hover:bg-red-100 transition-colors duration-200',
         'add_btn_class' => 'bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors duration-200',
         'specialClass' => '!text-[10px]',
-        'style' => 'slim'
+        'item_type' => 'waybill',
+        'title' => 'Waybill Items',
+        'subtotal_id' => 'waybill-subtotal'
     ]);
     ?>
 
@@ -75,7 +77,7 @@ global $waybill_items;
         // Function to count waybill items
         function countWaybillItems() {
             if (!waybillItemsContainer) return 0;
-            const itemRows = waybillItemsContainer.querySelectorAll('.waybill-item');
+            const itemRows = waybillItemsContainer.querySelectorAll('.dynamic-item');
             return itemRows.length;
         }
 

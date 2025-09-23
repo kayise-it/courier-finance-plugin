@@ -42,7 +42,32 @@ function kit_render_waybill_multiform($atts)
     // Make waybill_items available globally for included files
     global $waybill_items;
     
-    $customer = $atts['customer'];
+    // Decode customer data from base64 encoded JSON
+    $customer_raw = $atts['customer'] ?? '{}';
+    if (is_string($customer_raw)) {
+        $customers_data = json_decode(base64_decode($customer_raw), true);
+    } else {
+        $customers_data = $customer_raw;
+    }
+    
+    
+    // Make customers data and customer_id available globally for included files
+    global $customers_data, $customer_id;
+    
+    // Find the specific customer if customer_id is provided
+    $selected_customer = null;
+    if (!empty($customer_id) && is_array($customers_data)) {
+        foreach ($customers_data as $cust) {
+            if (isset($cust['cust_id']) && $cust['cust_id'] == $customer_id) {
+                $selected_customer = (object) $cust; // Convert to object for compatibility
+                break;
+            }
+        }
+    }
+    
+    // Make customer data available globally for included files
+    global $customer;
+    $customer = $selected_customer;
 
     ob_start(); ?>
     
@@ -139,6 +164,33 @@ function kit_render_waybill_multiform($atts)
                 }
             })();
 
+            // Display success toast from URL parameters (for non-AJAX redirects)
+            (function hydrateSuccessToast() {
+                try {
+                    const params = new URLSearchParams(window.location.search);
+                    const toastMessage = params.get('toast_message');
+                    const success = params.get('success');
+                    
+                    if (success === '1' && toastMessage) {
+                        const decodedMessage = decodeURIComponent(toastMessage);
+                        // Use proper KIT Toast if available, fallback to old method
+                        if (window.KITToast) {
+                            window.KITToast.show(decodedMessage, 'success', 'Waybill Created');
+                        } else {
+                            showSuccess(decodedMessage);
+                        }
+                        
+                        // Clean the URL to avoid re-showing on refresh
+                        params.delete('success');
+                        params.delete('toast_message');
+                        const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+                        window.history.replaceState({}, document.title, newUrl);
+                    }
+                } catch (e) {
+                    // ignore URL decoding errors
+                }
+            })();
+
             // Validation rules
             const validationRules = {
                 'customer_name': {
@@ -157,6 +209,18 @@ function kit_render_waybill_multiform($atts)
                     required: true,
                     message: 'Address is required'
                 },
+                'email_address': {
+                    required: true,
+                    message: 'Email address is required'
+                },
+                'country_id': {
+                    required: true,
+                    message: 'Origin country is required'
+                },
+                'city_id': {
+                    required: true,
+                    message: 'Origin city is required'
+                },
                 'destination_country': {
                     required: function() {
                         return !document.getElementById('warehoused_option')?.checked;
@@ -168,6 +232,19 @@ function kit_render_waybill_multiform($atts)
                         return !document.getElementById('warehoused_option')?.checked;
                     },
                     message: 'Destination city is required for non-warehoused items'
+                },
+                'total_mass_kg': {
+                    required: true,
+                    message: 'Total mass is required'
+                },
+                'direction_id': {
+                    required: function() {
+                        // Check if a delivery is selected OR warehouse is checked
+                        const hasDeliverySelected = document.querySelector('.delivery-card.selected') !== null;
+                        const isWarehoused = document.getElementById('warehoused_option')?.checked || false;
+                        return !isWarehoused; // Only required if not warehoused
+                    },
+                    message: 'Please select a delivery or check the warehouse option'
                 }
             };
 
@@ -188,11 +265,18 @@ function kit_render_waybill_multiform($atts)
                 errorContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
 
-            // Show success message
+            // Show success message (auto-hide after 8 seconds)
             function showSuccess(message) {
                 successContainer.classList.remove('hidden');
                 successMessage.textContent = message;
                 successContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // Auto-hide to avoid sticky banner on subsequent steps
+                setTimeout(function() {
+                    if (!successContainer.classList.contains('hidden')) {
+                        successContainer.classList.add('hidden');
+                        successMessage.textContent = '';
+                    }
+                }, 8000);
             }
 
             // Clear all errors
@@ -243,7 +327,11 @@ function kit_render_waybill_multiform($atts)
                     isRequired = isRequired();
                 }
 
-                if (isRequired && (!field.value || field.value.trim() === '')) {
+                // More robust validation for empty values
+                const fieldValue = field.value ? field.value.toString().trim() : '';
+                const isEmpty = fieldValue === '' || fieldValue === '0' || fieldValue === 'null' || fieldValue === 'undefined';
+                
+                if (isRequired && isEmpty) {
                     highlightField(fieldId, true);
                     return false;
                 } else {
@@ -254,9 +342,90 @@ function kit_render_waybill_multiform($atts)
 
             // Validate all fields
             function validateForm() {
+                console.log('🔍 Starting form validation...');
                 clearErrors();
                 let isValid = true;
                 const errors = [];
+
+                // Special validation for step 4 - delivery selection or warehouse
+                const hasDeliverySelected = document.querySelector('.delivery-card.selected') !== null;
+                const isWarehoused = document.getElementById('warehoused_option')?.checked || false;
+                const destinationCountry = document.getElementById('stepDestinationSelect')?.value || '';
+                
+                console.log('📋 Step 4 validation:', {
+                    hasDeliverySelected,
+                    isWarehoused,
+                    destinationCountry
+                });
+                
+                if (!hasDeliverySelected && !isWarehoused) {
+                    isValid = false;
+                    errors.push({
+                        message: 'Please select a delivery or check the warehouse option',
+                        fieldId: 'direction_id'
+                    });
+                }
+                
+                // Additional check: if delivery is selected, ensure direction_id is set
+                if (hasDeliverySelected) {
+                    const directionIdField = document.getElementById('direction_id');
+                    const directionIdValue = directionIdField ? directionIdField.value.trim() : '';
+                    if (!directionIdValue) {
+                        isValid = false;
+                        errors.push({
+                            message: 'Delivery selection is incomplete - please try selecting again',
+                            fieldId: 'direction_id'
+                        });
+                    }
+                }
+                
+                // For warehouse items, ensure we have direction_id = 1 for South Africa rates
+                if (isWarehoused) {
+                    const directionIdField = document.getElementById('direction_id');
+                    const directionIdValue = directionIdField ? directionIdField.value.trim() : '';
+                    if (!directionIdValue || directionIdValue !== '1') {
+                        isValid = false;
+                        errors.push({
+                            message: 'Warehouse rate calculation requires South Africa direction ID',
+                            fieldId: 'direction_id'
+                        });
+                    }
+                }
+                
+                // If warehouse is checked, destination country and city are still required
+                if (isWarehoused && !destinationCountry) {
+                    isValid = false;
+                    errors.push({
+                        message: 'Destination country is required even for warehoused items',
+                        fieldId: 'stepDestinationSelect'
+                    });
+                }
+                
+                // Also check destination city for warehouse items
+                const destinationCity = document.getElementById('destination_city')?.value || '';
+                if (isWarehoused && !destinationCity) {
+                    isValid = false;
+                    errors.push({
+                        message: 'Destination city is required even for warehoused items',
+                        fieldId: 'destination_city'
+                    });
+                }
+                
+                // Special validation for VAT - if VAT is enabled, waybill items are required
+                const vatCheckbox = document.getElementById('vat_include2') || document.getElementById('vat_include');
+                const waybillItemsContainer = document.getElementById('custom-waybill-items');
+                const isVatEnabled = vatCheckbox && vatCheckbox.checked;
+                
+                if (isVatEnabled && waybillItemsContainer) {
+                    const itemRows = waybillItemsContainer.querySelectorAll('.dynamic-item');
+                    if (itemRows.length === 0) {
+                        isValid = false;
+                        errors.push({
+                            message: 'At least one waybill item is required when VAT is enabled',
+                            fieldId: 'custom-waybill-items'
+                        });
+                    }
+                }
 
                 // Validate each field
                 Object.keys(validationRules).forEach(fieldId => {
@@ -271,9 +440,12 @@ function kit_render_waybill_multiform($atts)
 
                 // Show errors if any
                 if (!isValid) {
+                    console.log('❌ Validation failed with errors:', errors);
                     errors.forEach(error => {
                         showError(error.message, error.fieldId);
                     });
+                } else {
+                    console.log('✅ Form validation passed!');
                 }
 
                 return isValid;
@@ -387,6 +559,52 @@ function kit_render_waybill_multiform($atts)
                     validateField('destination_country');
                     validateField('destination_city');
                 });
+            }
+
+            // 🔧 FIX: Calculate direction_id when countries are selected
+            function calculateDirectionId() {
+                const originCountry = document.getElementById('origin_country')?.value;
+                const destinationCountry = document.getElementById('destination_country')?.value;
+                const directionIdField = document.getElementById('direction_id');
+                
+                if (originCountry && destinationCountry && directionIdField) {
+                    // Make AJAX call to get/create direction_id
+                    fetch(myPluginAjax.ajax_url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: new URLSearchParams({
+                            action: 'get_direction_id',
+                            origin_country_id: originCountry,
+                            destination_country_id: destinationCountry,
+                            _ajax_nonce: myPluginAjax.nonces.get_waybills_nonce
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success && data.data.direction_id) {
+                            directionIdField.value = data.data.direction_id;
+                            console.log('Direction ID set to:', data.data.direction_id);
+                        } else {
+                            console.warn('Could not get direction_id:', data.data?.message || 'Unknown error');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error getting direction_id:', error);
+                    });
+                }
+            }
+
+            // Add event listeners to country selectors
+            const originCountrySelect = document.getElementById('origin_country');
+            const destinationCountrySelect = document.getElementById('destination_country');
+            
+            if (originCountrySelect) {
+                originCountrySelect.addEventListener('change', calculateDirectionId);
+            }
+            if (destinationCountrySelect) {
+                destinationCountrySelect.addEventListener('change', calculateDirectionId);
             }
 
             // Accordion toggle
@@ -631,8 +849,27 @@ function kit_render_waybill_multiform($atts)
                         })
                         .done(function(response) {
                             if (response.success) {
-                                // Success handling
-                                showSuccess(response.data.message);
+                                // Success handling with role-based messaging
+                                const canSeePrices = response.data.can_see_prices || false;
+                                const waybillNo = response.data.waybill_no || '';
+                                
+                                // Show success message with proper KIT Toast
+                                if (canSeePrices) {
+                                    // For owners who can see prices - use KIT Toast
+                                    if (window.KITToast) {
+                                        window.KITToast.show(response.data.message, 'success', 'Waybill Created');
+                                    } else {
+                                        showSuccess(response.data.message);
+                                    }
+                                } else {
+                                    // For data capturers/managers - show enhanced success toast with waybill number
+                                    const toastMessage = `Waybill #${waybillNo} created successfully! You can create another waybill.`;
+                                    if (window.KITToast) {
+                                        window.KITToast.show(toastMessage, 'success', 'Waybill Created');
+                                    } else {
+                                        showSuccess(toastMessage);
+                                    }
+                                }
                                 
                                 if (response.data.waybill_id) {
                                     // Refresh the waybills table if it exists
@@ -662,9 +899,21 @@ function kit_render_waybill_multiform($atts)
                                     $form[0].reset();
                                     clearErrors();
                                     clearSuccess();
+                                    
+                                    // AGGRESSIVE FORM CLEARING - Clear all input fields
+                                    $form.find('input[type="text"], input[type="number"], input[type="email"], textarea, select').val('');
+                                    $form.find('input[type="checkbox"], input[type="radio"]').prop('checked', false);
+                                    
                                     // Go back to step 1
                                     $('.step').removeClass('active').addClass('hidden');
                                     $('#step-1').removeClass('hidden').addClass('active');
+                                    
+                                    // For non-price users, show additional encouragement
+                                    if (!canSeePrices && waybillNo) {
+                                        setTimeout(() => {
+                                            showSuccess('Ready to create another waybill!');
+                                        }, 1000);
+                                    }
                                 }, 3000);
                             } else {
                                 // Error handling with field highlighting

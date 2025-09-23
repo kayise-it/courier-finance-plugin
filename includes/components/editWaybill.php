@@ -186,9 +186,6 @@ if (!is_array($waybill['items'])) {
                     </div>
                 </div>
             </div>
-
-            <!-- bitch2 -->
-
             <!-- Route Information (Editable) -->
             <div class="bg-gray-50 p-4 rounded-lg">
                 <h2 class="text-lg font-semibold text-gray-700 mb-3 border-b pb-2">Route Information</h2>
@@ -200,7 +197,6 @@ if (!is_array($waybill['items'])) {
                         $charge_basis = [
                             'mass' => 'Mass',
                             'volume' => 'Volume',
-                            'value' => 'Value'
                         ];
 
                         echo KIT_Commons::simpleSelect(
@@ -218,25 +214,31 @@ if (!is_array($waybill['items'])) {
         <div class="grid grid-cols-2 gap-4">
             <?php require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/weight.php'); ?>
             <div class="bg-slate-100 p-6 rounded">
-                <?php require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/dimensions.php'); ?>
+                <?php 
+                // Pass waybill data to dimensions component
+                $dimensions_waybill = $waybill;
+                require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/dimensions.php'); 
+                ?>
             </div>
         </div>
-        <div class="grid grid-cols-2 gap-4">
-            <?= KIT_Commons::waybillItemsControl([
+        <div class="grid grid-cols-2 gap-4 mt-4">
+            <?= KIT_Commons::dynamicItemsControl([
                 'container_id' => 'custom-waybill-items',
                 'button_id' => 'add-waybill-item',
                 'group_name' => 'custom_items',
-                'existing_items' => $waybill['items'],
+                'existing_items' => isset($waybill['items']) && is_array($waybill['items']) ? $waybill['items'] : [],
                 'input_class' => 'border border-gray-300 rounded px-3 py-2 bg-white',
                 'remove_btn_class' => 'bg-red-500 text-white px-3 py-2 rounded hover:bg-red-600',
                 'add_btn_class' => 'bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700',
                 'specialClass' => '!text-[10px]',
-                'style' => 'slim'
+                'item_type' => 'waybill',
+                'title' => 'Waybill Items',
+                'description' => 'Add items being shipped with details and pricing',
+                'subtotal_id' => 'waybill-subtotal',
+                'currency_symbol' => 'R'
             ]);
             ?>
             <!-- Miscellaneous Items Section (Editable) -->
-            <div class="bg-gray-50 p-4 rounded-lg mb-8">
-                <h2 class="text-lg font-semibold text-gray-700 mb-3 border-b pb-2">Miscellaneous Items</h2>
                 <?php
                 $misc = [];
 
@@ -244,7 +246,6 @@ if (!is_array($waybill['items'])) {
                     $misc = $waybill['miscellaneous'] ?? [];
                 }
                 $misc_items = [];
-
 
                 // Check if misc data exists and has items
                 if (!empty($misc) && is_array($misc) && isset($misc['misc_items']) && is_array($misc['misc_items'])) {
@@ -268,63 +269,22 @@ if (!is_array($waybill['items'])) {
                 }
                 ?>
 
-                <?php
-
-                echo KIT_Commons::miscItemsControl([
+                <?= KIT_Commons::dynamicItemsControl([
                     'container_id' => 'misc-items',
                     'button_id' => 'add-misc-item',
                     'group_name' => 'misc',
-                    'input_class' => '',
-                    'existing_items' => $misc_items
+                    'input_class' => 'border border-gray-300 rounded px-3 py-2 bg-white',
+                    'existing_items' => $misc_items,
+                    'item_type' => 'misc',
+                    'title' => 'Miscellaneous Items',
+                    'description' => 'Add miscellaneous items with details and pricing',
+                    'subtotal_id' => 'misc-total',
+                    'currency_symbol' => KIT_Commons::currency(),
+                    'show_subtotal' => true
                 ]);
                 ?>
-
-
-                <div class="mt-4 pt-4 border-t">
-                    <div class="flex justify-between items-center">
-                        <span class="font-medium">Total Miscellaneous:</span>
-                        <span class="font-bold"><?= KIT_Commons::currency() ?>
-                            <?= number_format($misc['misc_total'] ?? 0, 2) ?></span>
-                    </div>
-                </div>
-            </div>
         </div>
 
-        <!-- askdjnaskdanbskjdnaskjndjkasndjkasndjkasndaksjnd -->
-        <div class="flex space-x-3">
-                    <a href="?page=08600-Waybill-view&waybill_id=<?= $waybill_id ?>"
-            class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-            Cancel Editing
-        </a>
-        <button type="submit"
-            class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-            Save Changes
-        </button>
-        </div>
 
-        <script>
-            document.addEventListener('DOMContentLoaded', function() {
-                // Add new misc item row
-                document.getElementById('add-misc-item').addEventListener('click', function() {
-                    const container = document.getElementById('misc-items-container');
-                    const newRow = document.createElement('div');
-                    newRow.className = 'flex items-center mb-2 misc-item-row';
-                    newRow.innerHTML = `
-                                        <input type="text" name="misc_item[]" class="flex-1 px-3 py-2 border rounded-md mr-2" placeholder="Item description">
-                                        <input type="number" name="misc_price[]" class="w-1/4 px-3 py-2 border rounded-md" placeholder="Amount">
-                                        <button type="button" class="ml-2 px-3 py-2 bg-red-500 text-white rounded-md remove-misc-item">
-                                            Remove
-                                        </button>`;
-                    container.appendChild(newRow);
-                });
-
-                // Remove misc item row
-                document.addEventListener('click', function(e) {
-                    if (e.target.classList.contains('remove-misc-item')) {
-                        e.target.closest('.misc-item-row').remove();
-                    }
-                });
-            });
-        </script>
     </form>
 </div>

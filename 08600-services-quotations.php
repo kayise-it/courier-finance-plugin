@@ -53,7 +53,10 @@ function customStyling()
 {
     // Only load CSS on our plugin's admin pages to avoid conflicts
     $screen = get_current_screen();
-    if ($screen && $screen->id && strpos($screen->id, '08600') !== false) {
+    $page = isset($_GET['page']) ? sanitize_text_field($_GET['page']) : '';
+    $is_routes_page = in_array($page, ['route-management', 'route-create'], true);
+    $is_customer_page = in_array($page, ['edit-customer', '08600-add-customer'], true);
+    if (($screen && $screen->id && strpos($screen->id, '08600') !== false) || $is_routes_page || $is_customer_page) {
         wp_enqueue_style('autsincss', plugin_dir_url(__FILE__) . 'assets/css/austin.css', array(), '1.0');
         wp_enqueue_style('kit-tailwindcss', plugin_dir_url(__FILE__) . 'assets/css/frontend.css', array(), '1.0');
         
@@ -64,10 +67,17 @@ function customStyling()
     }
 }
 
+// Ensure admin styles are enqueued
+add_action('admin_enqueue_scripts', 'customStyling');
+
 
 // Include necessary files
 require_once plugin_dir_path(__FILE__) . 'includes/class-database.php';
 include_once(plugin_dir_path(__FILE__) . 'includes/class-plugin.php');
+require_once plugin_dir_path(__FILE__) . 'includes/class-server-connection.php';
+require_once plugin_dir_path(__FILE__) . 'includes/class-unified-table.php';
+// Initialize GitHub-based updates if available
+require_once plugin_dir_path(__FILE__) . 'includes/update-checker.php';
 
 // Activate and deactivate hooks (guard against unexpected output) - SIMPLIFIED FOR DEBUGGING
 register_activation_hook(__FILE__, function() {
@@ -123,10 +133,15 @@ require_once plugin_dir_path(__FILE__) . 'includes/waybillmultiform.php';
 require_once plugin_dir_path(__FILE__) . 'includes/countries/opc-functions.php';
 require_once plugin_dir_path(__FILE__) . 'includes/routes/routes-functions.php';
 require_once plugin_dir_path(__FILE__) . 'includes/components/quickActions.php';
+require_once plugin_dir_path(__FILE__) . 'includes/server-sync-example.php';
 
 // AJAX handler for international price migration
 add_action('wp_ajax_migrate_international_price', 'migrate_international_price_callback');
 add_action('wp_ajax_nopriv_migrate_international_price', 'migrate_international_price_callback');
+
+// AJAX handler for server connection testing
+add_action('wp_ajax_test_server_connection', 'test_server_connection_callback');
+add_action('wp_ajax_nopriv_test_server_connection', 'test_server_connection_callback');
 
 function migrate_international_price_callback() {
     // Verify nonce
@@ -145,6 +160,53 @@ function migrate_international_price_callback() {
         wp_send_json_success(['message' => 'International price field added successfully!']);
     } catch (Exception $e) {
         wp_send_json_error(['message' => 'Migration failed: ' . $e->getMessage()]);
+    }
+}
+
+function test_server_connection_callback() {
+    // Verify nonce
+    if (!wp_verify_nonce($_POST['nonce'], 'test_server_connection')) {
+        wp_send_json_error(['message' => 'Security check failed']);
+        return;
+    }
+    
+    try {
+        // Include the server connection class
+        require_once plugin_dir_path(__FILE__) . 'includes/class-server-connection.php';
+        
+        // Get server connection instance
+        $server_connection = KIT_Server_Connection::get_instance();
+        
+        // Prepare configuration from form data
+        $config = [
+            'server_name' => sanitize_text_field($_POST['server_name'] ?? ''),
+            'server_type' => sanitize_text_field($_POST['server_type'] ?? ''),
+            'server_host' => sanitize_text_field($_POST['server_host'] ?? ''),
+            'server_port' => intval($_POST['server_port'] ?? 3306),
+            'server_username' => sanitize_text_field($_POST['server_username'] ?? ''),
+            'server_password' => sanitize_text_field($_POST['server_password'] ?? ''),
+            'server_database' => sanitize_text_field($_POST['server_database'] ?? ''),
+            'server_ssl' => intval($_POST['server_ssl'] ?? 0),
+            'api_endpoint' => esc_url_raw($_POST['api_endpoint'] ?? ''),
+            'api_timeout' => intval($_POST['api_timeout'] ?? 30),
+            'api_headers' => sanitize_textarea_field($_POST['api_headers'] ?? ''),
+            'api_retry_attempts' => intval($_POST['api_retry_attempts'] ?? 3),
+            'webhook_url' => esc_url_raw($_POST['webhook_url'] ?? ''),
+            'webhook_secret' => sanitize_text_field($_POST['webhook_secret'] ?? ''),
+            'webhook_events' => array_map('sanitize_text_field', $_POST['webhook_events'] ?? [])
+        ];
+        
+        // Test the connection
+        $result = $server_connection->test_connection($config);
+        
+        if ($result['success']) {
+            wp_send_json_success($result);
+        } else {
+            wp_send_json_error($result);
+        }
+        
+    } catch (Exception $e) {
+        wp_send_json_error(['message' => 'Connection test failed: ' . $e->getMessage()]);
     }
 }
 

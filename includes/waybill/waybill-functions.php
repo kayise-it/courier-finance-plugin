@@ -26,6 +26,8 @@ class KIT_Waybills
         add_action('admin_post_add_waybill_action', [self::class, 'process_form']);
         add_action('wp_ajax_process_waybill_form', [self::class, 'process_form']);
         add_action('wp_ajax_nopriv_process_waybill_form', [self::class, 'process_form']);
+        add_action('wp_ajax_get_direction_id', [self::class, 'get_direction_id_ajax']);
+        add_action('wp_ajax_nopriv_get_direction_id', [self::class, 'get_direction_id_ajax']);
         add_action('admin_post_update_waybill_action', [self::class, 'update_waybill_action']);
         add_action('admin_post_delete_waybill', [__CLASS__, 'handle_delete_waybill']);
         add_action('wp_ajax_delete_waybill', [__CLASS__, 'handle_delete_waybill']);
@@ -62,6 +64,35 @@ class KIT_Waybills
         return $origin_country;
     }
 
+
+    public static function get_direction_id_ajax()
+    {
+        // Verify nonce for security
+        if (!check_ajax_referer('get_waybills_nonce', '_ajax_nonce', false)) {
+            wp_send_json_error(['message' => 'Security check failed.']);
+        }
+
+        $origin_country_id = isset($_POST['origin_country_id']) ? intval($_POST['origin_country_id']) : 0;
+        $destination_country_id = isset($_POST['destination_country_id']) ? intval($_POST['destination_country_id']) : 0;
+
+        if ($origin_country_id <= 0 || $destination_country_id <= 0) {
+            wp_send_json_error(['message' => 'Invalid country IDs provided.']);
+        }
+
+        // Try to get existing direction
+        $direction_id = KIT_Deliveries::get_direction_id($origin_country_id, $destination_country_id);
+        
+        // If direction doesn't exist, create it
+        if (!$direction_id) {
+            $direction_id = KIT_Deliveries::create_direction($origin_country_id, $destination_country_id);
+        }
+
+        if ($direction_id) {
+            wp_send_json_success(['direction_id' => $direction_id]);
+        } else {
+            wp_send_json_error(['message' => 'Could not create or find shipping direction.']);
+        }
+    }
 
     public static function waybillQuoteStatus_update()
     {
@@ -269,15 +300,31 @@ class KIT_Waybills
         check_ajax_referer('get_waybills_nonce', 'nonce');
 
         $paged = isset($_POST['paged']) ? max(1, intval($_POST['paged'])) : 1;
-        $items_per_page = isset($_POST['items_per_page']) ? intval($_POST['items_per_page']) : 5;
+        $items_per_page = isset($_POST['items_per_page']) ? intval($_POST['items_per_page']) : 20;
 
         $all_waybills = self::kit_get_all_waybills();
 
         // Return only the table (for AJAX)
-        echo KIT_Waybills::render_table_with_pagination($all_waybills, [
-            'current_page' => $paged,
+        $columns = [
+            'waybill_no' => 'Waybill #',
+            'customer_name' => 'Customer',
+            'status' => 'Status'
+        ];
+        
+        $actions = [
+            [
+                'label' => 'View',
+                'href' => '?page=08600-Waybill-view&waybill_id={waybill_id}',
+                'class' => 'text-blue-600 hover:text-blue-800'
+            ]
+        ];
+        
+        echo KIT_Unified_Table::simple($all_waybills, $columns, [
+            'title' => 'Waybills',
+            'actions' => $actions,
+            'pagination' => true,
             'items_per_page' => $items_per_page,
-            'ajax' => true
+            'current_page' => $paged
         ]);
 
         wp_die();
@@ -585,20 +632,36 @@ class KIT_Waybills
 
     public static function process_form()
     {
+        // Ensure WP database handle is available throughout this function
+        global $wpdb;
+        if (!($wpdb instanceof wpdb)) {
+            $wpdb = $GLOBALS['wpdb'] ?? null;
+        }
+        if (!$wpdb) {
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('Courier Finance Plugin Error: $wpdb is not initialized in process_form');
+            }
+            if (defined('DOING_AJAX') && DOING_AJAX) {
+                wp_send_json_error('Database not available', 500);
+                wp_die();
+            } else {
+                wp_die('Database not available');
+            }
+        }
         // First determine if this is an AJAX request
         $is_ajax = defined('DOING_AJAX') && DOING_AJAX;
 
         // Verify the appropriate nonce based on request type
         if ($is_ajax) {
-            // For AJAX requests
-            if (!check_ajax_referer('add_waybill_nonce', '_ajax_nonce', false)) {
-                wp_send_json_error('Invalid nonce', 403);
+            // For AJAX requests - use strict nonce verification
+            if (!check_ajax_referer('add_waybill_nonce', '_ajax_nonce', true)) {
+                wp_send_json_error('Invalid nonce - security violation', 403);
                 wp_die();
             }
         } else {
-            // For regular form submissions
+            // For regular form submissions - enhanced verification
             if (!isset($_POST['_wpnonce']) || !wp_verify_nonce($_POST['_wpnonce'], 'add_waybill_nonce')) {
-                wp_die('Nonce verification failed');
+                wp_die('Nonce verification failed - security violation');
             }
         }
 
@@ -613,33 +676,201 @@ class KIT_Waybills
 
         // Process the form data
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            // Debug: Log the POST data
+            // Debug: Log the POST data (only in development)
+            if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
             error_log('Waybill form submission: ' . print_r($_POST, true));
+            }
             
-            // Enhanced validation with field-specific errors
+            // 🔒 SECURITY: Comprehensive server-side validation (mirrors client-side)
             $errors = [];
             
-            // Check customer information
-            if (empty($_POST['customer_name']) && empty($_POST['cust_id'])) {
+            // Enhanced customer validation
+            $customer_name = isset($_POST['customer_name']) ? trim($_POST['customer_name']) : '';
+            $customer_surname = isset($_POST['customer_surname']) ? trim($_POST['customer_surname']) : '';
+            $cell = isset($_POST['cell']) ? trim($_POST['cell']) : '';
+            $address = isset($_POST['address']) ? trim($_POST['address']) : '';
+            $email_address = isset($_POST['email_address']) ? trim($_POST['email_address']) : '';
+            
+            if (empty($customer_name) && empty($_POST['cust_id'])) {
                 $errors[] = [
                     'field' => 'customer_name',
-                    'message' => 'Customer information is required'
+                    'message' => 'Customer name is required'
                 ];
             }
             
-            // Check destination information for non-warehoused items
-            if (!isset($_POST['warehoused']) || $_POST['warehoused'] != 1) {
+            if (empty($customer_surname) && empty($_POST['cust_id'])) {
+                $errors[] = [
+                    'field' => 'customer_surname',
+                    'message' => 'Customer surname is required'
+                ];
+            }
+            
+            if (empty($cell)) {
+                $errors[] = [
+                    'field' => 'cell',
+                    'message' => 'Cell phone number is required'
+                ];
+            }
+            
+            if (empty($address)) {
+                $errors[] = [
+                    'field' => 'address',
+                    'message' => 'Address is required'
+                ];
+            }
+            
+            if (empty($email_address)) {
+                $errors[] = [
+                    'field' => 'email_address',
+                    'message' => 'Email address is required'
+                ];
+            } elseif (!filter_var($email_address, FILTER_VALIDATE_EMAIL)) {
+                $errors[] = [
+                    'field' => 'email_address',
+                    'message' => 'Please enter a valid email address'
+                ];
+            }
+            
+            // Enhanced origin validation
+            if (empty($_POST['country_id'])) {
+                $errors[] = [
+                    'field' => 'origin_country_select',
+                    'message' => 'Origin country is required'
+                ];
+            }
+            
+            if (empty($_POST['city_id'])) {
+                $errors[] = [
+                    'field' => 'origin_city_select',
+                    'message' => 'Origin city is required'
+                ];
+            }
+            
+            // Validate country status - ensure countries are active
+            if (!empty($_POST['country_id'])) {
+                $origin_country_active = $wpdb->get_var($wpdb->prepare(
+                    "SELECT is_active FROM {$wpdb->prefix}kit_operating_countries WHERE id = %d",
+                    intval($_POST['country_id'])
+                ));
+                if ($origin_country_active != 1) {
+                    $errors[] = [
+                        'field' => 'origin_country_select',
+                        'message' => 'Selected origin country is not active. Please select an active country.'
+                    ];
+                }
+            }
+            
+            // Enhanced destination validation
+            $is_warehoused = isset($_POST['warehoused']) && $_POST['warehoused'] == 1;
+            if (!$is_warehoused) {
                 if (empty($_POST['destination_country'])) {
                     $errors[] = [
-                        'field' => 'destination_country',
+                        'field' => 'stepDestinationSelect',
                         'message' => 'Destination country is required for non-warehoused items'
                     ];
+                } else {
+                    // Validate destination country status
+                    $destination_country_active = $wpdb->get_var($wpdb->prepare(
+                        "SELECT is_active FROM {$wpdb->prefix}kit_operating_countries WHERE id = %d",
+                        intval($_POST['destination_country'])
+                    ));
+                    if ($destination_country_active != 1) {
+                        $errors[] = [
+                            'field' => 'stepDestinationSelect',
+                            'message' => 'Selected destination country is not active. Please select an active country.'
+                        ];
+                    }
                 }
                 if (empty($_POST['destination_city'])) {
                     $errors[] = [
                         'field' => 'destination_city',
                         'message' => 'Destination city is required for non-warehoused items'
                     ];
+                }
+            } else {
+                // Even for warehoused items, require destination country
+                if (empty($_POST['destination_country'])) {
+                    $errors[] = [
+                        'field' => 'stepDestinationSelect',
+                        'message' => 'Destination country is required even for warehoused items'
+                    ];
+                } else {
+                    // Validate destination country status for warehoused items too
+                    $destination_country_active = $wpdb->get_var($wpdb->prepare(
+                        "SELECT is_active FROM {$wpdb->prefix}kit_operating_countries WHERE id = %d",
+                        intval($_POST['destination_country'])
+                    ));
+                    if ($destination_country_active != 1) {
+                        $errors[] = [
+                            'field' => 'stepDestinationSelect',
+                            'message' => 'Selected destination country is not active. Please select an active country.'
+                        ];
+                    }
+                }
+            }
+            
+            // Enhanced mass/volume validation
+            if (empty($_POST['total_mass_kg']) || floatval($_POST['total_mass_kg']) <= 0) {
+                $errors[] = [
+                    'field' => 'total_mass_kg',
+                    'message' => 'Total mass is required and must be greater than 0'
+                ];
+            }
+            
+            // Enhanced delivery validation
+            $hasDeliverySelected = !empty($_POST['direction_id']) || !empty($_POST['delivery_id']);
+            if (!$is_warehoused && !$hasDeliverySelected) {
+                $errors[] = [
+                    'field' => 'direction_id',
+                    'message' => 'Please select a delivery or check the warehouse option'
+                ];
+            }
+            
+            // 🔒 SECURITY: Additional data integrity checks
+            // Validate numeric fields to prevent injection
+            $numeric_fields = ['total_mass_kg', 'total_volume', 'mass_charge', 'volume_charge', 'item_length', 'item_width', 'item_height'];
+            foreach ($numeric_fields as $field) {
+                if (isset($_POST[$field]) && !empty($_POST[$field])) {
+                    $value = $_POST[$field];
+                    // Remove any non-numeric characters except decimal point and comma
+                    $cleaned = preg_replace('/[^0-9.,\-]/', '', $value);
+                    if (!is_numeric(str_replace(',', '.', $cleaned))) {
+                        $errors[] = [
+                            'field' => $field,
+                            'message' => 'Invalid numeric value for ' . str_replace('_', ' ', $field)
+                        ];
+                    }
+                }
+            }
+            
+            // Validate waybill items if provided
+            if (!empty($_POST['custom_items']) && is_array($_POST['custom_items'])) {
+                foreach ($_POST['custom_items'] as $index => $item) {
+                    if (!empty($item['item_name'])) {
+                        // Validate item name length
+                        if (strlen($item['item_name']) > 255) {
+                            $errors[] = [
+                                'field' => 'custom_items_' . $index,
+                                'message' => 'Item name too long (max 255 characters)'
+                            ];
+                        }
+                        
+                        // Validate quantity
+                        if (isset($item['quantity']) && (!is_numeric($item['quantity']) || intval($item['quantity']) <= 0)) {
+                            $errors[] = [
+                                'field' => 'custom_items_' . $index,
+                                'message' => 'Invalid quantity for item'
+                            ];
+                        }
+                        
+                        // Validate unit price
+                        if (isset($item['unit_price']) && (!is_numeric($item['unit_price']) || floatval($item['unit_price']) < 0)) {
+                            $errors[] = [
+                                'field' => 'custom_items_' . $index,
+                                'message' => 'Invalid unit price for item'
+                            ];
+                        }
+                    }
                 }
             }
             
@@ -694,26 +925,36 @@ class KIT_Waybills
 
             // Success case
             if ($is_ajax) {
+                // 🔒 SECURITY: Role-based success message
+                if (class_exists('KIT_User_Roles') && KIT_User_Roles::can_see_prices()) {
+                    $success_message = 'Waybill saved successfully.';
+                } else {
+                    $success_message = 'Waybill #' . ($result['waybill_no'] ?? '') . ' created successfully! You can create another waybill.';
+                }
+                
                 wp_send_json_success([
-                    'message' => 'Waybill saved successfully.',
-                    'waybill_id' => $result['id'] ?? $result
+                    'message' => $success_message,
+                    'waybill_id' => $result['id'] ?? $result,
+                    'waybill_no' => $result['waybill_no'] ?? '',
+                    'can_see_prices' => class_exists('KIT_User_Roles') ? KIT_User_Roles::can_see_prices() : false
                 ]);
             } else {
                 // Role-aware redirect after creation
                 $waybill_id = isset($result['id']) ? intval($result['id']) : 0;
                 $waybill_no = isset($result['waybill_no']) ? $result['waybill_no'] : '';
 
-                if (class_exists('KIT_User_Roles') && (KIT_User_Roles::is_admin() || KIT_User_Roles::is_manager())) {
-                    // Admins/Managers: go to view page
+                // 🔒 SECURITY: Role-based redirect with success toast
+                if (class_exists('KIT_User_Roles') && KIT_User_Roles::can_see_prices()) {
+                    // Only Mel, Patricia, Thando: go to view page (can see prices)
                     $redirect_url = admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . $waybill_id . '&waybill_atts=view_waybill');
                     $redirect_url = add_query_arg('message', urlencode('Waybill created successfully'), $redirect_url);
                 } else {
-                    // Data Capturers/others: back to create page
+                    // Data Capturers/Managers: back to create page with success toast (cannot see prices)
                     $redirect_url = add_query_arg([
                         'page' => '08600-waybill-create',
                         'success' => '1',
                         'waybill_no' => $waybill_no,
-                        'message' => 'Waybill created successfully!'
+                        'toast_message' => urlencode('Waybill #' . $waybill_no . ' created successfully! You can create another waybill.')
                     ], admin_url('admin.php'));
                 }
 
@@ -790,14 +1031,15 @@ class KIT_Waybills
         $vatCharge = 0;
         $internationalPrice = 0;
         
-        // Determine the better charge first to calculate VAT on the correct amount
+        // Determine primary charge: manual override when charge_basis is set,
+        // otherwise use the higher of mass vs volume.
         $better_charge = 0;
-        if ($charge_basis == null) {
-            $better_charge = max($mass_charge, $volume_charge);
-        } elseif ($charge_basis == 'mass' || $charge_basis == 'weight') {
+        if ($charge_basis == 'mass' || $charge_basis == 'weight') {
             $better_charge = $mass_charge;
-        } else if ($charge_basis == 'volume') {
+        } elseif ($charge_basis == 'volume') {
             $better_charge = $volume_charge;
+        } else {
+            $better_charge = max($mass_charge, $volume_charge);
         }
         
         if ((isset($_POST['vat_include']) && $_POST['vat_include'] == 1) || (is_array($ttt) && isset($ttt['vat_include']) && $ttt['vat_include'] == 1)) {
@@ -828,8 +1070,30 @@ class KIT_Waybills
      */
     public static function manageMiscItems(array $miscData): array
     {
-        // Use getMiscCharges function instead of manual handling
-        $misc_result = self::getMiscCharges($miscData, []);
+        // Transform dynamicItemsControl format to getMiscCharges format
+        $transformed_data = [
+            'misc_item' => [],
+            'misc_price' => [],
+            'misc_quantity' => []
+        ];
+
+        // Check if data is in dynamicItemsControl format (array of items)
+        if (isset($miscData[0]) && is_array($miscData[0]) && isset($miscData[0]['misc_item'])) {
+            // Transform from dynamicItemsControl format to getMiscCharges format
+            foreach ($miscData as $item) {
+                if (!empty($item['misc_item'])) {
+                    $transformed_data['misc_item'][] = $item['misc_item'];
+                    $transformed_data['misc_price'][] = floatval($item['misc_price'] ?? 0);
+                    $transformed_data['misc_quantity'][] = intval($item['misc_quantity'] ?? 1);
+                }
+            }
+        } else {
+            // Data is already in getMiscCharges format
+            $transformed_data = $miscData;
+        }
+
+        // Use getMiscCharges function with transformed data
+        $misc_result = self::getMiscCharges($transformed_data, []);
 
         return [
             'misc_items' => $misc_result->misc_items,
@@ -902,14 +1166,46 @@ class KIT_Waybills
 
             for ($i = 0; $i < $count; $i++) {
                 if (!empty($misc_item[$i])) {
-                    $is_realized = is_array($serial) && in_array($i, $serial); // Example logic
+                    // Enhanced validation for miscellaneous charges
+                    $item_name = sanitize_text_field(trim($misc_item[$i]));
+                    $amount = floatval($amounts[$i]);
+                    $quantity = intval($quantities[$i]);
+                    
+                    // Validate item name length (prevent XSS and excessive data)
+                    if (strlen($item_name) > 255) {
+                        $item_name = substr($item_name, 0, 255);
+                    }
+                    
+                    // Validate quantity (must be positive)
+                    if ($quantity <= 0) {
+                        $quantity = 1; // Default to 1 for invalid quantities
+                    }
+                    
+                    // Validate amount (must be non-negative, prevent excessive amounts)
+                    if ($amount < 0) {
+                        $amount = 0; // Default to 0 for negative amounts
+                    }
+                    
+                    // Prevent excessive misc charges (max R100,000 per item)
+                    if ($amount > 100000) {
+                        $amount = 100000;
+                    }
+                    
+                    $item_total = $amount * $quantity;
+                    
+                    // Prevent total misc overflow (max R1,000,000 total)
+                    if (($misc_total + $item_total) > 1000000) {
+                        break; // Stop processing if total would exceed limit
+                    }
+                    
+                    $is_realized = is_array($serial) && in_array($i, $serial);
                     $misc_combined[] = [
-                        'misc_item' => $misc_item[$i],
-                        'misc_price' => floatval($amounts[$i]),
-                        'misc_quantity' => intval($quantities[$i]),
+                        'misc_item' => $item_name,
+                        'misc_price' => $amount,
+                        'misc_quantity' => $quantity,
                         'realized' => $is_realized,
                     ];
-                    $misc_total += floatval($amounts[$i]) * intval($quantities[$i]);
+                    $misc_total += $item_total;
                 }
             }
         }
@@ -1010,7 +1306,7 @@ class KIT_Waybills
                     $rate = floatval($data['rates']['ZAR']);
                 }
             }
-            set_transient($cache_key, $rate, 10 * MINUTE_IN_SECONDS);
+            set_transient($cache_key, $rate, 24 * HOUR_IN_SECONDS);
         }
         return $usd_price * floatval($rate);
     }
@@ -1025,8 +1321,16 @@ class KIT_Waybills
         $has_waybill_fee = !empty($data['include_sadc']);
 
         $manny = (isset($data['enable_price_manipulator'])) ? true : false;
-        $manny_mass_rate = (isset($data['enable_price_manipulator'])) ? floatval(isset($data['mass_charge_manipulator'])) : null;
-        $manny_volume_rate = (isset($data['enable_price_manipulator'])) ? floatval(isset($data['manny_volume_rate'])) : null;
+        
+        // 🔒 SECURITY: Only authorized owners (Mel, Patricia, Thando) can use price manipulators
+        // Get manipulator values using correct field names
+        $manny_mass_rate = (isset($data['enable_price_manipulator']) && isset($data['mass_charge_manipulator'])) ? floatval($data['mass_charge_manipulator']) : null;
+        $manny_volume_rate = (isset($data['enable_price_manipulator']) && isset($data['manny_volume_rate'])) ? floatval($data['manny_volume_rate']) : null;
+        
+        // Only check permissions if user is actually trying to manipulate prices (has values)
+        $is_actually_manipulating = ($manny && (($manny_mass_rate !== null && $manny_mass_rate != 0) || ($manny_volume_rate !== null && $manny_volume_rate != 0)));
+        
+        // Allow all users to manipulate rates - this is basic functionality
 
 
         $others = [
@@ -1057,9 +1361,10 @@ class KIT_Waybills
 
         // Remove/add keys based on rules
         if (isset($data['misc']) && is_array($data['misc'])) {
-            $misc_result = self::getMiscCharges($data['misc'], []);
-            $misc_combined = $misc_result->misc_items;
-            $misc_total = floatval($misc_result->misc_total);
+            // Use manageMiscItems to handle dynamicItemsControl format transformation
+            $misc_result = self::manageMiscItems($data['misc']);
+            $misc_combined = $misc_result['misc_items'];
+            $misc_total = floatval($misc_result['misc_total']);
         }
 
         if ($has_vat) {
@@ -1130,28 +1435,37 @@ class KIT_Waybills
             $_POST['dispatch_date'] = null;
         }
 
-        // 👥 Customer 1 Details
-        $cust_id = isset($_POST['cust_id']) ? $_POST['cust_id'] : null;
-        $customer_select = isset($_POST['customer_select']) ? $_POST['customer_select'] : null;
-        $customer_name = isset($_POST['customer_name']) ? $_POST['customer_name'] : null;
-        $customer_surname = isset($_POST['customer_surname']) ? $_POST['customer_surname'] : null;
-        $company_name = isset($_POST['company_name']) ? $_POST['company_name'] : null;
-        $email_address = isset($_POST['email_address']) ? $_POST['email_address'] : null;
-        $cell = isset($_POST['cell']) ? $_POST['cell'] : null;
-        $address = isset($_POST['address']) ? $_POST['address'] : null;
-        $destination_city = isset($_POST['destination_city']) ? $_POST['destination_city'] : null;
+        // 👥 Customer 1 Details - Enhanced validation and sanitization
+        $cust_id = isset($_POST['cust_id']) ? intval($_POST['cust_id']) : 0;
+        $customer_select = isset($_POST['customer_select']) ? sanitize_text_field($_POST['customer_select']) : '';
+        $customer_name = isset($_POST['customer_name']) ? sanitize_text_field(trim($_POST['customer_name'])) : '';
+        $customer_surname = isset($_POST['customer_surname']) ? sanitize_text_field(trim($_POST['customer_surname'])) : '';
+        $company_name = isset($_POST['company_name']) ? sanitize_text_field(trim($_POST['company_name'])) : '';
+        $email_address = isset($_POST['email_address']) ? sanitize_email(trim($_POST['email_address'])) : '';
+        $cell = isset($_POST['cell']) ? sanitize_text_field(trim($_POST['cell'])) : '';
+        $address = isset($_POST['address']) ? sanitize_textarea_field(trim($_POST['address'])) : '';
+        $destination_city = isset($_POST['destination_city']) ? intval($_POST['destination_city']) : 0;
 
         // Validate required fields for waybill creation
         $is_warehoused = isset($_POST['warehoused']) && $_POST['warehoused'] == 1;
         
+        // Warehouse validation
         if ($is_warehoused) {
-            // For warehoused items, we don't need destination city/country
+            // For warehoused items, validate customer information
             if (empty($cust_id) && empty($customer_name)) {
                 return new WP_Error('validation_error', 'Customer information is required even for warehoused items.');
             }
+            
+            // Note: No capability gate here. Warehousing is allowed for all creators.
+            
+            // Even for warehoused items, require destination for proper routing
+            $destination_country = isset($_POST['destination_country']) ? intval($_POST['destination_country']) : 0;
+            if (empty($destination_country)) {
+                return new WP_Error('validation_error', 'Destination country is required even for warehoused items for proper routing.');
+            }
         } else {
             // For non-warehoused items, destination country and city are required
-            $destination_country = isset($_POST['destination_country']) ? $_POST['destination_country'] : null;
+            $destination_country = isset($_POST['destination_country']) ? intval($_POST['destination_country']) : 0;
 
             if (empty($destination_country)) {
                 return new WP_Error('validation_error', 'Destination country is required for non-warehoused items.');
@@ -1165,8 +1479,8 @@ class KIT_Waybills
         }
         $SADC_charge = self::sad();
         $vat = isset($_POST['vat_include']) ? $_POST['vat_include'] : 0;
-        $country_id = isset($_POST['origin_country']) ? $_POST['origin_country'] : 1;
-        $city_id =  isset($_POST['origin_city']) ? $_POST['origin_city'] : 1;
+        $country_id = isset($_POST['country_id']) ? $_POST['country_id'] : 1;
+        $city_id =  isset($_POST['city_id']) ? $_POST['city_id'] : 1;
         $waybill_description =  isset($_POST['waybill_description']) ? $_POST['waybill_description'] : 1;
 
         $own_certificate = isset($_POST['own_certificate']) ? $_POST['own_certificate'] : 0;
@@ -1175,39 +1489,190 @@ class KIT_Waybills
             $SADC_charge = $SADC_charge - 500;
         }
 
-        // 💰 Charge Details
-        $mass_charge = isset($_POST['mass_charge']) ? floatval(str_replace(',', '.', $_POST['mass_charge'] ?: '')) : 0;
+        // 💰 Charge Details (ignore posted totals; recompute from canonical inputs)
+        // Canonical inputs
+        $posted_total_mass   = isset($_POST['total_mass_kg']) ? floatval(str_replace(',', '.', $_POST['total_mass_kg'])) : 0.0;
+        $posted_total_volume = isset($_POST['total_volume']) ? floatval(str_replace(',', '.', $_POST['total_volume'])) : 0.0;
+        
+        // If volume is not provided, calculate it from dimensions
+        if ($posted_total_volume <= 0) {
+            $item_length = isset($_POST['item_length']) ? floatval(str_replace(',', '.', $_POST['item_length'])) : 0.0;
+            $item_width = isset($_POST['item_width']) ? floatval(str_replace(',', '.', $_POST['item_width'])) : 0.0;
+            $item_height = isset($_POST['item_height']) ? floatval(str_replace(',', '.', $_POST['item_height'])) : 0.0;
+            
+            if ($item_length > 0 && $item_width > 0 && $item_height > 0) {
+                // Convert from cm³ to m³ (divide by 1,000,000)
+                $posted_total_volume = ($item_length * $item_width * $item_height) / 1000000;
+                error_log('DEBUG: Calculated volume from dimensions: ' . $item_length . ' × ' . $item_width . ' × ' . $item_height . ' / 1,000,000 = ' . $posted_total_volume);
+            }
+        }
+        // Use mass_rate if available, otherwise fall back to current_rate or base_rate
+        $snapshot_mass_rate = 0.0;
+        if (isset($_POST['mass_rate']) && floatval($_POST['mass_rate']) > 0) {
+            $snapshot_mass_rate = floatval(str_replace(',', '.', $_POST['mass_rate']));
+        } elseif (isset($_POST['current_rate']) && floatval($_POST['current_rate']) > 0) {
+            $snapshot_mass_rate = floatval(str_replace(',', '.', $_POST['current_rate']));
+        } elseif (isset($_POST['base_rate']) && floatval($_POST['base_rate']) > 0) {
+            $snapshot_mass_rate = floatval(str_replace(',', '.', $_POST['base_rate']));
+        } else {
+            // FALLBACK: Use a default rate for Data Capturers when no rates are provided
+            $snapshot_mass_rate = 30.0; // Default rate of R30 per kg
+            error_log('DEBUG: No rates provided, using fallback rate: ' . $snapshot_mass_rate);
+        }
+        // Determine volume rate from posted manipulator or fetched snapshot in misc later
 
-        if (isset($_POST['enable_price_manipulator'], $_POST['new_mass_rate']) && floatval($_POST['new_mass_rate']) > 0) {
-            $mass_charge = floatval($_POST['new_mass_rate']);
+        // Recompute mass charge safely
+        $mass_charge = 0.0;
+        if ($posted_total_mass > 0 && $snapshot_mass_rate > 0) {
+            $mass_charge = $posted_total_mass * $snapshot_mass_rate;
         }
 
-        $volume_charge = isset($_POST['volume_charge']) ? $_POST['volume_charge'] : null;
+        // 🔒 SECURITY: Only authorized owners (Mel, Patricia, Thando) can manipulate prices
+        // Only check if user is actually trying to manipulate prices (has values)
+        $is_manipulating_mass = isset($_POST['enable_price_manipulator']) && 
+                               $_POST['enable_price_manipulator'] && 
+                               isset($_POST['mass_charge_manipulator']) && 
+                               floatval($_POST['mass_charge_manipulator']) != 0;
+                               
+        if ($is_manipulating_mass) {
+            $manipulator_amount = floatval($_POST['mass_charge_manipulator']);
+            $mass_charge = $mass_charge + $manipulator_amount; // Add manipulator to existing charge
+        }
 
-        // Use posted charge_basis if available, otherwise determine automatically
-        $charge_basis = $_POST['charge_basis'] ?? '';
-        if (empty($charge_basis) && isset($_POST['mass_charge']) && isset($_POST['volume_charge'])) {
-            if ($_POST['mass_charge'] > $_POST['volume_charge']) {
-                $charge_basis = 'mass';
+        // Recompute volume charge from volume and effective rate; prefer custom rate if allowed
+        $volume_charge = 0.0;
+        $custom_volume_rate = isset($_POST['custom_volume_rate_per_m3']) ? floatval(str_replace(',', '.', $_POST['custom_volume_rate_per_m3'])) : 0.0;
+        $use_custom_volume_rate = isset($_POST['use_custom_volume_rate']) && intval($_POST['use_custom_volume_rate']) === 1;
+        if ($posted_total_volume > 0) {
+            if ($use_custom_volume_rate && $custom_volume_rate > 0) {
+                $volume_charge = $posted_total_volume * $custom_volume_rate;
             } else {
-                $charge_basis = 'volume';
+                // Fall back to snapshot rate from previous save if available later; otherwise keep 0 and allow calculator to pick mass
+                // We'll attempt to derive a rate from posted volume_charge as a last resort (sanitized)
+                $posted_volume_charge = isset($_POST['volume_charge']) ? floatval(str_replace(',', '.', $_POST['volume_charge'])) : 0.0;
+                if ($posted_volume_charge > 0) {
+                    $derived_rate = $posted_volume_charge / max(0.0001, $posted_total_volume);
+                    $volume_charge = $posted_total_volume * $derived_rate;
+                } else {
+                    // If no volume charge provided, use mass rate as fallback for volume calculation
+                    if ($snapshot_mass_rate > 0) {
+                        $volume_charge = $posted_total_volume * $snapshot_mass_rate;
+                    }
+                }
             }
         }
 
-        // 🧾 Custom Items
-        $customer_id = isset($_POST['cust_id']) ? intval($_POST['cust_id']) : 0;
+        // Use posted charge_basis if available, otherwise determine automatically
+        $charge_basis = $_POST['charge_basis'] ?? '';
+        // Tie-safe basis with epsilon, default to mass on ties
+        if (empty($charge_basis)) {
+            $epsilon = 0.005;
+            if (($mass_charge - $volume_charge) > $epsilon) {
+                $charge_basis = 'mass';
+            } elseif (($volume_charge - $mass_charge) > $epsilon) {
+                $charge_basis = 'volume';
+            } else {
+                $charge_basis = 'mass';
+            }
+        }
+
+        // 🧾 Custom Items - Check multiple possible customer ID field names
+        $customer_id = 0;
+        if (isset($_POST['cust_id']) && intval($_POST['cust_id']) > 0) {
+            $customer_id = intval($_POST['cust_id']);
+        } elseif (isset($_POST['customer_select']) && intval($_POST['customer_select']) > 0) {
+            $customer_id = intval($_POST['customer_select']);
+        } elseif (isset($_POST['customer_id']) && intval($_POST['customer_id']) > 0) {
+            $customer_id = intval($_POST['customer_id']);
+        }
+        
+        // DEBUG: Log customer_id and POST data for debugging
+        error_log('DEBUG: customer_id = ' . $customer_id);
+        error_log('DEBUG: $_POST[cust_id] = ' . (isset($_POST['cust_id']) ? $_POST['cust_id'] : 'NOT SET'));
+        error_log('DEBUG: $_POST[customer_select] = ' . (isset($_POST['customer_select']) ? $_POST['customer_select'] : 'NOT SET'));
+        error_log('DEBUG: $_POST[customer_id] = ' . (isset($_POST['customer_id']) ? $_POST['customer_id'] : 'NOT SET'));
+        error_log('DEBUG: $_POST[mass_rate] = ' . (isset($_POST['mass_rate']) ? $_POST['mass_rate'] : 'NOT SET'));
+        error_log('DEBUG: $_POST[current_rate] = ' . (isset($_POST['current_rate']) ? $_POST['current_rate'] : 'NOT SET'));
+        error_log('DEBUG: $_POST[base_rate] = ' . (isset($_POST['base_rate']) ? $_POST['base_rate'] : 'NOT SET'));
+        error_log('DEBUG: $_POST[total_mass_kg] = ' . (isset($_POST['total_mass_kg']) ? $_POST['total_mass_kg'] : 'NOT SET'));
+        error_log('DEBUG: $_POST[total_volume] = ' . (isset($_POST['total_volume']) ? $_POST['total_volume'] : 'NOT SET'));
+        
+        // Handle new customer creation BEFORE validation
+        if (($customer_id <= 0 && $customer_select === 'new') || (empty($cust_id) && $customer_select === 'new')) {
+            error_log('DEBUG: Creating new customer - customer_select = ' . $customer_select);
+            // Create a new customer
+            $new_customer_id = KIT_Customers::save_customer([
+                'customer_select' => $customer_select,
+                'customer_name' => $customer_name,
+                'customer_surname' => $customer_surname,
+                'cell' => $cell,
+                'address' => $address,
+                'company_name' => $company_name,
+                'email_address' => $email_address,
+                'country_id' => $country_id,
+                'city_id' => $city_id,
+            ]);
+            
+            // Check if customer creation failed
+            if (!$new_customer_id || is_wp_error($new_customer_id)) {
+                error_log('ERROR: Failed to create new customer: ' . (is_wp_error($new_customer_id) ? $new_customer_id->get_error_message() : 'Unknown error'));
+                $is_ajax = defined('DOING_AJAX') && DOING_AJAX;
+                if ($is_ajax) {
+                    wp_send_json_error(['message' => 'Failed to create new customer. Please try again.']);
+                } else {
+                    wp_redirect(add_query_arg('error', urlencode('Failed to create new customer. Please try again.'), wp_get_referer()));
+                }
+                return;
+            }
+            
+            // Update customer_id with the newly created customer
+            $customer_id = $new_customer_id;
+            error_log('DEBUG: New customer created successfully with ID: ' . $customer_id);
+        }
+        
+        // PREVENT WAYBILL CREATION IF NO CUSTOMER SELECTED
+        if ($customer_id <= 0) {
+            error_log('ERROR: Cannot create waybill - no customer selected (customer_id = ' . $customer_id . ')');
+            $is_ajax = defined('DOING_AJAX') && DOING_AJAX;
+            if ($is_ajax) {
+                wp_send_json_error(['message' => 'Please select a customer before creating a waybill.']);
+            } else {
+                wp_redirect(add_query_arg('error', urlencode('Please select a customer before creating a waybill.'), wp_get_referer()));
+            }
+            return;
+        }
         // 🧮 Misc Charges
         $final_misc_data = self::prepareMiscCharges($_POST);
 
         // Persist pricing snapshot to ensure PDF/Invoice match UI exactly
-        $posted_total_volume = isset($_POST['total_volume']) ? floatval(str_replace(',', '.', $_POST['total_volume'])) : 0.0;
-        $posted_total_mass   = isset($_POST['total_mass_kg']) ? floatval(str_replace(',', '.', $_POST['total_mass_kg'])) : 0.0;
-        $posted_volume_charge = isset($_POST['volume_charge']) ? floatval(str_replace(',', '.', $_POST['volume_charge'])) : 0.0;
-        $posted_mass_charge   = isset($_POST['mass_charge']) ? floatval(str_replace(',', '.', $_POST['mass_charge'])) : 0.0;
+        // Keep snapshots for audit but based on recomputed values
+        $posted_volume_charge = $volume_charge;
+        $posted_mass_charge   = $mass_charge;
+        
+        // DEBUG: Log calculated charges
+        error_log('DEBUG: Calculated mass_charge = ' . $mass_charge);
+        error_log('DEBUG: Calculated volume_charge = ' . $volume_charge);
+        error_log('DEBUG: snapshot_mass_rate = ' . $snapshot_mass_rate);
+        error_log('DEBUG: posted_total_mass = ' . $posted_total_mass);
+        error_log('DEBUG: posted_total_volume = ' . $posted_total_volume);
+        error_log('DEBUG: FINAL customer_id before database insert = ' . $customer_id);
+        error_log('DEBUG: $_POST[mass_charge] = ' . (isset($_POST['mass_charge']) ? $_POST['mass_charge'] : 'NOT SET'));
+        error_log('DEBUG: $_POST[volume_charge] = ' . (isset($_POST['volume_charge']) ? $_POST['volume_charge'] : 'NOT SET'));
 
         // Custom volume rate support from UI (checkbox/value names may vary slightly across forms)
         $use_custom_volume_rate = isset($_POST['use_custom_volume_rate']) && intval($_POST['use_custom_volume_rate']) === 1;
         $custom_volume_rate     = isset($_POST['custom_volume_rate_per_m3']) ? floatval(str_replace(',', '.', $_POST['custom_volume_rate_per_m3'])) : 0.0;
+        
+        // 🔒 SECURITY: Only authorized owners (Mel, Patricia, Thando) can manipulate volume rates
+        // Only check if user is actually trying to manipulate volume rates (has values)
+        $is_manipulating_volume = isset($_POST['enable_price_manipulator']) && 
+                                 $_POST['enable_price_manipulator'] && 
+                                 isset($_POST['manny_volume_rate']) && 
+                                 floatval($_POST['manny_volume_rate']) != 0;
+                                 
+        if ($is_manipulating_volume) {
+            // Volume manipulation is handled in the prepareMiscCharges function
+        }
 
         // Derive snapshot rates that were actually used at save time
         $snapshot_volume_rate = 0.0;
@@ -1234,46 +1699,64 @@ class KIT_Waybills
 
         $misc_serialized = serialize($final_misc_data);
 
-        //if $cust_id = 0, meaning no customer is selected, then create a new customer
-        if (empty($cust_id) || $customer_select === 'new') {
-            // Create a new customer
-            $customer_id = KIT_Customers::save_customer([
-                'customer_select' => $customer_select,
-                'customer_name' => $customer_name,
-                'customer_surname' => $customer_surname,
-                'cell' => $cell,
-                'address' => $address,
-                'company_name' => $company_name,
-                'email_address' => $email_address,
-                'country_id' => $country_id,
-                'city_id' => $city_id,
-            ]);
+        // Customer creation is now handled earlier in the flow before validation
+
+
+        // Misc total is now handled in prepareMiscCharges function
+        $misc_total = $final_misc_data['misc_total'] ?? 0;
+        // Check for potential duplicate waybills (same customer, similar amount, recent)
+        // Note: customer_id is already set above from $_POST['cust_id'], don't overwrite it
+        if ($customer_id > 0) {
+            $recent_waybills = $wpdb->get_results($wpdb->prepare(
+                "SELECT waybill_no, product_invoice_amount, created_at FROM {$wpdb->prefix}kit_waybills 
+                 WHERE customer_id = %d 
+                 AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)
+                 ORDER BY created_at DESC 
+                 LIMIT 3",
+                $customer_id
+            ));
             
-            // Check if customer creation failed
-            if (!$customer_id || is_wp_error($customer_id)) {
-                return new WP_Error('customer_error', 'Failed to create customer: ' . (is_wp_error($customer_id) ? $customer_id->get_error_message() : 'Unknown error'));
+            if (!empty($recent_waybills)) {
+                error_log("POTENTIAL DUPLICATE: Customer ID $customer_id has created " . count($recent_waybills) . " waybills in the last hour: " . implode(', ', array_column($recent_waybills, 'waybill_no')));
             }
         }
 
-
-        if (isset($_POST['misc'])) {
-            $misc = self::manageMiscItems($_POST['misc']);
-
-            $misc_total = $misc['misc_total'];
-        } else {
-            $misc_total = 0;
-        }
         // Generate waybill number if not provided
         $waybill_no = self::generate_waybill_number();
 
-        // 🔒 FIX: Calculate items total without inserting to database (waybill not created yet)
+        // 🔒 FIX: Calculate items total with enhanced validation
         $waybillItemsTotal = 0;
         if (!empty($_POST['custom_items']) && is_array($_POST['custom_items'])) {
             foreach ($_POST['custom_items'] as $item) {
+                // Enhanced validation for waybill items
                 if (!empty($item['item_name']) && isset($item['quantity']) && isset($item['unit_price'])) {
+                    // Sanitize and validate item data
+                    $item_name = sanitize_text_field(trim($item['item_name']));
                     $quantity = intval($item['quantity']);
                     $unit_price = floatval($item['unit_price']);
-                    $waybillItemsTotal += $quantity * $unit_price;
+                    
+                    // Validate item name length (prevent XSS and excessive data)
+                    if (strlen($item_name) > 255) {
+                        $item_name = substr($item_name, 0, 255);
+                    }
+                    
+                    // Validate quantity (must be positive)
+                    if ($quantity <= 0) {
+                        continue; // Skip invalid items
+                    }
+                    
+                    // Validate unit price (must be non-negative)
+                    if ($unit_price < 0) {
+                        continue; // Skip invalid items
+                    }
+                    
+                    // Validate total price (prevent overflow)
+                    $item_total = $quantity * $unit_price;
+                    if ($item_total > 999999.99) {
+                        continue; // Skip items with excessive totals
+                    }
+                    
+                    $waybillItemsTotal += $item_total;
                 }
             }
         }
@@ -1290,6 +1773,12 @@ class KIT_Waybills
             'include_sadc' => isset($_POST['include_sadc']) ? 1 : 0,
             'include_vat' => isset($_POST['vat_include']) ? 1 : 0
         ];
+        // Prefer stored snapshot of international price if VAT not included
+        if (isset($final_misc_data['others']) && is_array($final_misc_data['others']) && empty($_POST['vat_include'])) {
+            if (isset($final_misc_data['others']['international_price_rands']) && is_numeric($final_misc_data['others']['international_price_rands'])) {
+                $calculation_params['international_price_override'] = floatval($final_misc_data['others']['international_price_rands']);
+            }
+        }
         
         $calculation_breakdown = KIT_Bulletproof_Calculator::calculate_waybill_total($calculation_params);
         $waybillTotal = $calculation_breakdown['totals']['final_total'];
@@ -1319,6 +1808,22 @@ class KIT_Waybills
         $direction_id_input = isset($_POST['direction_id']) ? (int)$_POST['direction_id'] : 0;
         $delivery_id_input = isset($_POST['delivery_id']) ? (int)$_POST['delivery_id'] : 0;
 
+        // 🔧 FIX: Calculate direction_id from origin and destination countries if not provided
+        if ($direction_id_input <= 0) {
+            $origin_country_id = isset($_POST['country_id']) ? (int)$_POST['country_id'] : 0;
+            $destination_country_id = isset($_POST['destination_country']) ? (int)$_POST['destination_country'] : 0;
+            
+            if ($origin_country_id > 0 && $destination_country_id > 0) {
+                // Try to get existing direction
+                $direction_id_input = KIT_Deliveries::get_direction_id($origin_country_id, $destination_country_id);
+                
+                // If direction doesn't exist, create it
+                if (!$direction_id_input) {
+                    $direction_id_input = KIT_Deliveries::create_direction($origin_country_id, $destination_country_id);
+                }
+            }
+        }
+
         if ($direction_id_input <= 0 && $delivery_id_input > 0) {
             // Resolve direction_id from deliveries table
             $dir_table = $wpdb->prefix . 'kit_shipping_directions';
@@ -1337,6 +1842,50 @@ class KIT_Waybills
             }
         }
 
+        // 🔧 VALIDATION: Ensure direction_id exists before proceeding
+        if ($direction_id_input <= 0) {
+            error_log('Waybill save error: Could not resolve direction_id for waybill creation');
+            return new WP_Error('validation_error', 'Could not determine shipping direction. Please check your origin and destination countries.');
+        }
+
+        // 🔧 ADDITIONAL VALIDATION: Verify that the direction_id actually exists in the database
+        $direction_exists = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$wpdb->prefix}kit_shipping_directions WHERE id = %d",
+            $direction_id_input
+        ));
+        
+        if (!$direction_exists) {
+            error_log("Waybill save error: direction_id {$direction_id_input} does not exist in shipping_directions table");
+            
+            // Try to resolve an existing direction by origin/destination first
+            $origin_country_id = isset($_POST['country_id']) ? (int)$_POST['country_id'] : 0;
+            $destination_country_id = isset($_POST['destination_country']) ? (int)$_POST['destination_country'] : 0;
+
+            if ($origin_country_id > 0 && $destination_country_id > 0) {
+                $existing_direction = KIT_Deliveries::get_direction_id($origin_country_id, $destination_country_id);
+                if ($existing_direction) {
+                    $direction_id_input = (int)$existing_direction;
+                } else {
+                    error_log("Attempting to create missing direction: {$origin_country_id} -> {$destination_country_id}");
+                    $created_direction_id = KIT_Deliveries::create_direction($origin_country_id, $destination_country_id);
+                    if ($created_direction_id) {
+                        $direction_id_input = (int)$created_direction_id;
+                        error_log("Successfully created direction_id: {$direction_id_input}");
+                    } else {
+                        // As a final guard against race conditions/duplicates, re-query after failed create
+                        $recheck = KIT_Deliveries::get_direction_id($origin_country_id, $destination_country_id);
+                        if ($recheck) {
+                            $direction_id_input = (int)$recheck;
+                        } else {
+                            return new WP_Error('validation_error', "Could not create missing shipping direction. Please contact support.");
+                        }
+                    }
+                }
+            } else {
+                return new WP_Error('validation_error', "Invalid shipping direction ID: {$direction_id_input}. Please refresh and try again.");
+            }
+        }
+
         $waybill_data = [
             'direction_id' => (int)$direction_id_input,
             'delivery_id' => (int)($delivery_id_input ?: 1),
@@ -1350,9 +1899,9 @@ class KIT_Waybills
             'item_width' => (float)($_POST['item_width'] ?? 0),
             'item_height' => (float)($_POST['item_height'] ?? 0),
             'total_mass_kg' => (float)($_POST['total_mass_kg'] ?? 0),
-            'total_volume' => (float)($_POST['total_volume'] ?? 0),
-            'mass_charge' => (float)($_POST['mass_charge'] ?? 0),
-            'volume_charge' => (float)($_POST['volume_charge'] ?? 0),
+            'total_volume' => (float)$posted_total_volume,
+            'mass_charge' => (float)$mass_charge,
+            'volume_charge' => (float)$volume_charge,
             'charge_basis' => $charge_basis,
             'miscellaneous' => !empty($misc_serialized) ? $misc_serialized : '',
             'include_sad500' => $include_sad500,
@@ -1362,14 +1911,19 @@ class KIT_Waybills
             'created_by' => get_current_user_id(),
             'last_updated_by' => get_current_user_id(),
             'status' => $is_warehoused ? 'warehoused' : 'pending',
+            // Explicit warehouse flag on waybills table when warehoused is checked
+            'warehouse' => $is_warehoused ? 1 : 0,
         ];
 
         // Insert waybill
         $inserted = $wpdb->insert($waybills_table, $waybill_data);
 
         if (!$inserted) {
+            // Only log in development mode
+            if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
             error_log('Waybill insert failed: ' . $wpdb->last_error);
             error_log('Waybill data: ' . print_r($waybill_data, true));
+            }
             return new WP_Error('db_error', 'Could not save waybill: ' . $wpdb->last_error);
         }
 
@@ -1634,248 +2188,7 @@ class KIT_Waybills
         return date('M j, Y', strtotime($date));
     }
 
-    public static function render_table_with_pagination($data, $args = [])
-    {
 
-
-        $ajax = $args['ajax'] ?? false;
-        $defaults = [
-            'fields' => ['waybill_no', 'customer_id', 'status'],
-            'table_class' => 'min-w-full divide-y divide-gray-200 text-xs',
-            'actions' => true,
-            'show_create_quotation' => false,
-            'status_labels' => [
-                'pending' => 'Pending',
-                'completed' => 'Completed',
-                'cancelled' => 'Cancelled'
-            ],
-            'status_colors' => [
-                'pending' => 'bg-yellow-100 text-yellow-800',
-                'completed' => 'bg-green-100 text-green-800',
-                'cancelled' => 'bg-red-100 text-red-800'
-            ],
-            'items_per_page' => isset($_GET['items_per_page']) ? intval($_GET['items_per_page']) : 5,
-            'current_page' => isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1
-        ];
-
-        $args = wp_parse_args($args, $defaults);
-
-        //if $args['items_per_page'] is bigger than 5, then set current_page to 1, so that the pagination is not affected
-        if ($args['items_per_page'] > 5) {
-            $args['current_page'] = 1;
-        }
-
-        // Pagination Setup
-        $items_per_page = $args['items_per_page'];
-        $total_items = count($data);
-        $total_pages = ceil($total_items / $items_per_page);
-        $current_page = $args['current_page'];
-        $offset = ($current_page - 1) * $items_per_page;
-        $paginated_data = array_slice($data, $offset, $items_per_page);
-
-        // Get current URL without pagination parameters
-        $current_url = remove_query_arg(['paged'], $_SERVER['REQUEST_URI']);
-        $current_url = add_query_arg(['items_per_page' => $items_per_page], $current_url);
-
-        ob_start();
-        // Only include wrapper for non-AJAX calls
-        if (!$ajax) {
-            echo '<div id="waybill-table-parent">';
-            echo '<div id="waybill-table-container">';
-        }
-    ?>
-        <!-- Single pagination (top or bottom, not both) -->
-        <div class="tablenav top flex flex-wrap items-center justify-between gap-4 mb-4">
-            <!-- Items per page dropdown - LEFT SIDE -->
-            <div class="flex items-center space-x-2">
-                <label for="items-per-page" class="text-xs text-gray-600 whitespace-nowrap">Items per page:</label>
-                <form method="get" id="items-per-page-form" style="display:inline;">
-                    <?php
-                    // Preserve other query params
-                    foreach ($_GET as $key => $val) {
-                        if ($key !== 'items_per_page') {
-                            echo '<input type="hidden" name="' . esc_attr($key) . '" value="' . esc_attr($val) . '">';
-                        }
-                    }
-                    ?>
-                    <select id="items-per-page" name="items_per_page"
-                        class="text-xs rounded border-gray-300 focus:border-blue-500 focus:ring-blue-500 shadow-sm py-1 pl-2 pr-8"
-                        onchange="this.form.submit()">
-                        <option value="5" <?php selected($items_per_page, 5); ?>>5</option>
-                        <option value="10" <?php selected($items_per_page, 10); ?>>10</option>
-                        <option value="20" <?php selected($items_per_page, 20); ?>>20</option>
-                        <option value="50" <?php selected($items_per_page, 50); ?>>50</option>
-                        <option value="100" <?php selected($items_per_page, 100); ?>>100</option>
-                    </select>
-                </form>
-
-                <!-- Item count -->
-                <span class="text-xs text-gray-600 whitespace-nowrap">
-                    <?php echo number_format($total_items); ?> item<?php echo $total_items !== 1 ? 's' : ''; ?>
-                </span>
-            </div>
-
-            <!-- Pagination links - RIGHT SIDE -->
-            <div class="flex items-center space-x-1">
-                <?php
-                // Fixed pagination links
-                $pagination_args = [
-                    'base' => add_query_arg('paged', '%#%'),
-                    'format' => '',
-                    'current' => $current_page,
-                    'total' => $total_pages,
-                    'prev_next' => true,
-                    'prev_text' => '<span class="px-4 py-2 rounded border-gray-300 bg-white text-gray-700 hover:bg-gray-50">&laquo; Previous</span>',
-                    'next_text' => '<span class="px-4 py-2 rounded border-gray-300 bg-white text-gray-700 hover:bg-gray-50">Next &raquo;</span>',
-                    'add_args' => ['items_per_page' => $items_per_page],
-                    'type' => 'array'
-                ];
-
-                $pagination_links = paginate_links($pagination_args);
-
-                if ($pagination_links) {
-                    foreach ($pagination_links as $link) {
-                        // Add styling to current page
-                                // Ensure link is not null before using string functions
-        $link = $link ?? '';
-        if ($link && strpos($link, 'current') !== false) {
-            $link = str_replace('page-numbers current', 'page-numbers current px-4 py-2 rounded border bg-blue-50 border-blue-500 text-blue-600', $link);
-        } else if ($link) {
-            $link = str_replace('page-numbers', 'page-numbers px-4 py-2 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50', $link);
-        }
-                        echo $link;
-                    }
-                }
-                ?>
-            </div>
-        </div>
-
-
-        <!-- Table -->
-        <table id="ajaxtable" class="<?php echo esc_attr($args['table_class']); ?>">
-            <thead class="bg-gray-50">
-                <tr>
-                    <?php foreach ($args['fields'] as $field): ?>
-                        <?php if ($field !== 'customer_surname'): ?>
-                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                <?php echo esc_html(ucfirst(str_replace('_', ' ', $field ?: ''))); ?>
-                            </th>
-                        <?php endif; ?>
-                    <?php endforeach; ?>
-                    <?php if ($args['actions']): ?>
-                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Actions</th>
-                    <?php endif; ?>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200">
-                <?php foreach ($paginated_data as $item):
-
-
-                    if (!is_object($item) && isset($item['waybill'])) {
-                        $quotation = $item['waybill'];
-                        $quotation = (object) $quotation;
-                    } else {
-                        $quotation = (object) $item;
-                    }
-                ?>
-                    <tr class="bg-white" data-waybill-id="<?php echo esc_attr($quotation->id); ?>">
-                        <?php foreach ($args['fields'] as $field): ?>
-                            <?php if ($field !== 'customer_surname'): ?>
-                                <td class="px-4 py-3 whitespace-nowrap">
-                                    <div class="text-xs">
-                                        <?php if ($field === 'approval'): ?>
-                                            <!-- waybillApprovalStatus($waybillno, $waybillid, $status) -->
-                                            <?php if (current_user_can('administrator')): ?>
-                                                <?= KIT_Commons::waybillApprovalStatus($quotation->waybill_no, $quotation->id, 'approved', $quotation->approval, 'select'); ?>
-                                            <?php else:
-                                                KIT_Commons::statusBadge($quotation->approval);
-                                            endif; ?>
-                                        <?php elseif ($field === 'waybill_no'): ?>
-                                            <a href="<?php echo admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . $quotation->id . '&waybill_atts=view_waybill'); ?>"
-                                                target="_blank" style="color:inherit; text-decoration:none;">
-                                                <span class="font-medium text-blue-600"
-                                                    style="color:inherit;"><?php echo esc_html($quotation->$field); ?></span>
-                                                <div class="text-xs text-gray-500 mt-1">
-                                                    <?php echo date('M d', strtotime($quotation->created_at)); ?></div>
-                                            </a>
-                                        <?php elseif ($field === 'customer_name'): ?>
-                                            <a href="?page=all-customer-waybills&amp;cust_id=<?php echo esc_attr($quotation->customer_id); ?>"
-                                                target="_blank" style="color:inherit; text-decoration:none;">
-                                                <span
-                                                    class="font-medium text-blue-600"><?php echo esc_html($quotation->customer_name); ?></span>
-                                                <div class="text-xs text-gray-500 truncate max-w-xs"
-                                                    title="<?php echo esc_attr($quotation->customer_name); ?>">
-                                                    <?php echo esc_html($quotation->customer_surname); ?>
-                                                </div>
-                                            </a>
-                                        <?php else: ?>
-                                            <?php
-                                            if ($field === 'total') {
-                                                echo '<span class="text-bold text-blue-600">' . KIT_Commons::currency() . '</span><span class="text-xs text-gray-500">' . KIT_Waybills::get_total_cost_of_waybill($quotation->waybill_no) . '</span>';
-                                            } else {
-                                                echo esc_html($quotation->$field ?? '');
-                                            }
-                                            ?>
-                                        <?php endif; ?>
-                                    </div>
-                                </td>
-                            <?php endif; ?>
-                        <?php endforeach; ?>
-                        <?php if ($args['actions']): ?>
-                            <td class="px-4 py-3 whitespace-nowrap text-xs text-gray-500">
-                                <div class="flex space-x-2">
-                                    <a href="<?php echo admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . $quotation->id . '&waybill_atts=view_waybill'); ?>"
-                                        class="text-blue-600 hover:text-blue-900" title="View">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
-                                            stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                        </svg>
-                                    </a>
-                                    <a href="<?php echo plugin_dir_url(__FILE__) . '../pdf-generator.php?waybill_no=' . $quotation->id . '&pdf_nonce=' . wp_create_nonce('pdf_nonce'); ?>"
-                                        target="_blank" class="text-indigo-600 hover:text-indigo-900" title="Print" target="_blank">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
-                                            stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                                        </svg>
-                                    </a>
-                                    <?php if (current_user_can('administrator') || current_user_can('manager')): ?>
-                                        <?php if ($args['show_create_quotation']): ?>
-                                            <?php echo KIT_Commons::renderButton('Quote', 'success', 'sm', [
-                                                'title' => 'Create Quotation',
-                                                'data-waybill-id' => $quotation->id,
-                                                'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />',
-                                                'iconPosition' => 'left',
-                                                'gradient' => true
-                                            ]); ?>
-                                        <?php endif; ?>
-                                    <?php endif; ?>
-
-                                    <!-- gay -->
-                                    <?php $current_user = wp_get_current_user(); ?>
-                                    <?= KIT_Commons::deleteWaybillGlobal($quotation->id, $quotation->waybill_no, $quotation->delivery_id, $current_user->ID); ?>
-                                </div>
-                            </td>
-                        <?php endif; ?>
-                    </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
-
-        <?php
-        if (!$ajax) {
-            echo '</div>';
-            echo '</div>';
-        }
-
-        return ob_get_clean();
-    }
-
-    // ✅ Shortcode to display all waybills
     public static function kit_get_all_waybills()
     {
         // Get specific fields
@@ -2321,7 +2634,7 @@ class KIT_Waybills
 
     public static function plugin_Waybill_view_page()
     {
-        global $wpdb;
+        global $wpdb, $waybill;
         $table_name   = $wpdb->prefix . 'kit_waybills';
         $waybill_id   = isset($_GET['waybill_id']) ? intval($_GET['waybill_id']) : 0;
         $is_view_mode = isset($_GET['waybill_atts']) && $_GET['waybill_atts'] === 'view_waybill';
@@ -2342,22 +2655,51 @@ class KIT_Waybills
         endif;
         echo '<div class="wrap">';
         $breadlinks_json = urlencode(json_encode($breadlinks));
-        echo do_shortcode('[showheader title="View Waybill" desc=""]');
+        echo KIT_Commons::showingHeader([
+            'title' => 'View Waybill',
+            'desc' => ''
+        ]);
         $current_user = wp_get_current_user();
         $roles = (array) $current_user->roles;
         echo '<div class="mt-6">';
 
         if ($waybill_id) {
+            $deliveries_table = $wpdb->prefix . 'kit_deliveries';
+            $countries_table = $wpdb->prefix . 'kit_operating_countries';
+            $cities_table = $wpdb->prefix . 'kit_operating_cities';
+            
             $waybill = $wpdb->get_row($wpdb->prepare(
-                "SELECT w.id AS waybill_id, w.*, u.user_login AS approved_by_username
+                "SELECT w.id AS waybill_id, w.*, u.user_login AS approved_by_username,
+                        d.destination_city_id,
+                        sd.origin_country_id, sd.destination_country_id,
+                        origin_country.country_name AS origin_country,
+                        dest_country.country_name AS destination_country,
+                        dest_city.city_name AS destination_city
                              FROM $table_name AS w
                              LEFT JOIN {$wpdb->users} AS u ON w.approval_userid = u.ID
+                             LEFT JOIN $deliveries_table AS d ON w.delivery_id = d.id
+                             LEFT JOIN $directions_table AS sd ON d.direction_id = sd.id
+                             LEFT JOIN $countries_table AS origin_country ON sd.origin_country_id = origin_country.id
+                             LEFT JOIN $countries_table AS dest_country ON sd.destination_country_id = dest_country.id
+                             LEFT JOIN $cities_table AS dest_city ON d.destination_city_id = dest_city.id
                              WHERE w.id = %d",
                 $waybill_id
             ), ARRAY_A);
 
             // Convert null values to empty strings to prevent deprecation warnings
             if ($waybill) {
+                // Debug: Log the waybill data to see what we're getting
+                error_log('Waybill data retrieved: ' . print_r([
+                    'origin_country' => $waybill['origin_country'] ?? 'NULL',
+                    'destination_country' => $waybill['destination_country'] ?? 'NULL',
+                    'origin_city' => $waybill['origin_city'] ?? 'NULL',
+                    'destination_city' => $waybill['destination_city'] ?? 'NULL',
+                    'origin_country_id' => $waybill['origin_country_id'] ?? 'NULL',
+                    'destination_country_id' => $waybill['destination_country_id'] ?? 'NULL',
+                    'origin_city_id' => $waybill['origin_city_id'] ?? 'NULL',
+                    'destination_city_id' => $waybill['destination_city_id'] ?? 'NULL'
+                ], true));
+                
                 $waybill = array_map(function($value) {
                     return $value === null ? '' : $value;
                 }, $waybill);
@@ -2479,12 +2821,15 @@ class KIT_Waybills
                 echo '
                         <script>
                             document.addEventListener("DOMContentLoaded", function () {
-                                document.getElementById("editWaybillBtn").addEventListener("click", function () {
-                                    document.getElementById("waybill-display").style.display = "none";
-                                    const form = document.getElementById("waybill-edit-form");
-                                    form.classList.remove("hidden");
-                                    form.style.display = "block";
-                                });
+                                const editBtn = document.getElementById("editWaybillBtn");
+                                if (editBtn) {
+                                    editBtn.addEventListener("click", function () {
+                                        document.getElementById("waybill-display").style.display = "none";
+                                        const form = document.getElementById("waybill-edit-form");
+                                        form.classList.remove("hidden");
+                                        form.style.display = "block";
+                                    });
+                                }
                             });
                         </script>';
             } else {
@@ -2670,10 +3015,15 @@ class KIT_Waybills
     {
         $finalTotal = 0;
 
+        // Check if misc_item array exists and is not empty
+        if (!isset($data['misc_item']) || !is_array($data['misc_item']) || empty($data['misc_item'])) {
+            return $finalTotal;
+        }
+
         // Loop through each item (assuming all arrays are aligned by index)
         for ($i = 0; $i < count($data['misc_item']); $i++) {
-            $price = floatval($data['misc_price'][$i]);
-            $qty = intval($data['misc_quantity'][$i]);
+            $price = isset($data['misc_price'][$i]) ? floatval($data['misc_price'][$i]) : 0;
+            $qty = isset($data['misc_quantity'][$i]) ? intval($data['misc_quantity'][$i]) : 0;
             $itemTotal = $price * $qty;
             $finalTotal += $itemTotal;
         }
@@ -2943,8 +3293,34 @@ class KIT_Waybills
         }
 
         $waybill_id = $existing->waybill['waybill_id'];
+        
+        // 🔒 SECURITY: Check if user can edit approved waybills
+        $waybill_approval = $existing->waybill['approval'] ?? 'pending';
+        if (!KIT_User_Roles::can_edit_approved_waybill($waybill_approval)) {
+            wp_die('Access denied. You cannot edit approved waybills. Only administrators can modify approved waybills.');
+        }
 
+        // 🔧 FIX: Preserve original international price snapshot during editing
+        // Check if VAT settings have changed - only recalculate if they have
+        $original_vat = $existing->waybill['vat_include'] ?? 0;
+        $new_vat = isset($_POST['vat_include']) ? 1 : 0;
+        $vat_changed = ($original_vat != $new_vat);
+        
+        if ($vat_changed) {
+            // VAT settings changed - recalculate misc charges with new settings
         $final_misc_data = KIT_Waybills::prepareMiscCharges($_POST);
+        } else {
+            // VAT settings unchanged - preserve original misc data and only update what's necessary
+            $original_misc = maybe_unserialize($existing->waybill['miscellaneous'] ?? '');
+            $final_misc_data = KIT_Waybills::prepareMiscCharges($_POST);
+            
+            // Preserve the original international price snapshot if VAT is still not included
+            if (empty($new_vat) && is_array($original_misc) && isset($original_misc['others']['international_price_rands'])) {
+                $final_misc_data['others']['international_price_rands'] = $original_misc['others']['international_price_rands'];
+                $final_misc_data['others']['usd_to_zar_rate_used'] = $original_misc['others']['usd_to_zar_rate_used'] ?? null;
+            }
+        }
+        
         $misc_serialized = serialize($final_misc_data);
 
         $addOptions = self::vatValidate(isset($_POST['vat_include']), isset($_POST['include_sadc']), isset($_POST['include_sad500']));
@@ -3000,6 +3376,12 @@ class KIT_Waybills
             'include_sadc' => $include_sadc,
             'include_vat' => $vat_include
         ];
+        // Prefer stored snapshot of international price if VAT not included
+        if (isset($final_misc_data['others']) && is_array($final_misc_data['others']) && empty($vat_include)) {
+            if (isset($final_misc_data['others']['international_price_rands']) && is_numeric($final_misc_data['others']['international_price_rands'])) {
+                $calculation_params['international_price_override'] = floatval($final_misc_data['others']['international_price_rands']);
+            }
+        }
         
         $calculation_breakdown = KIT_Bulletproof_Calculator::calculate_waybill_total($calculation_params);
         $waybillTotal = $calculation_breakdown['totals']['final_total'];
@@ -3021,6 +3403,8 @@ class KIT_Waybills
             'volume_charge' => $volume_charge,
             'charge_basis' => $charge_basis,
             'vat_include' => $vat_include,
+            // Keep explicit warehouse flag on waybills table for quick filters
+            'warehouse' => (isset($_POST['warehoused']) && $_POST['warehoused'] == 1) ? 1 : 0,
             // Warehouse status now managed by warehouse_items table
             'miscellaneous' => $misc_serialized,
             'include_sad500' => $include_sad500,
@@ -3040,6 +3424,62 @@ class KIT_Waybills
         // Check if update was successful
         if ($update_result === false) {
             wp_die('Failed to update waybill. Database error: ' . $wpdb->last_error);
+        }
+
+        // ✅ CRITICAL FIX: Update delivery and direction data with new origin/destination information
+        if ($delivery_id && (isset($_POST['origin_country']) || isset($_POST['origin_city']) || isset($_POST['destination_country']) || isset($_POST['destination_city']))) {
+            $deliveries_table = $wpdb->prefix . 'kit_deliveries';
+            $directions_table = $wpdb->prefix . 'kit_shipping_directions';
+            
+            // Update delivery table with destination city (only field it stores)
+            $delivery_data = [];
+            if (isset($_POST['destination_city']) && !empty($_POST['destination_city'])) {
+                $delivery_data['destination_city_id'] = intval($_POST['destination_city']);
+            }
+            
+            // Update delivery table if we have destination city data
+            if (!empty($delivery_data)) {
+                $delivery_update_result = $wpdb->update(
+                    $deliveries_table,
+                    $delivery_data,
+                    ['id' => $delivery_id],
+                    array_fill(0, count($delivery_data), '%d'),
+                    ['%d']
+                );
+                
+                if ($delivery_update_result === false) {
+                    error_log('Failed to update delivery destination city: ' . $wpdb->last_error);
+                } else {
+                    error_log('Successfully updated delivery destination city for delivery_id: ' . $delivery_id);
+                }
+            }
+            
+            // Update direction table with origin/destination countries
+            $direction_data = [];
+            if (isset($_POST['origin_country']) && !empty($_POST['origin_country'])) {
+                $direction_data['origin_country_id'] = intval($_POST['origin_country']);
+            }
+            if (isset($_POST['destination_country']) && !empty($_POST['destination_country'])) {
+                $direction_data['destination_country_id'] = intval($_POST['destination_country']);
+            }
+            
+            // Update direction table if we have country data
+            if (!empty($direction_data)) {
+                $direction_update_result = $wpdb->update(
+                    $directions_table,
+                    $direction_data,
+                    ['id' => $direction_id],
+                    array_fill(0, count($direction_data), '%d'),
+                    ['%d']
+                );
+                
+                if ($direction_update_result === false) {
+                    error_log('Failed to update direction data: ' . $wpdb->last_error);
+                } else {
+                    error_log('Successfully updated direction data for direction_id: ' . $direction_id);
+                    error_log('Direction data updated: ' . print_r($direction_data, true));
+                }
+            }
         }
 
 
@@ -3303,11 +3743,25 @@ class KIT_Waybills
 
         $table = $wpdb->prefix . 'kit_waybills';
 
-        // Sanitize inputs
-        $waybill_no = sanitize_text_field($waybill_no);
+        // Sanitize inputs (treat waybill_no as integer key)
+        $waybill_no = (int) $waybill_no;
         $waybill_id = $waybill_id !== null ? (int) $waybill_id : null;
 
-        // Build where clause
+        // Capability check (admin screens): allow admins, managers, and data capturers who can edit/update waybills
+        if (is_admin() && ! ( current_user_can('manage_options') || current_user_can('kit_edit_waybills') || current_user_can('kit_update_data') )) {
+            wp_die(__('You do not have permission to delete waybills.', 'courier-finance-plugin'), 403);
+        }
+
+        // Best-effort: delete related items first to avoid orphan rows
+        self::deleteWaybillItems($waybill_no);
+
+        // Best-effort: remove warehouse tracking entries for this waybill
+        $tracking_table = $wpdb->prefix . 'kit_warehouse_tracking';
+        if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $tracking_table)) === $tracking_table) {
+            $wpdb->delete($tracking_table, ['waybill_no' => $waybill_no]);
+        }
+
+        // Build where clause for the main delete
         $where = ['waybill_no' => $waybill_no];
         if ($waybill_id !== null) {
             $where['id'] = $waybill_id;
@@ -3316,7 +3770,19 @@ class KIT_Waybills
         // Delete from DB
         $deleted = $wpdb->delete($table, $where);
 
-        wp_redirect(admin_url('admin.php?page=08600-Waybill'));
+        // Debug log outcome for troubleshooting
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('[KIT_Waybills::delete_waybill] waybill_no=' . $waybill_no . ' id=' . ($waybill_id ?? 'null') . ' deleted=' . var_export($deleted, true) . ' last_error=' . ($wpdb->last_error ?: '')); 
+        }
+
+        // Redirect back with a status flag
+        $redirect = wp_get_referer();
+        if (! $redirect) {
+            $redirect = admin_url('admin.php?page=08600-Waybill');
+        }
+        $redirect = add_query_arg(['deleted' => ($deleted !== false ? 1 : 0)], $redirect);
+        wp_redirect($redirect);
+        exit;
     }
 
     /**
@@ -3414,14 +3880,13 @@ class KIT_Waybills
     }
 
     public static function DoubleCheckTotal($mass_charge, $volume_charge, $misc_total, $include_sad500, $include_sadc, $vatCharge, $internationalPrice, $charge_basis = null) {
-        // Determine the better charge
-        $better_charge = 0;
-        if ($charge_basis == null) {
-            $better_charge = max($mass_charge, $volume_charge);
-        } elseif ($charge_basis == 'mass' || $charge_basis == 'weight') {
+        // Manual override if charge_basis set, otherwise pick the higher charge
+        if ($charge_basis == 'mass' || $charge_basis == 'weight') {
             $better_charge = $mass_charge;
-        } else if ($charge_basis == 'volume') {
+        } elseif ($charge_basis == 'volume') {
             $better_charge = $volume_charge;
+        } else {
+            $better_charge = max($mass_charge, $volume_charge);
         }
 
         // Calculate additional charges

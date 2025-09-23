@@ -72,7 +72,7 @@ function plugin_add_menu()
         'Customers',
         'kit_view_waybills',
         '08600-customers',
-        'customer_dashboard'
+        ['KIT_Customers', 'customer_dashboard_page']
     );
 
     // Add Customer (hidden page)
@@ -85,6 +85,16 @@ function plugin_add_menu()
         'add_customer_page'
     );
 
+    // Edit Customer (hidden page)
+    add_submenu_page(
+        null, // No parent menu
+        'Edit Customer',
+        'Edit Customer',
+        'kit_view_waybills',
+        'edit-customer',
+        'edit_customer_page'
+    );
+
 
 
     // Routes & Destinations
@@ -95,6 +105,16 @@ function plugin_add_menu()
         'kit_view_waybills',
         'route-management',
         ['KIT_Routes', 'plugin_route_management_page']
+    );
+
+    // Countries
+    add_submenu_page(
+        '08600-waybills',
+        'Countries',
+        'Countries',
+        'kit_view_waybills',
+        '08600-countries',
+        'countries_management_page'
     );
 
     // Deliveries
@@ -250,6 +270,63 @@ add_action('admin_post_add_customer', 'handle_add_customer_form');
 // function warehouse_tracking_page() {
 //     include plugin_dir_path(__FILE__) . 'admin-pages/warehouse-tracking.php';
 // }
+
+/**
+ * Countries management page callback
+ */
+function countries_management_page() {
+    include plugin_dir_path(__FILE__) . 'admin-pages/countries.php';
+}
+
+/**
+ * AJAX handler for quick country status toggle
+ */
+function handle_toggle_country_status() {
+    // Verify nonce
+    if (!wp_verify_nonce($_POST['nonce'], 'toggle_country_status')) {
+        wp_send_json_error(['message' => 'Invalid nonce']);
+    }
+    
+    // Check permissions
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+    
+    global $wpdb;
+    $table = $wpdb->prefix . 'kit_operating_countries';
+    $id = intval($_POST['country_id']);
+    $new_status = intval($_POST['new_status']);
+    
+    $result = $wpdb->update($table, ['is_active' => $new_status], ['id' => $id]);
+    
+    if ($result !== false) {
+        wp_send_json_success(['message' => 'Status updated successfully']);
+    } else {
+        wp_send_json_error(['message' => 'Failed to update status']);
+    }
+}
+
+// Register AJAX handlers
+add_action('wp_ajax_toggle_country_status', 'handle_toggle_country_status');
+
+/**
+ * Edit customer page callback
+ */
+function edit_customer_page() {
+    // Include customer functions
+    require_once plugin_dir_path(__FILE__) . 'customers/customers-functions.php';
+    
+    // Get customer ID from URL
+    $customer_id = isset($_GET['edit_customer']) ? intval($_GET['edit_customer']) : 0;
+    
+    if (!$customer_id) {
+        echo '<div class="wrap"><div class="notice notice-error"><p>Invalid customer ID.</p></div></div>';
+        return;
+    }
+    
+    // Call the edit customer form function
+    edit_customer_form($customer_id);
+}
 
 
 

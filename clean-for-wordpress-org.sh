@@ -6,8 +6,7 @@ echo "🧹 Cleaning plugin for WordPress.org submission..."
 echo "Removing node_modules..."
 rm -rf node_modules/
 
-echo "Removing vendor directory..."
-rm -rf vendor/
+echo "Keeping vendor runtime files (do not delete). Use package-plugin.sh to exclude docs/tests when zipping."
 
 echo "Removing dist directory..."
 rm -rf dist/

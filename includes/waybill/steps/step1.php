@@ -1,5 +1,5 @@
 <?php if (!defined('ABSPATH')) { exit; } ?>
-<div class="px-3 pt-4 bg-transparent md:bg-transparent space-y-4 md:space-y-0 md:grid md:grid-cols-2 md:gap-6">
+<div class="space-y-4 md:space-y-0 md:grid md:grid-cols-2 md:gap-6">
     <div class="space-y-4 bg-white shadow rounded-lg p-3 md:p-6">
         <div class="md:bg-white rounded-lg">
             <div class="">

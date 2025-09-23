@@ -162,9 +162,18 @@ document.addEventListener('DOMContentLoaded', function () {
     
     // ✅ BULLETPROOF: Auto-trigger rate fetch on page load if mass is present but rate is missing
     jQuery(document).ready(function() {
+        // Helper function to properly parse numbers with comma decimal separators
+        function parseNumber(value) {
+            if (!value || value === '') return 0;
+            // Convert comma to dot for decimal separator
+            var normalized = value.toString().replace(',', '.');
+            var parsed = parseFloat(normalized);
+            return Number.isFinite(parsed) ? parsed : 0;
+        }
+        
         setTimeout(function() {
-            var massValue = parseFloat(jQuery('#total_mass_kg').val()) || 0;
-            var rateValue = parseFloat(jQuery('#mass_rate').val()) || 0;
+            var massValue = parseNumber(jQuery('#total_mass_kg').val());
+            var rateValue = parseNumber(jQuery('#mass_rate').val());
             var directionId = jQuery('#direction_id').val();
             var originCountryId = jQuery('#countrydestination_id').val();
             
@@ -620,7 +629,8 @@ document.addEventListener('DOMContentLoaded', function() {
             formData.append('cell', safeVal('cell'));
             formData.append('email_address', safeVal('email_address'));
             formData.append('address', safeVal('address'));
-            formData.append('company_name', safeVal('company_name'));
+            var cn = (safeVal('company_name') || '').trim();
+            formData.append('company_name', cn !== '' ? cn : 'Individual');
             formData.append('country_id', safeVal('country_id'));
             formData.append('city_id', safeVal('city_id'));
             formData.append('vat_number', safeVal('vat_number'));

@@ -200,10 +200,10 @@ class Database
         include_sadc TINYINT(1) DEFAULT 0,
         return_load TINYINT(1) DEFAULT 0,
         tracking_number VARCHAR(50),
-        created_by INT UNSIGNED NOT NULL,
-        last_updated_by INT UNSIGNED NOT NULL,
+        created_by BIGINT UNSIGNED NOT NULL,
+        last_updated_by BIGINT UNSIGNED NOT NULL,
         status ENUM('warehoused', 'pending', 'quoted', 'paid', 'completed', 'invoiced', 'rejected') DEFAULT 'pending',
-        status_userid INT UNSIGNED DEFAULT 0,
+        status_userid BIGINT UNSIGNED DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         last_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (id),
@@ -288,9 +288,9 @@ class Database
             total DECIMAL(10,2) DEFAULT 0,
             quotation_notes TEXT,
             status ENUM('draft','sent','accepted','rejected') DEFAULT 'draft',
-            created_by INT UNSIGNED NULL,
+            created_by BIGINT UNSIGNED NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            last_updated_by INT UNSIGNED NULL,
+            last_updated_by BIGINT UNSIGNED NULL,
             last_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             FOREIGN KEY (delivery_id) REFERENCES {$wpdb->prefix}kit_deliveries(id),
@@ -745,6 +745,11 @@ class Database
         $table_name = $wpdb->prefix . 'kit_warehouse_tracking';
         $charset_collate = $wpdb->get_charset_collate();
 
+        // Check if referenced tables exist before creating foreign keys
+        $waybills_exists = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}kit_waybills'");
+        $customers_exists = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}kit_customers'");
+
+        // Create table without foreign keys first
         $sql = "CREATE TABLE $table_name (
             id INT UNSIGNED NOT NULL AUTO_INCREMENT,
             waybill_no INT UNSIGNED NOT NULL,
@@ -755,19 +760,51 @@ class Database
             new_status VARCHAR(50),
             assigned_delivery_id INT UNSIGNED NULL,
             notes TEXT,
-            created_by INT UNSIGNED NOT NULL,
+            created_by BIGINT UNSIGNED NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
-            FOREIGN KEY (waybill_no) REFERENCES {$wpdb->prefix}kit_waybills(waybill_no) ON DELETE CASCADE,
-            FOREIGN KEY (waybill_id) REFERENCES {$wpdb->prefix}kit_waybills(id) ON DELETE CASCADE,
-            FOREIGN KEY (customer_id) REFERENCES {$wpdb->prefix}kit_customers(cust_id),
-            INDEX (waybill_no),
-            INDEX (action),
-            INDEX (created_at)
+            KEY idx_waybill_no (waybill_no),
+            KEY idx_action (action),
+            KEY idx_created_at (created_at)
         ) $charset_collate;";
 
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-        dbDelta($sql);
+        $result = dbDelta($sql);
+        
+        // Add foreign key constraints only if referenced tables exist and constraints don't already exist
+        if ($waybills_exists) {
+            $constraint_exists = $wpdb->get_var("
+                SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE 
+                WHERE TABLE_SCHEMA = '" . DB_NAME . "' 
+                AND TABLE_NAME = '$table_name' 
+                AND CONSTRAINT_NAME = 'fk_tracking_waybill_no'
+            ");
+            if (!$constraint_exists) {
+                $wpdb->query("ALTER TABLE $table_name ADD CONSTRAINT fk_tracking_waybill_no FOREIGN KEY (waybill_no) REFERENCES {$wpdb->prefix}kit_waybills(waybill_no) ON DELETE CASCADE");
+            }
+            
+            $constraint_exists = $wpdb->get_var("
+                SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE 
+                WHERE TABLE_SCHEMA = '" . DB_NAME . "' 
+                AND TABLE_NAME = '$table_name' 
+                AND CONSTRAINT_NAME = 'fk_tracking_waybill_id'
+            ");
+            if (!$constraint_exists) {
+                $wpdb->query("ALTER TABLE $table_name ADD CONSTRAINT fk_tracking_waybill_id FOREIGN KEY (waybill_id) REFERENCES {$wpdb->prefix}kit_waybills(id) ON DELETE CASCADE");
+            }
+        }
+        
+        if ($customers_exists) {
+            $constraint_exists = $wpdb->get_var("
+                SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE 
+                WHERE TABLE_SCHEMA = '" . DB_NAME . "' 
+                AND TABLE_NAME = '$table_name' 
+                AND CONSTRAINT_NAME = 'fk_tracking_customer_id'
+            ");
+            if (!$constraint_exists) {
+                $wpdb->query("ALTER TABLE $table_name ADD CONSTRAINT fk_tracking_customer_id FOREIGN KEY (customer_id) REFERENCES {$wpdb->prefix}kit_customers(cust_id)");
+            }
+        }
     }
 
     public static function create_warehouse_items_table()
@@ -776,6 +813,13 @@ class Database
         $table_name = $wpdb->prefix . 'kit_warehouse_items';
         $charset_collate = $wpdb->get_charset_collate();
 
+        // Check if referenced tables exist before creating foreign keys
+        $waybills_exists = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}kit_waybills'");
+        $customers_exists = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}kit_customers'");
+        $deliveries_exists = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}kit_deliveries'");
+        $users_exists = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->users}'");
+
+        // Create table without foreign keys first
         $sql = "CREATE TABLE $table_name (
             id INT UNSIGNED NOT NULL AUTO_INCREMENT,
             waybill_id INT UNSIGNED NOT NULL,
@@ -788,7 +832,7 @@ class Database
             volume_cm3 DECIMAL(10,2) DEFAULT 0.00,
             status ENUM('in_warehouse', 'assigned', 'shipped', 'delivered') DEFAULT 'in_warehouse',
             assigned_delivery_id INT UNSIGNED NULL,
-            assigned_by INT UNSIGNED NULL,
+            assigned_by BIGINT UNSIGNED NULL,
             assigned_at DATETIME NULL,
             shipped_at DATETIME NULL,
             delivered_at DATETIME NULL,
@@ -796,25 +840,70 @@ class Database
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
-            FOREIGN KEY (waybill_id) REFERENCES {$wpdb->prefix}kit_waybills(id) ON DELETE CASCADE,
-            FOREIGN KEY (customer_id) REFERENCES {$wpdb->prefix}kit_customers(cust_id) ON DELETE CASCADE,
-            FOREIGN KEY (assigned_delivery_id) REFERENCES {$wpdb->prefix}kit_deliveries(id) ON DELETE SET NULL,
-            FOREIGN KEY (assigned_by) REFERENCES {$wpdb->users}(ID) ON DELETE SET NULL,
-            INDEX (status),
-            INDEX (waybill_id),
-            INDEX (customer_id),
-            INDEX (assigned_delivery_id)
+            KEY idx_status (status),
+            KEY idx_waybill_id (waybill_id),
+            KEY idx_customer_id (customer_id),
+            KEY idx_assigned_delivery_id (assigned_delivery_id)
         ) $charset_collate;";
         
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-        dbDelta($sql);
+        $result = dbDelta($sql);
+        
+        // Add foreign key constraints only if referenced tables exist and constraints don't already exist
+        if ($waybills_exists) {
+            $constraint_exists = $wpdb->get_var("
+                SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE 
+                WHERE TABLE_SCHEMA = '" . DB_NAME . "' 
+                AND TABLE_NAME = '$table_name' 
+                AND CONSTRAINT_NAME = 'fk_warehouse_waybill_id'
+            ");
+            if (!$constraint_exists) {
+                $wpdb->query("ALTER TABLE $table_name ADD CONSTRAINT fk_warehouse_waybill_id FOREIGN KEY (waybill_id) REFERENCES {$wpdb->prefix}kit_waybills(id) ON DELETE CASCADE");
+            }
+        }
+        
+        if ($customers_exists) {
+            $constraint_exists = $wpdb->get_var("
+                SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE 
+                WHERE TABLE_SCHEMA = '" . DB_NAME . "' 
+                AND TABLE_NAME = '$table_name' 
+                AND CONSTRAINT_NAME = 'fk_warehouse_customer_id'
+            ");
+            if (!$constraint_exists) {
+                $wpdb->query("ALTER TABLE $table_name ADD CONSTRAINT fk_warehouse_customer_id FOREIGN KEY (customer_id) REFERENCES {$wpdb->prefix}kit_customers(cust_id) ON DELETE CASCADE");
+            }
+        }
+        
+        if ($deliveries_exists) {
+            $constraint_exists = $wpdb->get_var("
+                SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE 
+                WHERE TABLE_SCHEMA = '" . DB_NAME . "' 
+                AND TABLE_NAME = '$table_name' 
+                AND CONSTRAINT_NAME = 'fk_warehouse_delivery_id'
+            ");
+            if (!$constraint_exists) {
+                $wpdb->query("ALTER TABLE $table_name ADD CONSTRAINT fk_warehouse_delivery_id FOREIGN KEY (assigned_delivery_id) REFERENCES {$wpdb->prefix}kit_deliveries(id) ON DELETE SET NULL");
+            }
+        }
+        
+        // Note: Foreign key constraint to wp_users table is not created because
+        // the wp_users table uses MyISAM storage engine which doesn't support foreign keys
+        // The assigned_by field will still work for data integrity, just without FK constraint
     }
 
     public static function delete_table($name)
     {
         global $wpdb;
         $table_name = $wpdb->prefix . $name;
-        $wpdb->query("DROP TABLE IF EXISTS $table_name");
+        
+        try {
+            $result = $wpdb->query("DROP TABLE IF EXISTS $table_name");
+            if ($result === false) {
+                error_log("Failed to drop table: $table_name - " . $wpdb->last_error);
+            }
+        } catch (Exception $e) {
+            error_log("Error dropping table $table_name: " . $e->getMessage());
+        }
     }
     public static function activate()
     {
@@ -843,44 +932,54 @@ class Database
     public static function deactivate()
     {
         global $wpdb;
-        // Temporarily disable FK checks to prevent constraint errors during teardown
-        $wpdb->query('SET FOREIGN_KEY_CHECKS=0');
+        
+        try {
+            // Temporarily disable FK checks to prevent constraint errors during teardown
+            $wpdb->query('SET FOREIGN_KEY_CHECKS=0');
 
-        // 1) Drop deepest child tables first (those that reference parents)
-        // Warehouse tracking references waybills → drop first
-        self::delete_table('kit_warehouse_tracking');
-        // Waybill items reference waybills
-        self::delete_table('kit_waybill_items');
-        // Other children that may reference waybills
-        self::delete_table('kit_quotations');
-        self::delete_table('kit_invoices');
+            // 1) Drop deepest child tables first (those that reference parents)
+            // Warehouse tracking references waybills → drop first
+            self::delete_table('kit_warehouse_tracking');
+            // Waybill items reference waybills
+            self::delete_table('kit_waybill_items');
+            // Other children that may reference waybills
+            self::delete_table('kit_quotations');
+            self::delete_table('kit_invoices');
 
-        // 2) Now drop waybills (referenced by tracking/items/quotations/invoices)
-        self::delete_table('kit_waybills');
+            // 2) Now drop waybills (referenced by tracking/items/quotations/invoices)
+            self::delete_table('kit_waybills');
 
-        // 3) Drop deliveries (referenced by waybills)
-        self::delete_table('kit_deliveries');
+            // 3) Drop deliveries (referenced by waybills)
+            self::delete_table('kit_deliveries');
 
-        // 4) Drop rate tables (depend on directions & rate types)
-        self::delete_table('kit_shipping_rates_mass');
-        self::delete_table('kit_shipping_rates_volume');
-        self::delete_table('kit_shipping_dedicated_truck_rates');
+            // 4) Drop rate tables (depend on directions & rate types)
+            self::delete_table('kit_shipping_rates_mass');
+            self::delete_table('kit_shipping_rates_volume');
+            self::delete_table('kit_shipping_dedicated_truck_rates');
 
-        // 5) Drop direction and rate type tables (parents of above)
-        self::delete_table('kit_shipping_rate_types');
-        self::delete_table('kit_shipping_directions');
+            // 5) Drop direction and rate type tables (parents of above)
+            self::delete_table('kit_shipping_rate_types');
+            self::delete_table('kit_shipping_directions');
 
-        // 6) Drop cities (depend on countries)
-        self::delete_table('kit_operating_cities');
+            // 6) Drop cities (depend on countries)
+            self::delete_table('kit_operating_cities');
 
-        // 7) Drop countries
-        self::delete_table('kit_operating_countries');
+            // 7) Drop countries
+            self::delete_table('kit_operating_countries');
 
-        // 8) Drop remaining base tables
-        self::delete_table('kit_customers');
-        self::delete_table('kit_discounts');
+            // 8) Drop remaining base tables
+            self::delete_table('kit_customers');
+            self::delete_table('kit_discounts');
 
-        // Re-enable FK checks
-        $wpdb->query('SET FOREIGN_KEY_CHECKS=1');
+            // Re-enable FK checks
+            $wpdb->query('SET FOREIGN_KEY_CHECKS=1');
+            
+        } catch (Exception $e) {
+            // Log the error but don't crash the deactivation
+            error_log('Plugin deactivation error: ' . $e->getMessage());
+            
+            // Ensure FK checks are re-enabled even if there was an error
+            $wpdb->query('SET FOREIGN_KEY_CHECKS=1');
+        }
     }
 }

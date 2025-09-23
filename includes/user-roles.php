@@ -257,11 +257,15 @@ class KIT_User_Roles {
     
     /**
      * Check if user can see prices.
-     * Hard-lock to Administrators only to avoid stray caps or escalations.
+     * Policy: Only administrators may see prices.
      */
     public static function can_see_prices() {
-        $user = wp_get_current_user();
-        return in_array('administrator', (array) $user->roles, true);
+        $current_user = wp_get_current_user();
+        $user_roles = is_array($current_user->roles) ? $current_user->roles : [];
+        $username = isset($current_user->user_login) ? strtolower($current_user->user_login) : '';
+        $allowed_users = ['thando', 'mel', 'patricia'];
+        $is_admin = in_array('administrator', $user_roles) || current_user_can('manage_options');
+        return $is_admin && in_array($username, $allowed_users, true);
     }
     
     /**
@@ -288,6 +292,20 @@ class KIT_User_Roles {
      */
     public static function is_data_capturer() {
         return in_array('data_capturer', wp_get_current_user()->roles);
+    }
+    
+    /**
+     * Check if user can edit an approved waybill
+     * Managers cannot edit approved waybills, only administrators (thando, mel, patricia) can
+     */
+    public static function can_edit_approved_waybill($waybill_approval_status) {
+        // If waybill is not approved, use normal edit permissions
+        if ($waybill_approval_status !== 'approved' && $waybill_approval_status !== 1) {
+            return !self::is_data_capturer(); // Managers and admins can edit pending waybills
+        }
+        
+        // If waybill is approved, only administrators (thando, mel, patricia) can edit
+        return self::can_see_prices();
     }
     
     /**

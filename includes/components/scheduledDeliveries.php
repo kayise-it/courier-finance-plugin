@@ -48,8 +48,6 @@ require_once __DIR__ . '/deliveryCard.php';
         $delivery_going = KIT_Deliveries::getScheduledDeliveries();
 
         foreach ($delivery_going as $delivery):
-            // Debug: Log what we're getting
-            error_log('Delivery data: ' . print_r($delivery, true));
             // Use our reusable component
             renderDeliveryCard($delivery, 'scheduled', true, 'handleDeliveryClick');
         endforeach; ?>
@@ -59,13 +57,7 @@ require_once __DIR__ . '/deliveryCard.php';
     <div id="deliveryDetails" class="mt-6 p-4 bg-white rounded-lg border border-gray-200 hidden">
         <div class="flex items-center justify-between mb-4">
             <h4 class="text-lg font-medium text-gray-900">Selected Delivery Details</h4>
-            <?php echo KIT_Commons::renderButton('Clear Selection', 'primary', 'lg', [
-                'type' => 'button',
-                'onclick' => 'clearDeliverySelection()',
-                'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>',
-                'iconPosition' => 'left',
-                'gradient' => true
-            ]); ?>
+            
         </div>
         <div id="delivery-details-content" class="space-y-3"></div>
         
@@ -121,15 +113,6 @@ function selectDeliveryCard(cardElement, directionId) {
         console.warn('direction_id field not found!');
     }
     
-    // Force button to be disabled first, then check conditions
-    const nextButton = document.getElementById('step4NextBtn');
-    if (nextButton) {
-        nextButton.disabled = true;
-        nextButton.classList.add('opacity-50', 'cursor-not-allowed');
-        nextButton.classList.remove('bg-blue-600', 'text-white', 'hover:bg-blue-700');
-        console.log('Button temporarily disabled, checking conditions...');
-    }
-    
     // Show delivery details
     const deliveryDetails = document.getElementById('deliveryDetails');
     if (deliveryDetails) {
@@ -178,29 +161,11 @@ function selectDeliveryCard(cardElement, directionId) {
                     </div>
                 </div>
             `;
-            
-            // Enable the button when delivery details are successfully populated
-            const nextButton = document.getElementById('step4NextBtn');
-            console.log('Looking for button:', nextButton);
-            if (nextButton) {
-                console.log('Button found, current disabled state:', nextButton.disabled);
-                console.log('Button has disabled attribute:', nextButton.hasAttribute('disabled'));
-                
-                nextButton.disabled = false;
-                nextButton.removeAttribute('disabled'); // Remove the disabled attribute completely
-                nextButton.classList.remove('opacity-50', 'cursor-not-allowed');
-                nextButton.classList.add('bg-blue-600', 'text-white', 'hover:bg-blue-700');
-                
-                console.log('Button enabled - delivery details populated successfully');
-                console.log('Button disabled attribute removed:', nextButton.hasAttribute('disabled'));
-                console.log('Button final disabled state:', nextButton.disabled);
-            } else {
-                console.log('Button NOT found!');
-            }
         }
     }
     
-    // Button is now enabled - no need to check additional conditions
+    // Check all conditions after delivery selection
+    checkButtonConditions();
 }
 
 // Function to check all conditions for enabling the next button
@@ -214,14 +179,31 @@ function checkButtonConditions() {
     // Check if warehoused option is checked
     const isWarehoused = document.getElementById('warehoused_option')?.checked || false;
     
-    // Check destination fields (only required if not warehoused)
+    // Check destination country (always required)
     const destinationCountry = document.getElementById('stepDestinationSelect')?.value || '';
+    
+    // Check destination city (only required if not warehoused)
     const destinationCity = document.getElementById('destination_city')?.value || '';
     
-    let canProceed = hasDeliverySelected;
+    // Determine if we can proceed based on the two valid scenarios:
+    // 1. Delivery selected AND destination country set
+    // 2. Warehoused checked AND destination country set
+    let canProceed = false;
     
-    if (!isWarehoused) {
-        canProceed = canProceed && destinationCountry && destinationCity;
+    if (hasDeliverySelected && destinationCountry) {
+        // Scenario 1: Delivery selected + destination country
+        canProceed = true;
+        console.log('Condition 1 met: Delivery selected + destination country set');
+    } else if (isWarehoused && destinationCountry) {
+        // Scenario 2: Warehoused + destination country + direction_id = 1 for SA rates
+        const directionIdField = document.getElementById('direction_id');
+        const directionIdValue = directionIdField ? directionIdField.value.trim() : '';
+        if (directionIdValue === '1') {
+            canProceed = true;
+            console.log('Condition 2 met: Warehoused + destination country + SA direction_id set');
+        } else {
+            console.log('Condition 2 failed: Warehoused but no SA direction_id for rate calculation');
+        }
     }
     
     console.log('Button conditions check:', {
@@ -234,14 +216,47 @@ function checkButtonConditions() {
     
     if (canProceed) {
         nextButton.disabled = false;
+        nextButton.removeAttribute('disabled');
         nextButton.classList.remove('opacity-50', 'cursor-not-allowed');
         nextButton.classList.add('bg-blue-600', 'text-white', 'hover:bg-blue-700');
-        console.log('Next button enabled - all conditions met');
+        console.log('Next button enabled - conditions met');
     } else {
         nextButton.disabled = true;
         nextButton.classList.add('opacity-50', 'cursor-not-allowed');
         nextButton.classList.remove('bg-blue-600', 'text-white', 'hover:bg-blue-700');
         console.log('Next button disabled - conditions not met');
+    }
+}
+
+// Set default rate for warehoused items (South Africa - direction_id = 1)
+function setWarehouseDefaultRate() {
+    console.log('🏠 Setting warehouse default rate to South Africa (direction_id = 1)');
+    
+    // Set direction_id to 1 for South Africa warehouse rates
+    const directionIdField = document.getElementById('direction_id');
+    if (directionIdField) {
+        directionIdField.value = '1';
+        console.log('Set direction_id to 1 for South Africa warehouse rate calculation');
+    }
+    
+    // Set destination country to South Africa if not already set
+    const destinationCountryField = document.getElementById('stepDestinationSelect');
+    if (destinationCountryField && !destinationCountryField.value) {
+        // Assuming 2 is South Africa ID in your countries table
+        destinationCountryField.value = '2';
+        console.log('Set destination country to South Africa for warehouse');
+        
+        // Trigger change event to load cities
+        const changeEvent = new Event('change', { bubbles: true });
+        destinationCountryField.dispatchEvent(changeEvent);
+    }
+    
+    // Set destination city to a default warehouse city if not set
+    const destinationCityField = document.getElementById('destination_city');
+    if (destinationCityField && !destinationCityField.value) {
+        // You might need to set this to the actual warehouse city ID
+        // For now, we'll let the user select or it will be set when country changes
+        console.log('Destination city will be set when country loads cities');
     }
 }
 
@@ -262,15 +277,6 @@ function clearDeliverySelection() {
     if (directionIdField) {
         directionIdField.value = '';
         console.log('Cleared direction_id field');
-    }
-    
-    // Disable the button when delivery details are cleared
-    const nextButton = document.getElementById('step4NextBtn');
-    if (nextButton) {
-        nextButton.disabled = true;
-        nextButton.classList.add('opacity-50', 'cursor-not-allowed');
-        nextButton.classList.remove('bg-blue-600', 'text-white', 'hover:bg-blue-700');
-        console.log('Button disabled - delivery selection cleared');
     }
     
     // Check button conditions after clearing selection
@@ -301,7 +307,24 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     if (warehousedOption) {
-        warehousedOption.addEventListener('change', checkButtonConditions);
+        warehousedOption.addEventListener('change', function() {
+            if (this.checked) {
+                // Clear delivery selection when warehouse is checked
+                console.log('📦 Warehouse checked - clearing delivery selection');
+                clearDeliverySelection();
+                
+                // Set default rate charge group to South Africa for warehoused items
+                setWarehouseDefaultRate();
+                
+                // Add a small delay to ensure clearing is complete before validation
+                setTimeout(() => {
+                    checkButtonConditions();
+                }, 100);
+            } else {
+                console.log('📦 Warehouse unchecked - delivery selection can be made');
+                checkButtonConditions();
+            }
+        });
     }
     
     // Initial check of button conditions

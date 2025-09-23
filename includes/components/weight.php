@@ -1,7 +1,7 @@
 <?php if (!defined('ABSPATH')) { exit; } ?>
 <?php
 // Include user roles for permission checking
-require_once plugin_dir_path(__FILE__) . '../user-roles.php';
+require_once COURIER_FINANCE_PLUGIN_PATH . 'includes/user-roles.php';
 ?>
 <input type="hidden" name="origin_country_id" value="2" id="countrydestination_id" />
 <input type="hidden" name="direction_id" id="direction_id" value="<?= esc_attr($direction_id ?? (isset($waybill) && isset($waybill['direction_id']) ? $waybill['direction_id'] : '') ?? '') ?>" />
@@ -147,27 +147,55 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
 
                         // Access the original base rate (kept in a hidden field and updated by AJAX)
                         const baseRateField = document.getElementById('base_rate');
+                        // Helper function to properly parse numbers with comma decimal separators
+                        function parseNumber(value) {
+                            if (!value || value === '') return 0;
+                            // Convert comma to dot for decimal separator
+                            const normalized = value.toString().replace(',', '.');
+                            const parsed = parseFloat(normalized);
+                            return Number.isFinite(parsed) ? parsed : 0;
+                        }
+
                         function getBaseRate() {
-                            return parseFloat(((baseRateField && baseRateField.value) || '0').toString().replace(',', '.')) || 0;
+                            return parseNumber(baseRateField && baseRateField.value);
                         }
 
                         // Always use the latest visible rate if present; fallback to the snapshot
                         function getEffectiveRate() {
-                            const liveRate = parseFloat(((massRateInput && massRateInput.value) || '').toString().replace(',', '.'));
-                            return (Number.isFinite(liveRate) && liveRate > 0) ? liveRate : getBaseRate();
+                            const liveRate = parseNumber(massRateInput && massRateInput.value);
+                            const baseRate = getBaseRate();
+                            
+                            // Debug logging (remove in production)
+                            if (window.console && console.log) {
+                                console.log('Rate calculation:', {
+                                    liveRate: liveRate,
+                                    baseRate: baseRate,
+                                    effectiveRate: (liveRate > 0) ? liveRate : baseRate
+                                });
+                            }
+                            
+                            return (liveRate > 0) ? liveRate : baseRate;
                         }
 
                         // Anchor the BASE RATE when manipulator is enabled so edits don't compound
                         let rateAnchor = null;
 
                         // ✅ BULLETPROOF: Function to calculate mass charge with comprehensive validation
-                        function calculateMassCharge() {
+                        function calculateMassCharge(showRateError = false) {
+                            // Clear any existing calculation errors first
+                            const errorDiv = document.getElementById('calculation-error');
+                            if (errorDiv) {
+                                errorDiv.remove();
+                            }
+                            // Clear any existing errors first
+                            clearCalculationErrors();
+                            
                             // ✅ BULLETPROOF: Comprehensive input validation and sanitization
                             const rawMass = totalMassInput ? totalMassInput.value : '';
-                            const totalMass = parseFloat(rawMass) || 0;
+                            const totalMass = parseNumber(rawMass);
                             
                             // ✅ BULLETPROOF: Input validation with detailed error handling
-                            if (rawMass !== '' && (isNaN(totalMass) || totalMass < 0)) {
+                            if (rawMass !== '' && totalMass < 0) {
                                 console.warn('Invalid mass value detected:', rawMass);
                                 showCalculationError('Invalid mass value. Please enter a positive number.');
                                 if (massChargeInput) massChargeInput.value = '0.00';
@@ -187,10 +215,20 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
                             
                             // ✅ BULLETPROOF: Safe manipulator value extraction
                             const rawManipulator = manipulatorInput ? manipulatorInput.value : '';
-                            const addAmount = (checkbox && checkbox.checked) ? (parseFloat(rawManipulator) || 0) : 0;
+                            const addAmount = (checkbox && checkbox.checked) ? parseNumber(rawManipulator) : 0;
+                            
+                            // Debug logging (remove in production)
+                            if (window.console && console.log) {
+                                console.log('Manipulator calculation:', {
+                                    checkboxChecked: checkbox && checkbox.checked,
+                                    rawManipulator: rawManipulator,
+                                    addAmount: addAmount,
+                                    manipulatorInputExists: !!manipulatorInput
+                                });
+                            }
                             
                             // ✅ BULLETPROOF: Validate manipulator value
-                            if (checkbox && checkbox.checked && rawManipulator !== '' && (isNaN(addAmount) || addAmount < 0)) {
+                            if (checkbox && checkbox.checked && rawManipulator !== '' && addAmount < 0) {
                                 showCalculationError('Invalid manipulator value. Please enter a positive number.');
                                 return;
                             }
@@ -199,17 +237,44 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
                             try {
                             const effectiveRate = getEffectiveRate();
                                 
-                                // ✅ BULLETPROOF: Validate effective rate
+                                // ✅ BULLETPROOF: Validate effective rate - only show error if explicitly requested
                                 if (!Number.isFinite(effectiveRate) || effectiveRate <= 0) {
-                                    showCalculationError('Invalid rate. Please ensure a valid rate is set.');
+                                    // Only show error if we have a mass value but no valid rate AND showRateError is true
+                                    if (totalMass > 0 && showRateError) {
+                                        showCalculationError('Invalid rate. Please ensure a valid rate is set.');
+                                    }
                                     return;
                                 }
                                 
-                            const baseRateForManip = (checkbox && checkbox.checked)
-                                ? (Number.isFinite(rateAnchor) && rateAnchor !== null ? rateAnchor : effectiveRate)
+                            let baseRateForManip = (checkbox && checkbox.checked)
+                                ? (Number.isFinite(rateAnchor) && rateAnchor !== null && rateAnchor > 0 ? rateAnchor : effectiveRate)
                                 : effectiveRate;
+                                
+                            // Ensure we have a valid base rate for manipulation
+                            if (checkbox && checkbox.checked && baseRateForManip <= 0) {
+                                // Try to get rate from the visible input as fallback
+                                const visibleRate = parseNumber(massRateInput && massRateInput.value);
+                                if (visibleRate > 0) {
+                                    // Use the visible rate as the base rate
+                                    rateAnchor = visibleRate;
+                                    baseRateForManip = visibleRate;
+                                } else {
+                                    showCalculationError('Please set a valid mass rate before using custom pricing.');
+                                    return;
+                                }
+                            }
                                     
                             const newRate = baseRateForManip + (checkbox && checkbox.checked ? addAmount : 0);
+                            
+                            // Debug logging (remove in production)
+                            if (window.console && console.log) {
+                                console.log('Final calculation:', {
+                                    baseRateForManip: baseRateForManip,
+                                    addAmount: addAmount,
+                                    newRate: newRate,
+                                    checkboxChecked: checkbox && checkbox.checked
+                                });
+                            }
                                 
                                 // ✅ BULLETPROOF: Validate new rate
                                 if (!Number.isFinite(newRate) || newRate <= 0) {
@@ -294,7 +359,26 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
                                 }
                                 
                                 // Anchor base rate at toggle time so manipulator adds to this constant
-                                rateAnchor = this.checked ? getEffectiveRate() : null;
+                                const currentRate = getEffectiveRate();
+                                if (this.checked) {
+                                    // When enabling custom pricing, ensure we have a valid rate to work with
+                                    if (currentRate > 0) {
+                                        rateAnchor = currentRate;
+                                    } else {
+                                        // Try to get rate from visible input
+                                        const visibleRate = parseNumber(massRateInput && massRateInput.value);
+                                        if (visibleRate > 0) {
+                                            rateAnchor = visibleRate;
+                                        } else {
+                                            // Show error if no valid rate is available
+                                            showCalculationError('Please set a valid mass rate before using custom pricing.');
+                                            this.checked = false; // Uncheck the box
+                                            return;
+                                        }
+                                    }
+                                } else {
+                                    rateAnchor = null;
+                                }
                                 // On uncheck, restore the visible rate to the base rate from server
                                 if (!this.checked && massRateInput) {
                                     const br = getBaseRate();
@@ -303,15 +387,15 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
                                     }
                                 }
                                 // If turning on and rate is zero but mass is present, try to fetch the rate
-                                const massVal = parseFloat(totalMassInput && totalMassInput.value) || 0;
-                                const rateVal = parseFloat(massRateInput && massRateInput.value) || 0;
+                                const massVal = parseNumber(totalMassInput && totalMassInput.value);
+                                const rateVal = parseNumber(massRateInput && massRateInput.value);
                                 if (this.checked && massVal > 0 && rateVal <= 0 && typeof fetchRatePerKg === 'function') {
                                     try { fetchRatePerKg(); } catch(e) {
                                         console.error('Rate fetch failed:', e);
                                         showRateError('Unable to fetch rate. Please check your connection.');
                                     }
                                 }
-                                calculateMassCharge();
+                                calculateMassCharge(false); // Don't show rate error on checkbox toggle
                             });
 
                             // If editing and value exists, show input and check the box
@@ -334,12 +418,43 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
                             <?php endif; ?>
                         }
 
-                        // Add event listeners for real-time calculation (without re-anchoring)
-                        if (totalMassInput) totalMassInput.addEventListener('input', function(){ calculateMassCharge(); });
-                        if (manipulatorInput) manipulatorInput.addEventListener('input', calculateMassCharge);
+                        // Add debounced calculation for better UX
+                        let calculationTimeout;
+                        function debouncedCalculate() {
+                            clearTimeout(calculationTimeout);
+                            calculationTimeout = setTimeout(function() {
+                                calculateMassCharge(false); // Don't show rate error during typing
+                            }, 500); // 500ms delay
+                        }
+                        
+                        // Add event listeners for real-time calculation (with debouncing)
+                        if (totalMassInput) {
+                            totalMassInput.addEventListener('input', function() {
+                                // Clear any rate error when user starts typing
+                                const errorDiv = document.getElementById('calculation-error');
+                                if (errorDiv && errorDiv.textContent.includes('Invalid rate')) {
+                                    errorDiv.remove();
+                                }
+                                debouncedCalculate();
+                            });
+                            totalMassInput.addEventListener('blur', function() {
+                                calculateMassCharge(true); // Show rate error on blur
+                            });
+                        }
+                        if (manipulatorInput) {
+                            manipulatorInput.addEventListener('input', debouncedCalculate);
+                            manipulatorInput.addEventListener('blur', function() {
+                                calculateMassCharge(false); // Don't show rate error for manipulator
+                            });
+                        }
                         if (massRateInput) {
-                            massRateInput.addEventListener('input', function(){ calculateMassCharge(); });
-                            massRateInput.addEventListener('change', function(){ calculateMassCharge(); });
+                            massRateInput.addEventListener('input', debouncedCalculate);
+                            massRateInput.addEventListener('blur', function() {
+                                calculateMassCharge(false); // Don't show rate error for rate input
+                            });
+                            massRateInput.addEventListener('change', function() {
+                                calculateMassCharge(false); // Don't show rate error on change
+                            });
                         }
 
                         // ✅ BULLETPROOF: Comprehensive error handling functions
@@ -375,12 +490,12 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
                             }
                             errorDiv.textContent = message;
                             
-                            // Auto-hide after 5 seconds
+                            // Auto-hide after 3 seconds (shorter duration for better UX)
                             setTimeout(() => {
                                 if (errorDiv && errorDiv.parentNode) {
                                     errorDiv.parentNode.removeChild(errorDiv);
                                 }
-                            }, 5000);
+                            }, 3000);
                         }
                         
                         function clearCalculationDisplay() {
@@ -403,11 +518,18 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
                             }
                         }
                         
+                        function clearCalculationErrors() {
+                            const errorDiv = document.getElementById('calculation-error');
+                            if (errorDiv && errorDiv.parentNode) {
+                                errorDiv.parentNode.removeChild(errorDiv);
+                            }
+                        }
+                        
                         // ✅ IMPROVED RATE FETCHING WITH DEBOUNCING
                         let rateFetchTimeout;
                         if (totalMassInput) {
                             totalMassInput.addEventListener('blur', function() {
-                                const mass = parseFloat(this.value) || 0;
+                                const mass = parseNumber(this.value);
                                 if (mass > 0) {
                                     clearTimeout(rateFetchTimeout);
                                     rateFetchTimeout = setTimeout(function() {
@@ -425,12 +547,12 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
                         }
 
                         // Initial calculation
-                        calculateMassCharge();
+                        calculateMassCharge(false); // Don't show rate error on page load
                         
                         // ✅ BULLETPROOF: Auto-trigger rate fetch on page load if mass is present
                         function autoTriggerRateFetch() {
-                            const initialMass = parseFloat(totalMassInput && totalMassInput.value) || 0;
-                            const initialRate = parseFloat(massRateInput && massRateInput.value) || 0;
+                            const initialMass = parseNumber(totalMassInput && totalMassInput.value);
+                            const initialRate = parseNumber(massRateInput && massRateInput.value);
                             const directionId = document.getElementById('direction_id') ? document.getElementById('direction_id').value : '';
                             const originCountryId = document.getElementById('countrydestination_id') ? document.getElementById('countrydestination_id').value : '';
                             
@@ -473,8 +595,8 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
                         
                         // ✅ BULLETPROOF: Fallback - try to find direction_id from form or simulate click
                         setTimeout(function() {
-                            const massValue = parseFloat(totalMassInput && totalMassInput.value) || 0;
-                            const rateValue = parseFloat(massRateInput && massRateInput.value) || 0;
+                            const massValue = parseNumber(totalMassInput && totalMassInput.value);
+                            const rateValue = parseNumber(massRateInput && massRateInput.value);
                             
                             if (massValue > 0 && rateValue <= 0) {
                                 // Try to find direction_id from form inputs

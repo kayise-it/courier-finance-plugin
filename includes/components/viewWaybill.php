@@ -86,13 +86,21 @@ $is_equal = $mass_charge === $volume_charge;
                     <span class="ml-2 text-xs text-gray-500">
                         Last Updated: <?= date('M j, Y', strtotime($waybill['last_updated_at'] ?? 'now')) ?>
                     </span>
+                    <div class="createdby">
+                    </div>
+
                 </div>
             </div>
             <?php
-            // Only show total to admin users
-            if (KIT_Commons::isAdmin()): ?>
+            // Only show total to specific admins who can see prices
+            if (class_exists('KIT_User_Roles') && KIT_User_Roles::can_see_prices()): ?>
                 <div class="text-right">
-                    <h1 class="display-3 font-bold">Total Waybill: <?= KIT_Commons::displayWaybillTotal($waybill['product_invoice_amount'] ?? 0) ?></h1>
+                <div class="border-2 border-gray-300 rounded-lg p-4 bg-gray-50">
+                            <div class="flex justify-between items-center">
+                                <span class="text-lg font-semibold text-gray-900">Grand Total</span>
+                                <span class="text-xl font-bold text-gray-900"><?= KIT_Commons::displayWaybillTotal($waybill['product_invoice_amount']) ?></span>
+                            </div>
+                        </div>
                 </div>
             <?php
             endif;
@@ -101,8 +109,11 @@ $is_equal = $mass_charge === $volume_charge;
 
         <div class="flex space-x-3">
             <?php
+            // Check both waybill approval status AND user permissions for PDF access
             $pdfVerifier = KIT_Waybills::pdfVerifier($waybill['waybill_no'] ?? '', $waybill_id = null);
-            if (isset($pdfVerifier['soWhat']) && $pdfVerifier['soWhat']) { ?>
+            $canAccessPDF = isset($pdfVerifier['soWhat']) && $pdfVerifier['soWhat'] && KIT_User_Roles::can_see_prices();
+
+            if ($canAccessPDF) { ?>
                 <div class="flex flex-col">
                     <span class="opacity-0 text-gray-600 font-bold">Invoice Status:</span>
                     <a href="<?php echo plugin_dir_url(__FILE__) . '../../pdf-generator.php?waybill_no=' . $waybill['waybill_no'] . '&pdf_nonce=' . wp_create_nonce("pdf_nonce"); ?>"
@@ -156,7 +167,7 @@ $is_equal = $mass_charge === $volume_charge;
                 }
             }
             ?>
-            
+
         </div>
         <!-- VAT Warning Display -->
         <?php if (isset($_GET['vat_warning']) && $_GET['vat_warning'] == '1'): ?>
@@ -188,99 +199,84 @@ $is_equal = $mass_charge === $volume_charge;
 
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
         <!-- Waybill Details -->
-        <div class="bg-gray-50 p-4 rounded-lg">
-            <h2 class="text-lg font-semibold text-gray-700 mb-3 border-b pb-2">Waybill Details</h2>
-            <div class="grid grid-cols-2">
+        <div class="space-y-6">
+            <!-- Document Information Section -->
+            <div class="border border-gray-200 rounded-lg p-4">
+                <h3 class="text-sm font-semibold text-gray-900 mb-4 border-b border-gray-100 pb-2">Document Information</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-700">Waybill Number</span>
+                        <span class="text-sm font-semibold text-gray-900">
+                            <?= htmlspecialchars($waybill['waybill_no'] ?? 'N/A') ?>
+                        </span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-700">Tracking Number</span>
+                        <span class="text-sm font-semibold text-gray-900">
+                            <?= htmlspecialchars($waybill['tracking_number'] ?? 'N/A') ?>
+                        </span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-700">Invoice Number</span>
+                        <span class="text-sm font-semibold text-gray-900">
+                            <?= htmlspecialchars($waybill['product_invoice_number'] ?? 'N/A') ?>
+                        </span>
+                    </div>
+                </div>
+            </div>
 
-                <div class="dddd">
-                    <?= KIT_Commons::LText([
-                        'label' => "Waybill Number:",
-                        'value' => htmlspecialchars($waybill['waybill_no']),
-                        'classlabel' => '',
-                        'classP' => '',
-                        'onclick' => '',
-                        'is_dynamic' => false,
-                    ]); ?>
+            <!-- Financial Information Section -->
+            <div class="border border-gray-200 rounded-lg p-4">
+                <h3 class="text-sm font-semibold text-gray-900 mb-4 border-b border-gray-100 pb-2">Financial Information</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-700">Waybill Amount</span>
+                        <span class="text-sm font-semibold text-gray-900">
+                            <?= KIT_Commons::displayWaybillTotal($waybill['product_invoice_amount'] ?? 0) ?>
+                        </span>
+                    </div>
                 </div>
-                <div class="dddd">
-                    <?= KIT_Commons::LText([
-                        'label' => "Tracking Number:",
-                        'value' => htmlspecialchars($waybill['tracking_number']),
-                        'classlabel' => '',
-                        'classP' => '',
-                        'onclick' => '',
-                        'is_dynamic' => false,
-                    ]); ?>
-                </div>
-                <div class="dddd">
-                    <?= KIT_Commons::LText([
-                        'label' => "Invoice Number:",
-                        'value' => htmlspecialchars($waybill['product_invoice_number']),
-                        'classlabel' => '',
-                        'classP' => '',
-                        'onclick' => '',
-                        'is_dynamic' => false,
-                    ]); ?>
-                </div>
-                <div class="dddd">
-                    <?= KIT_Commons::LText([
-                        'label' => "Waybill Amount:",
-                        'value' => KIT_Commons::displayWaybillTotal($waybill['product_invoice_amount']),
-                        'classlabel' => '',
-                        'classP' => '',
-                        'onclick' => '',
-                        'is_dynamic' => false,
-                    ]); ?>
-                </div>
-
             </div>
         </div>
 
         <!-- Customer Details -->
-        <div class="bg-gray-50 p-4 rounded-lg">
-            <h2 class="text-lg font-semibold text-gray-700 mb-3 border-b pb-2">Customer Details</h2>
-            <div class="grid grid-cols-2">
-
-                <div class="dddd">
-                    <?= KIT_Commons::LText([
-                        'label' => "Name:",
-                        'value' => htmlspecialchars($waybill['customer_name']),
-                        'classlabel' => '',
-                        'classP' => '',
-                        'onclick' => '',
-                        'is_dynamic' => false,
-                    ]); ?>
-                </div>
-                <div class="dddd">
-                    <?= KIT_Commons::LText([
-                        'label' => "Surname:",
-                        'value' => htmlspecialchars($waybill['customer_surname']),
-                        'classlabel' => '',
-                        'classP' => '',
-                        'onclick' => '',
-                        'is_dynamic' => false,
-                    ]); ?>
-                </div>
-                <div class="dddd">
-                    <?= KIT_Commons::LText([
-                        'label' => "Contact:",
-                        'value' => htmlspecialchars($waybill['cell']),
-                        'classlabel' => '',
-                        'classP' => '',
-                        'onclick' => '',
-                        'is_dynamic' => false,
-                    ]); ?>
+        <div class="space-y-6">
+            <!-- Personal Information Section -->
+            <div class="border border-gray-200 rounded-lg p-4">
+                <h3 class="text-sm font-semibold text-gray-900 mb-4 border-b border-gray-100 pb-2">Personal Information</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-700">Name</span>
+                        <span class="text-sm font-semibold text-gray-900">
+                            <?= htmlspecialchars($waybill['customer_name'] ?? 'N/A') ?>
+                        </span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-700">Surname</span>
+                        <span class="text-sm font-semibold text-gray-900">
+                            <?= htmlspecialchars($waybill['customer_surname'] ?? 'N/A') ?>
+                        </span>
+                    </div>
                 </div>
             </div>
-            <div class="dddd">
-                <?= KIT_Commons::LText([
-                    'label' => "Email:",
-                    'value' => htmlspecialchars($waybill['email_address']),
-                    'classlabel' => '',
-                    'classP' => '',
-                    'onclick' => '',
-                    'is_dynamic' => false,
-                ]); ?>
+
+            <!-- Contact Information Section -->
+            <div class="border border-gray-200 rounded-lg p-4">
+                <h3 class="text-sm font-semibold text-gray-900 mb-4 border-b border-gray-100 pb-2">Contact Information</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-700">Contact</span>
+                        <span class="text-sm font-semibold text-gray-900">
+                            <?= htmlspecialchars($waybill['cell'] ?? 'N/A') ?>
+                        </span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-700">Email</span>
+                        <span class="text-sm font-semibold text-gray-900">
+                            <?= htmlspecialchars($waybill['email_address'] ?? 'N/A') ?>
+                        </span>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -288,153 +284,174 @@ $is_equal = $mass_charge === $volume_charge;
 
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-6">
         <!-- Shipment Details -->
-        <div class="bg-gray-50 p-4 rounded-lg">
-            <h2 class="text-lg font-semibold text-gray-700 mb-3 border-b pb-2">Cost Details</h2>
+        <?php if (class_exists('KIT_User_Roles') && KIT_User_Roles::can_see_prices()): ?>
+            <div class="">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4 border-b border-gray-100 pb-2">Cost Details</h3>
 
-            <div class="space-y-3">
-                <?php
-                $mass_charge = floatval($waybill['mass_charge'] ?? 0);
-                $volume_charge = floatval($waybill['volume_charge'] ?? 0);
-                $total_mass_kg = floatval($waybill['total_mass_kg'] ?? 0);
-                $total_volume = floatval($waybill['miscellaneous']['others']['total_volume'] ?? 0);
-
-                // Calculate mass rate if we have mass data
-                $mass_rate = ($total_mass_kg > 0) ? $mass_charge / $total_mass_kg : 0;
-
-                // Determine preferred charge (the one actually being used)
-                $preferred_charge = ($mass_charge > $volume_charge) ? 'mass' : 'volume';
-
-                // Dynamically compare and label
-                if ($mass_charge > $volume_charge) {
-                    $mass_label = ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-green-500 text-green-100">Highest</span>';
-                    $volume_label = '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-500 text-red-100">Lowest</span>';
-                } elseif ($volume_charge > $mass_charge) {
-                    $mass_label = '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-500 text-red-100">Lowest</span>';
-                    $volume_label = ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-green-500 text-green-100">Highest</span>';
-                } else {
-                    $mass_label = $volume_label = '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800">Equal</span>';
-                }
-
-                // MASS output (dynamic)
-                echo '<div class="flex gap-4">';
-                echo KIT_Commons::LText([
-                    'label' => "Total Mass:",
-                    'value' => KIT_Commons::currency() . number_format($mass_rate, 2) . ' x ' .
-                        number_format($total_mass_kg, 2) . 'kg = ' .
-                        KIT_Commons::currency() . number_format($mass_charge, 2) . $mass_label,
-                    'classlabel' => '',
-                    'classP' => '',
-                    'onclick' => '',
-                    'allow_html' => true,
-                ]);
-                echo '</div>';
-                // VOLUME output (dynamic)
-                echo '<div class="flex gap-4">';
-                echo KIT_Commons::LText([
-                    'label' => "Total Volume:",
-                    'value' => number_format($total_volume, 2) . 'm³ = ' . KIT_Commons::currency() . number_format($volume_charge, 2) . $volume_label,
-                    'classlabel' => '',
-                    'classP' => '',
-                    'onclick' => '',
-                    'allow_html' => true,
-                ]);
-                echo '</div>';
-
-                // Charge Basis output (dynamic)
-                echo '<div class="flex gap-4">';
-                echo KIT_Commons::LText([
-                    'label' => "Charge Basis:",
-                    'value' => ucfirst($preferred_charge),
-                    'classlabel' => '',
-                    'classP' => '',
-                    'onclick' => '',
-                ]);
-                echo '</div>';
-
-                //Waybill Amount (the actual charge being used):
-                echo '<div class="flex gap-2">';
-                echo KIT_Commons::LText([
-                    'label' => "Waybill Amount:",
-                    'value' => ($preferred_charge == 'mass') ? KIT_Commons::currency() . number_format($mass_charge, 2) : KIT_Commons::currency() . number_format($volume_charge, 2),
-                    'classlabel' => '',
-                    'classP' => '',
-                    'onclick' => '',
-                ]);
-                echo '</div>';
-
-                //Waybill Total:
-                echo '<div class="flex gap-2">';
-                echo KIT_Commons::LText([
-                    'label' => "Waybill misc total:",
-                    'value' => KIT_Commons::currency() . number_format(($waybill['miscellaneous']['misc_total']) ?? 0, 2),
-                    'classlabel' => '',
-                    'classP' => '',
-                    'onclick' => '',
-                ]);
-                echo '</div>';
-
-                // Convert all values to float to ensure proper numeric comparison
-                $vat_total = isset($waybill['miscellaneous']['others']['vat_total']) ? floatval($waybill['miscellaneous']['others']['vat_total']) : 0.0;
-                $misc_total = isset($waybill['miscellaneous']['misc_total']) ? floatval($waybill['miscellaneous']['misc_total']) : 0.0;
-                $mass_charge = floatval($waybill['mass_charge']);
-                $volume_charge = floatval($waybill['volume_charge']);
-                $waybill_items_total = floatval($waybill['waybill_items_total']);
-                $product_invoice_amount = floatval($waybill['product_invoice_amount']);
-
-                $ttt = [
-                    'include_sadc' => $waybill['include_sadc'],
-                    'include_sad500' => $waybill['include_sad500'],
-                    'vat_include' => $waybill['vat_include']
-                ];
-                $calculated_total = KIT_Waybills::calculate_total($mass_charge, $volume_charge, $misc_total, $waybill_items_total, null, $ttt);
-                ?>
-                <div class="flex items-center">
+                <div class="space-y-3">
                     <?php
-                    $optionChoice = 3;
-                    require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/additionCharges.php'); ?>
-                </div>
-                <div class="flex gap-2" style="font-size: 1.2rem; font-weight: bold;">
-                    <label class="<?= KIT_Commons::labelClass() ?>">Grand Total:</label>
-                    <span class="font-bold"><?= KIT_Commons::displayWaybillTotal($waybill['product_invoice_amount']) ?></span>
-                    
+                    $mass_charge = floatval($waybill['mass_charge'] ?? 0);
+                    $volume_charge = floatval($waybill['volume_charge'] ?? 0);
+                    $total_mass_kg = floatval($waybill['total_mass_kg'] ?? 0);
+                    // Support both legacy and new storage locations for total_volume
+                    $total_volume = 0.0;
+                    if (isset($waybill['miscellaneous']['others']['total_volume'])) {
+                        $total_volume = floatval($waybill['miscellaneous']['others']['total_volume']);
+                    } elseif (isset($waybill['total_volume'])) {
+                        $total_volume = floatval($waybill['total_volume']);
+                    }
+
+                    // Calculate mass rate if we have mass data
+                    $mass_rate = ($total_mass_kg > 0) ? $mass_charge / $total_mass_kg : 0;
+
+                    // Tie-safe comparisons using epsilon to avoid float quirks
+                    $epsilon = 0.005; // 0.5c tolerance
+                    $mass_gt = ($mass_charge - $volume_charge) > $epsilon;
+                    $vol_gt = ($volume_charge - $mass_charge) > $epsilon;
+                    $is_equal = !$mass_gt && !$vol_gt;
+
+                    // Determine preferred charge (the one actually being used)
+                    // On ties, default deterministically to 'mass'
+                    $preferred_charge = $mass_gt ? 'mass' : ($vol_gt ? 'volume' : 'mass');
+
+                    // Dynamically compare and label
+                    if ($mass_gt) {
+                        $mass_label = ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-green-500 text-green-100">Highest</span>';
+                        $volume_label = '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-500 text-red-100">Lowest</span>';
+                    } elseif ($vol_gt) {
+                        $mass_label = '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-500 text-red-100">Lowest</span>';
+                        $volume_label = ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-green-500 text-green-100">Highest</span>';
+                    } else {
+                        $mass_label = $volume_label = '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800">Equal</span>';
+                    }
+
+                    // NEW CLEAN COST DETAILS DESIGN
+                    ?>
+                    <div class="space-y-6">
+                        <!-- Pricing Calculation Section -->
+                        <div class="border border-gray-200 rounded-lg p-4">
+                            <h3 class="text-sm font-semibold text-gray-900 mb-4 border-b border-gray-100 pb-2">Pricing Calculation</h3>
+                            <div class="space-y-3">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-sm text-gray-700">Mass Charge</span>
+                                    <div class="text-right">
+                                        <div class="text-sm font-medium">
+                                            <?= KIT_Commons::currency() . number_format($mass_rate, 2) ?> × <?= number_format($total_mass_kg, 2) ?>kg
+                                        </div>
+                                        <div class="text-sm font-semibold">
+                                            <?= KIT_Commons::currency() . number_format($mass_charge, 2) ?>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <span class="text-sm text-gray-700">Volume Charge</span>
+                                    <div class="text-right">
+                                        <div class="text-sm font-medium">
+                                            <?= number_format($total_volume, 2) ?>m³ × <?= KIT_Commons::currency() . '0.74' ?>
+                                        </div>
+                                        <div class="text-sm font-semibold">
+                                            <?= KIT_Commons::currency() . number_format($volume_charge, 2) ?>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="pt-2 border-t border-gray-100">
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-sm font-medium text-gray-900">Charge Basis</span>
+                                        <span class="text-sm font-semibold"><?= ucfirst($preferred_charge) ?></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Base Amount Section -->
+                        <div class="border border-gray-200 rounded-lg p-4">
+                            <h3 class="text-sm font-semibold text-gray-900 mb-4 border-b border-gray-100 pb-2">Base Amount</h3>
+                            <div class="space-y-3">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-sm text-gray-700">Waybill Amount</span>
+                                    <span class="text-sm font-semibold">
+                                        <?= ($preferred_charge == 'mass') ? KIT_Commons::currency() . number_format($mass_charge, 2) : KIT_Commons::currency() . number_format($volume_charge, 2) ?>
+                                    </span>
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <span class="text-sm text-gray-700">Miscellaneous</span>
+                                    <span class="text-sm font-semibold">
+                                        <?= KIT_Commons::currency() . number_format(($waybill['miscellaneous']['misc_total']) ?? 0, 2) ?>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+
+
+                        <!-- Grand Total Section -->
+                        <div class="border-2 border-gray-300 rounded-lg p-4 bg-gray-50">
+                            <div class="flex justify-between items-center">
+                                <span class="text-lg font-semibold text-gray-900">Grand Total</span>
+                                <span class="text-xl font-bold text-gray-900"><?= KIT_Commons::displayWaybillTotal($waybill['product_invoice_amount']) ?></span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
+        <?php endif; ?>
         <!-- Route Information -->
-        <div class="bg-gray-50 p-4 rounded-lg">
-            <h2 class="text-lg font-semibold text-gray-700 mb-3 border-b pb-2">Route Information</h2>
-            <div class="space-y-3">
-                <div class="flex flex-col">
-                    <label class="<?= KIT_Commons::labelClass() ?>">Origin:</label>
-                    <span class="font-medium"><?= htmlspecialchars($waybill['origin_country']) ?></span>
+        <div class="space-y-6">
+            <!-- Route Details Section -->
+            <div class="border border-gray-200 rounded-lg p-4">
+                <h3 class="text-sm font-semibold text-gray-900 mb-4 border-b border-gray-100 pb-2">Route Details</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-700">Origin</span>
+                        <span class="text-sm font-semibold text-gray-900">
+                            <?= htmlspecialchars($waybill['origin_country'] ?? 'N/A') ?>
+                        </span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-700">Destination</span>
+                        <span class="text-sm font-semibold text-gray-900">
+                            <?php
+                            $destination = '';
+                            if (!empty($waybill['destination_city'])) {
+                                $destination = htmlspecialchars($waybill['destination_city']);
+                            }
+                            if (!empty($waybill['destination_country'])) {
+                                $destination .= ($destination ? ', ' : '') . htmlspecialchars($waybill['destination_country']);
+                            }
+                            echo $destination ?: 'N/A';
+                            ?>
+                        </span>
+                    </div>
                 </div>
-                <div class="flex flex-col">
-                    <label class="<?= KIT_Commons::labelClass() ?>">Destination:</label>
-                    <span class="font-medium">
-                        <?= htmlspecialchars($waybill['destination_country'] ?? 'N/A') ?>
-                    </span>
-                </div>
-                <div class="flex flex-col">
-                    <label class="<?= KIT_Commons::labelClass() ?>">Dimensions:</label>
-                    <span class="font-medium">
-                        <?= htmlspecialchars($waybill['item_length']) ?> ×
-                        <?= htmlspecialchars($waybill['item_width']) ?> ×
-                        <?= htmlspecialchars($waybill['item_height']) ?> cm
-                    </span>
-                </div>
-                <div class="flex flex-col">
-                    <label class="<?= KIT_Commons::labelClass() ?>">Total Mass:</label>
-                    <span class="font-medium"><?= htmlspecialchars($waybill['total_mass_kg']) ?> kg</span>
-                </div>
+            </div>
 
+            <!-- Package Details Section -->
+            <div class="border border-gray-200 rounded-lg p-4">
+                <h3 class="text-sm font-semibold text-gray-900 mb-4 border-b border-gray-100 pb-2">Package Details</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-700">Dimensions</span>
+                        <span class="text-sm font-semibold text-gray-900">
+                            <?= htmlspecialchars($waybill['item_length'] ?? '0') ?> ×
+                            <?= htmlspecialchars($waybill['item_width'] ?? '0') ?> ×
+                            <?= htmlspecialchars($waybill['item_height'] ?? '0') ?> cm
+                        </span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-700">Total Mass</span>
+                        <span class="text-sm font-semibold text-gray-900">
+                            <?= htmlspecialchars($waybill['total_mass_kg'] ?? '0') ?> kg
+                        </span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
     <div class="grid grid-cols-2 gap-4">
         <div class="">
-            <div class="bg-gray-50 p-4 rounded-lg">
-                <h2 class="text-lg font-semibold text-gray-700 mb-3 border-b pb-2">Waybill Items</h2>
+            <div class="border border-gray-200 rounded-lg p-4">
+                <h3 class="text-sm font-semibold text-gray-900 mb-4 border-b border-gray-100 pb-2">Waybill Items</h3>
                 <?php
                 echo KIT_Commons::waybillTrackAndData($waybill['items']);
                 ?>
@@ -442,35 +459,33 @@ $is_equal = $mass_charge === $volume_charge;
         </div>
         <!-- Miscellaneous Items Section -->
         <div class="">
-            <div class="bg-gray-50 p-4 rounded-lg">
-                <h2 class="text-lg font-semibold text-gray-700 mb-3 border-b pb-2">Miscellaneous Items</h2>
+            <div class="border border-gray-200 rounded-lg p-4">
+                <h3 class="text-sm font-semibold text-gray-900 mb-4 border-b border-gray-100 pb-2">Miscellaneous Items</h3>
                 <?php
                 $misc_data = null;
                 if (!empty($waybill['miscellaneous'])) {
                     $misc_data = maybe_unserialize($waybill['miscellaneous']);
                 }
 
-                if (!empty($misc_data)):
+                if (!empty($misc_data) && isset($misc_data['misc_items']) && !empty($misc_data['misc_items'])):
                     // Use getMiscCharges to process the misc data
                     $misc_total = 0;
 
-                    if (isset($misc_data['misc_items'])) {
-                        // Convert the stored format to the format expected by getMiscCharges
-                        $misc_data_for_processing = [
-                            'misc_item' => [],
-                            'misc_price' => [],
-                            'misc_quantity' => []
-                        ];
+                    // Convert the stored format to the format expected by getMiscCharges
+                    $misc_data_for_processing = [
+                        'misc_item' => [],
+                        'misc_price' => [],
+                        'misc_quantity' => []
+                    ];
 
-                        foreach ($misc_data['misc_items'] as $item) {
-                            $misc_data_for_processing['misc_item'][] = $item['misc_item'];
-                            $misc_data_for_processing['misc_price'][] = $item['misc_price'];
-                            $misc_data_for_processing['misc_quantity'][] = $item['misc_quantity'];
-                        }
-
-                        $misc_result = self::getMiscCharges($misc_data_for_processing, []);
-                        $misc_total = floatval($misc_result->misc_total);
+                    foreach ($misc_data['misc_items'] as $item) {
+                        $misc_data_for_processing['misc_item'][] = $item['misc_item'];
+                        $misc_data_for_processing['misc_price'][] = $item['misc_price'];
+                        $misc_data_for_processing['misc_quantity'][] = $item['misc_quantity'];
                     }
+
+                    $misc_result = self::getMiscCharges($misc_data_for_processing, []);
+                    $misc_total = floatval($misc_result->misc_total);
                 ?>
                     <div class="overflow-x-auto">
                         <table class="<?= KIT_Commons::tableClasses(); ?> w-full">
@@ -512,7 +527,7 @@ $is_equal = $mass_charge === $volume_charge;
                         </table>
                     </div>
                 <?php else: ?>
-                    <p class="text-gray-600">No Miscellaneous items</p>
+                    <p class="text-gray-600">No Misc Items</p>
                 <?php endif; ?>
             </div>
         </div>
@@ -542,11 +557,16 @@ $is_equal = $mass_charge === $volume_charge;
 
 
     <div class="flex justify-end space-x-3 border-t pt-4">
-
-        <a href="?page=08600-Waybill-view&waybill_id=<?= $waybill['id'] ?>&edit=true"
-            class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-            Edit Waybill
-        </a>
+        <?php if (KIT_User_Roles::can_edit_approved_waybill($waybill['approval'] ?? 'pending')): ?>
+            <a href="?page=08600-Waybill-view&waybill_id=<?= $waybill['id'] ?>&edit=true"
+                class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                Edit Waybill
+            </a>
+        <?php elseif (($waybill['approval'] ?? 'pending') === 'approved' || ($waybill['approval'] ?? 'pending') === 1): ?>
+            <span class="px-4 py-2 border border-gray-300 rounded-md text-gray-500 bg-gray-100 cursor-not-allowed" title="Waybill is approved and locked for editing. Only administrators can edit approved waybills.">
+                Edit Waybill (Locked)
+            </span>
+        <?php endif; ?>
         <button
             class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
             Save

@@ -27,6 +27,10 @@ class KIT_Bulletproof_Calculator
         $include_sad500 = (bool)($params['include_sad500'] ?? false);
         $include_sadc = (bool)($params['include_sadc'] ?? false);
         $include_vat = (bool)($params['include_vat'] ?? false);
+        // Optional explicit international price (e.g., stored snapshot)
+        $international_price_override = isset($params['international_price_override'])
+            ? floatval($params['international_price_override'])
+            : null;
         
         // Initialize calculation breakdown
         $breakdown = [
@@ -51,7 +55,8 @@ class KIT_Bulletproof_Calculator
             'misc_total' => $misc_total,
             'include_sad500' => $include_sad500,
             'include_sadc' => $include_sadc,
-            'include_vat' => $include_vat
+            'include_vat' => $include_vat,
+            'international_price_override' => $international_price_override
         ]);
         
         $breakdown['additional_charges'] = $additional_charges;
@@ -137,7 +142,11 @@ class KIT_Bulletproof_Calculator
             $charges['total'] += $charges['vat'];
         } else {
             // Add international price when VAT is not included
-            $charges['international_price'] = self::get_international_price();
+            if (isset($params['international_price_override']) && $params['international_price_override'] !== null) {
+                $charges['international_price'] = floatval($params['international_price_override']);
+            } else {
+                $charges['international_price'] = self::get_international_price();
+            }
             $charges['total'] += $charges['international_price'];
         }
         

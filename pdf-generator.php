@@ -1,5 +1,5 @@
 <?php
-$testing = 0;
+$testing = true;
 
 /**
  * PDF Generator for Waybills/Quotations
@@ -40,6 +40,9 @@ if (! defined('ABSPATH')) {
 $primary_color = '#2563eb';
 $secondary_color = '#111827';
 $accent_color = '#10b981';
+$darkBadge = '#043c7d';
+$lightBadge = '#e0e7ef';
+
 if (class_exists('KIT_Commons')) {
   try {
     if (method_exists('KIT_Commons', 'getPrimaryColor')) {
@@ -59,6 +62,8 @@ if (class_exists('KIT_Commons')) {
     // keep defaults
   }
 }
+$pTextColor = $primary_color;
+$stroke_color = $primary_color;
 
 // Verify nonce and inputs (temporarily disabled for testing)
 $nonce = isset($_GET['pdf_nonce']) ? sanitize_text_field($_GET['pdf_nonce']) : '';
@@ -69,6 +74,11 @@ $nonce = isset($_GET['pdf_nonce']) ? sanitize_text_field($_GET['pdf_nonce']) : '
 $waybill_no = isset($_GET['waybill_no']) ? intval($_GET['waybill_no']) : 0;
 if (! $waybill_no) {
   wp_die('Missing waybill_no');
+}
+
+// 🔒 SECURITY: Only authorized administrators (Thando, Mel, Patricia) can access PDFs
+if (!class_exists('KIT_User_Roles') || !KIT_User_Roles::can_see_prices()) {
+  wp_die('Access denied. PDF access is restricted to authorized administrators only.', 403);
 }
 
 // Autoload dompdf
@@ -119,7 +129,19 @@ if (!empty($waybill->miscellaneous)) {
   }
 }
 
-$charge_basis = !empty($stored_basis) ? $stored_basis : (($mass_charge > $volume_charge) ? 'mass' : 'volume');
+// Priority: Manual override from waybill > Stored snapshot > Automatic selection
+$charge_basis = '';
+if (!empty($waybill->charge_basis)) {
+    // Use manual override from waybill if set
+    $charge_basis = $waybill->charge_basis;
+} elseif (!empty($stored_basis)) {
+    // Use stored snapshot if available
+    $charge_basis = $stored_basis;
+} else {
+    // Automatic selection: use the higher charge
+    $charge_basis = ($mass_charge > $volume_charge) ? 'mass' : 'volume';
+}
+
 if ($charge_basis == 'mass' || $charge_basis == 'weight') {
   $charge = $mass_charge;
 } else {
@@ -148,6 +170,48 @@ if (!empty($waybill->miscellaneous)) {
     $misc_items = $misc_data['misc_items'];
   }
 }
+
+// Compute a resilient fallback total in case no snapshot/field exists
+$sad500_total = (!empty($waybill->include_sad500) && intval($waybill->include_sad500) === 1)
+  ? floatval(KIT_Waybills::sadc_certificate())
+  : 0.0;
+$sadc_total = (!empty($waybill->include_sadc) && intval($waybill->include_sadc) === 1)
+  ? floatval(KIT_Waybills::sad())
+  : 0.0;
+
+// Prefer stored international amount if VAT is not included
+$intl_amount_for_total = 0.0;
+if (empty($waybill->vat_include) || intval($waybill->vat_include ?? 0) === 0) {
+  $stored_intl_calc = 0.0;
+  if (!empty($waybill->miscellaneous)) {
+    $misc_tmp_calc = maybe_unserialize($waybill->miscellaneous);
+    if (is_array($misc_tmp_calc) && isset($misc_tmp_calc['others']['international_price_rands'])) {
+      $stored_intl_calc = floatval($misc_tmp_calc['others']['international_price_rands']);
+    }
+  }
+  $intl_amount_for_total = $stored_intl_calc > 0
+    ? $stored_intl_calc
+    : floatval(KIT_Waybills::international_price_in_rands());
+}
+
+$items_total = 0.0;
+if (!empty($waybillItems)) {
+  foreach ($waybillItems as $wi) {
+    $qty = isset($wi['quantity']) ? intval($wi['quantity']) : 0;
+    $unit = isset($wi['unit_price']) ? floatval($wi['unit_price']) : 0.0;
+    $items_total += ($qty * $unit);
+  }
+}
+
+$transport_total = floatval($charge ?? 0);
+$computed_fallback_total = $transport_total + $misc_total + $sad500_total + $sadc_total + $intl_amount_for_total + $items_total;
+
+// Choose the best value to render
+$final_total = $stored_invoice_amount > 0
+  ? $stored_invoice_amount
+  : ((isset($waybill->product_invoice_amount) && floatval($waybill->product_invoice_amount) > 0)
+      ? floatval($waybill->product_invoice_amount)
+      : $computed_fallback_total);
 
 // Get the image file content and convert it to Base64
 $imagePath = plugin_dir_path(__FILE__) . '/icons/pin.png';
@@ -280,19 +344,33 @@ ob_start();
   td.cellStyle:nth-child(2) {
     width: 180px !important;
   }
-  th.thr:nth-child(3),
-  td.cellStyle:nth-child(3) {
-  }
 
   tr.tr {
     font-size: 10px;
   }
 
+  .pcolor {
+    background-color: <?php echo $primary_color; ?>;
+  }
+  .pTextColor{
+    color: <?php echo $primary_color; ?>;
+  }
+  .wText{
+    color: #fff;
+  }
+
+  .scolor {
+    background-color: <?php echo $secondary_color; ?>;
+  }
+
   .rowTotal>td {
-    background: var(--primary);
     color: #fff;
     font-weight: 700;
     font-size: 18px;
+  }
+  /* Ensure the TOTAL row is never split across pages */
+  .rowTotal {
+    page-break-inside: avoid;
   }
 
   .small-text {
@@ -392,7 +470,7 @@ ob_start();
             <img src="<?php echo plugin_dir_url(__FILE__); ?>/img/logo.jpeg" alt="Company Logo" style="display:block; width:100%; height:auto;">
           </td>
           <td style="width:50%;vertical-align:middle;text-align:right;">
-            <div style="font-size:18px;font-weight:bold;color:rgb(37, 99, 235);text-transform:uppercase; margin-bottom:4px;">Waybill Invoice</div>
+            <div style="font-size:18px;font-weight:bold;color:<?= $pTextColor ?> ;text-transform:uppercase; margin-bottom:4px;">Waybill Invoice</div>
             <div style="font-size:10px;color:#666; padding:6px;">
               <div><strong>Invoice #:</strong> <?= $waybill->product_invoice_number ?></div>
               <div><strong>Date:</strong> <?= date('F j, Y', strtotime($waybill->created_at)) ?></div>
@@ -407,7 +485,7 @@ ob_start();
       <table width="100%" cellpadding="0" cellspacing="3" style="margin-bottom:12px;">
         <tr>
           <td style="width:50%; background:#f8f9fa; border:1px solid #e9ecef; border-radius:4px; padding:8px;">
-            <div style="font-size:13px;font-weight:bold;color:rgb(37, 99, 235);text-transform:uppercase; margin-bottom:4px;">From</div>
+            <div style="font-size:13px;font-weight:bold;color:<?= $pTextColor ?> ;text-transform:uppercase; margin-bottom:4px;">From</div>
             <div style="font-size:10px; line-height:1.3;">
               <?= esc_html($company['company_name'] ?? '') ?><br>
               <?= nl2br(esc_html($company['company_address'] ?? '')) ?><br>
@@ -417,7 +495,7 @@ ob_start();
             </div>
           </td>
           <td style="width:50%;background:#f8f9fa;border:1px solid #e9ecef;border-radius:4px;padding:8px;">
-            <div style="font-size:13px;font-weight:bold;color:rgb(37, 99, 235);text-transform:uppercase; margin-bottom:4px;">Bill To</div>
+            <div style="font-size:13px;font-weight:bold;color:<?= $pTextColor ?> ;text-transform:uppercase; margin-bottom:4px;">Bill To</div>
             <div style="font-size:10px; line-height:1.3;">
               <strong><?= $waybill->company_name ?></strong><br>
               <?= $waybill->customer_name . " " . $waybill->customer_surname ?><br>
@@ -435,7 +513,7 @@ ob_start();
       <table width="100%" cellpadding="3" cellspacing="0" style="margin-bottom:12px;">
         <tr>
           <td style="padding:4px 0; border-bottom:1px solid #e9ecef;">
-            <h4 style="color: rgb(37, 99, 235); margin: 0 0 3px 0; font-size:12px;">Description</h4>
+            <h4 style="color: <?= $pTextColor ?> ; margin: 0 0 3px 0; font-size:12px;">Description</h4>
             <p style="margin: 0; font-size:10px;"><?= $misc_data['others']['waybill_description'] ?></p>
           </td>
         </tr>
@@ -444,9 +522,9 @@ ob_start();
       <!-- SHIPPING DETAILS TABLE -->
       <table width="100%" cellpadding="5" cellspacing="0" style="margin-bottom:12px;border-collapse:collapse;">
         <tr>
-          <td colspan="5" style="font-size:12px;font-weight:bold;color:rgb(37, 99, 235);border-bottom:1px solid rgb(37, 99, 235);padding-bottom:4px;">Shipping Details</td>
+          <td colspan="5" style="font-size:12px;font-weight:bold;color:<?= $pTextColor ?> ;padding-bottom:4px;">Shipping Details</td>
         </tr>
-        <tr style="background:rgb(37, 99, 235);color:#fff;font-size:10px;">
+        <tr class="scolor" style="color:#fff;font-size:10px;">
           <th style="text-align:left; padding:4px;">Waybill #</th>
           <th style="text-align:left; padding:4px;">Dispatch Date</th>
           <th style="text-align:center; padding:4px;">Dimensions (cm)</th>
@@ -478,14 +556,13 @@ ob_start();
       </table>
 
       <!-- Charges Breakdown - Enhanced UI/UX -->
-      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:5px; border-radius:10px; overflow:hidden; border:1.5px solid #e0e7ef; box-shadow:0 2px 8px rgba(37,99,235,0.06); font-family:Arial,sans-serif;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:5px;">
         <tr>
-          <td colspan="5" style="font-size:12px;font-weight:bold;color:rgb(37, 99, 235);border-bottom:1px solid rgb(37, 99, 235);padding-bottom:4px;">Charges Breakdown</td>
+          <td colspan="5" style="font-size:12px;font-weight:bold;color:<?= $pTextColor ?> ;padding-bottom:4px;">Charges Breakdown</td>
         </tr>
-        <tr style="background:#2563eb;color:#fff;font-size:11px;">
+        <tr class="scolor" style="color:#fff;font-size:11px;">
           <th align="left" class="thr">Description</th>
           <th class="thr" align="left">Item</th>
-
           <th <?= (!empty($waybillItems)) ? 'colspan="2"' : '' ?> class="thr" align="center" style="width: 50px;">Qty</th>
           <th class="thr" align="right" style="width: 100px;">Price (R)</th>
           <th class="thr" align="right" style="width: 100px;">Subtotal (R)</th>
@@ -494,14 +571,25 @@ ob_start();
         $charge_type = ($charge_basis == 'mass' || $charge_basis == 'weight') ? 'Mass' : 'Volume';
         $charge_amount = ($charge_basis == 'mass' || $charge_basis == 'weight') ? $waybill->mass_charge : $waybill->volume_charge;
         ?>
-        <tr style="font-size:13px; background:#fff; border-bottom:1.5px solid #e0e7ef;">
+        <tr style="font-size:13px; background:#f9fafb;">
           <td class="cellStyle fstCol">
-            <span style="display:inline-block;background:#e0e7ef;color:#2563eb;font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600;">Transport</span>
+            <span style="display:inline-block;background:<?= $lightBadge ?>; color:<?= $pTextColor ?>; font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600;">Transport</span>
           </td>
           <td class="cellStyle">
             <span style="font-weight:600;"><?= $charge_type ?> Charge</span>
           </td>
-          <td class="cellStyle aligncenter" <?= (!empty($waybillItems)) ? 'colspan="2"' : '' ?>>1</td>
+          <td class="cellStyle aligncenter" <?= (!empty($waybillItems)) ? 'colspan="2"' : '' ?>>
+            <?php if ($charge_basis == 'mass' || $charge_basis == 'weight'): ?>
+              <?= isset($waybill->total_mass_kg) ? number_format($waybill->total_mass_kg, 2) . ' kg' : '0.00 kg' ?>
+            <?php else: ?>
+              <?php
+              $length = isset($waybill->item_length) ? floatval($waybill->item_length) : 0;
+              $width = isset($waybill->item_width) ? floatval($waybill->item_width) : 0;
+              $height = isset($waybill->item_height) ? floatval($waybill->item_height) : 0;
+              echo number_format($length * $width * $height / 1000000, 3) . ' m³';
+              ?>
+            <?php endif; ?>
+          </td>
           <td class="cellStyle" style="text-align:right;">
             <?php
             // Display the rate (either mass or volume rate) from stored snapshot first
@@ -510,13 +598,13 @@ ob_start();
               if (!$rate && !empty($waybill->mass_charge) && !empty($waybill->total_mass_kg) && $waybill->total_mass_kg > 0) {
                 $rate = $waybill->mass_charge / $waybill->total_mass_kg;
               }
-              echo number_format($rate, 2);
+              echo 'R ' . number_format($rate, 2) . '/kg';
             } else {
               $rate = $stored_volume_rate > 0 ? $stored_volume_rate : 0;
               if (!$rate && !empty($waybill->volume_charge) && !empty($waybill->total_volume) && $waybill->total_volume > 0) {
                 $rate = $waybill->volume_charge / $waybill->total_volume;
               }
-              echo number_format($rate, 2);
+              echo 'R ' . number_format($rate, 2) . '/m³';
             }
             ?>
           </td>
@@ -526,7 +614,7 @@ ob_start();
           <?php foreach ($misc_items as $item): ?>
             <tr style="font-size:12px; background:#f9fafb; border-bottom:1px solid #e0e7ef;">
               <td class="cellStyle fstCol">
-                <span style="display:inline-block;background:#f1f5fb;color:#64748b;font-size:11px;padding:2px 8px;border-radius:6px;">Miscellaneous</span>
+                <span style="display:inline-block;background:<?= $lightBadge ?>;color:#64748b;font-size:11px;padding:2px 8px;border-radius:6px;">Miscellaneous</span>
               </td>
               <td class="cellStyle"><?= htmlspecialchars($item['misc_item']) ?></td>
               <td class="cellStyle" <?= (!empty($waybillItems)) ? 'colspan="2"' : '' ?> style="text-align:center;"><?= intval($item['misc_quantity']) ?></td>
@@ -536,9 +624,9 @@ ob_start();
           <?php endforeach; ?>
         <?php endif; ?>
         <?php if (!empty($waybill->include_sad500) && $waybill->include_sad500 == 1): ?>
-          <tr style="font-size:13px; background:#fff; border-bottom:1px solid #e0e7ef;">
+          <tr style="font-size:13px; background:#f9fafb; border-bottom:1px solid #e0e7ef;">
             <td class="cellStyle fstCol">
-              <span style="display:inline-block;background:#f1f5fb;color:#64748b;font-size:11px;padding:2px 8px;border-radius:6px;">Processing</span>
+              <span style="display:inline-block;background:<?= $lightBadge ?>;color:#64748b;font-size:11px;padding:2px 8px;border-radius:6px;">Processing</span>
             </td>
             <td class="cellStyle">SAD500</td>
             <td class="cellStyle aligncenter" <?= (!empty($waybillItems)) ? 'colspan="2"' : '' ?>>1</td>
@@ -547,12 +635,12 @@ ob_start();
           </tr>
         <?php endif ?>
         <?php if (!empty($waybill->include_sadc) && $waybill->include_sadc == 1): ?>
-          <tr style="font-size:13px; background:#fff; border-bottom:1px solid #e0e7ef;">
+          <tr style="font-size:13px; background:#f9fafb; border-bottom:1px solid #e0e7ef;">
             <td class="cellStyle fstCol">
-              <span style="display:inline-block;background:#f1f5fb;color:#64748b;font-size:11px;padding:2px 8px;border-radius:6px;">Processing</span>
+              <span style="display:inline-block;background:<?= $lightBadge ?>;color:#64748b;font-size:11px;padding:2px 8px;border-radius:6px;">Processing</span>
             </td>
-            <td class="cellStyle" style="border-bottom:1px solid #e0e7ef;">SADC Certificate</td>
-            <td class="cellStyle" <?= (!empty($waybillItems)) ? 'colspan="2"' : '' ?>></td>
+            <td class="cellStyle">SADC Certificate</td>
+            <td class="cellStyle aligncenter" <?= (!empty($waybillItems)) ? 'colspan="2"' : '' ?>>1</td>
             <td class="cellStyle alignright"><?= KIT_Waybills::sad() ?></td>
             <td class="cellStyle" style="text-align:right; font-weight: 700;"><?= KIT_Waybills::sad() ?></td>
           </tr>
@@ -570,9 +658,9 @@ ob_start();
           }
           $intl_amount = $stored_intl > 0 ? $stored_intl : KIT_Waybills::international_price_in_rands();
           ?>
-          <tr style="font-size:13px; background:#fff; border-bottom:1px solid #e0e7ef;">
+          <tr style="font-size:13px; background:#f9fafb; border-bottom:1px solid #e0e7ef;">
             <td class="cellStyle fstCol">
-              <span style="display:inline-block;background:#f1f5fb;color:#64748b;font-size:11px;padding:2px 8px;border-radius:6px;">Customs Clearing</span>
+              <span style="display:inline-block;background:<?= $lightBadge ?>;color:#64748b;font-size:11px;padding:2px 8px;border-radius:6px;">Customs Clearing</span>
             </td>
             <td class="cellStyle">Agent Clearing & Documentation</td>
             <td class="cellStyle aligncenter" <?= (!empty($waybillItems)) ? 'colspan="2"' : '' ?>>1</td>
@@ -581,9 +669,9 @@ ob_start();
           </tr>
         <?php endif; ?>
         <?php if (!empty($waybillItems)): ?>
-          <tr style="font-size:12px; background:#c9e2ff; border-bottom:1px solid #e0e7ef;">
+          <tr style="font-size:12px;" class="scolor">
             <td <?= (!empty($waybillItems)) ? 'colspan="2"' : '' ?> style="text-align:left; padding:9px 6px; border-bottom:1px solid #e0e7ef; width: 120px;">
-              <span style="display:inline-block;background:#043c7d; color:#fff; font-weight: 700; font-size:11px;padding:2px 8px;border-radius:6px;">Border Clearing</span>
+              <span style="display:inline-block; background: <?= $darkBadge ?>; color:#fff; font-weight: 700; font-size:11px;padding:2px 8px;border-radius:6px;">Border Clearing</span>
             </td>
             <td <?= (!empty($waybillItems)) ? 'colspan="4"' : 'colspan="3"' ?> align="right" style="font-weight: 700; padding:9px 6px; border-bottom:1px solid #e0e7ef;">
               <!-- <?= KIT_Waybills::vatCharge($waybill->waybill_items_total) ?> -->
@@ -592,7 +680,7 @@ ob_start();
           <?php foreach ($waybillItems as $item): ?>
             <tr style="background:#f9fafb; border-bottom:1px solid #e0e7ef;">
               <td class="CellStyle">
-                <span style="display:inline-block;background:#e0e7ef;color:#2563eb;font-size:11px;padding:2px 8px;border-radius:6px;">Border Clearing</span>
+                <span style="display:inline-block;background:<?= $lightBadge ?>; color:<?= $pTextColor ?>;font-size:11px;padding:2px 8px;border-radius:6px;">Border Clearing</span>
               </td>
               <td class="CellStyle"><?= htmlspecialchars($item['item_name']) ?></td>
               <td class="CellStyle" style="text-align:center;"><?= intval($item['quantity']) ?></td>
@@ -601,15 +689,11 @@ ob_start();
               <td class="CellStyle" style="text-align:right; font-weight: 700;"><?= number_format(($item['quantity'] * $item['unit_price']) * (KIT_Waybills::vatRate() / 100), 2) ?></td>
             </tr>
           <?php endforeach; ?>
-        <?php else: ?>
-          <tr>
-            <td colspan="5" style="text-align:center; color:#64748b; padding:16px 0; background:#f9fafb;">No customs or clearing items.</td>
-          </tr>
         <?php endif; ?>
         <!-- TOTAL ROW -->
-        <tr class="rowTotal">
+        <tr class="rowTotal pcolor">
           <td class="cellStyle" style="font-size:18px; font-weight:700;">TOTAL</td>
-          <td class="cellStyle" <?= (!empty($waybillItems)) ? 'colspan="5"' : 'colspan="4"' ?> style="text-align:right;">R <?= number_format($stored_invoice_amount > 0 ? $stored_invoice_amount : floatval($waybill->product_invoice_amount ?? 0), 2) ?></td>
+          <td class="cellStyle" <?= (!empty($waybillItems)) ? 'colspan="5"' : 'colspan="4"' ?> style="text-align:right;">R <?= number_format($final_total, 2) ?></td>
         </tr>
       </table>
 
@@ -619,8 +703,8 @@ ob_start();
           <!-- Banking Details Card -->
           <td>
             <div style="background:#f8fafc; border-radius:8px; box-shadow:0 2px 8px rgba(37,99,235,0.07); padding:18px 20px 14px 20px; border:1.5px solid #e0e7ef;">
-              <div style="font-size:13px; font-weight:700; color:#2563eb; margin-bottom:10px; letter-spacing:0.5px; display:flex; align-items:center;">
-                <svg width="18" height="18" style="margin-right:7px;" fill="none" stroke="#2563eb" stroke-width="2" viewBox="0 0 24 24">
+              <div style="font-size:13px; font-weight:700; color:<?= $pTextColor ?> ; margin-bottom:10px; letter-spacing:0.5px; display:flex; align-items:center;">
+                <svg width="18" height="18" style="margin-right:7px;" fill="none" stroke="<?= $stroke_color ?>" stroke-width="2" viewBox="0 0 24 24">
                   <rect x="3" y="7" width="18" height="10" rx="2" />
                   <path d="M3 10h18" />
                 </svg>
@@ -675,33 +759,32 @@ ob_start();
           <!-- Terms & Conditions Card -->
           <td>
             <div style="background:#f8fafc; border-radius:8px; box-shadow:0 2px 8px rgba(37,99,235,0.07); padding:18px 20px 14px 20px; border:1.5px solid #e0e7ef;">
-              <div style="font-size:13px; font-weight:700; color:#2563eb; margin-bottom:10px; letter-spacing:0.5px; display:flex; align-items:center;">
-                <svg width="18" height="18" style="margin-right:7px;" fill="none" stroke="#2563eb" stroke-width="2" viewBox="0 0 24 24">
+              <div style="font-size:13px; font-weight:700; color:<?= $pTextColor ?> ; margin-bottom:10px; letter-spacing:0.5px; display:flex; align-items:center;">
+                <svg width="18" height="18" style="margin-right:7px;" fill="none" stroke="<?= $stroke_color ?>" stroke-width="2" viewBox="0 0 24 24">
                   <rect x="4" y="4" width="16" height="16" rx="2" />
                   <path d="M8 8h8M8 12h8M8 16h4" />
                 </svg>
                 Terms &amp; Conditions
               </div>
               <ul class="terms-conditions">
-                <li>This quotation is valid for <strong>30 days</strong> from the date of issue.</li>
-                <li>Payment terms: <strong>50% deposit</strong> required before dispatch.</li>
-                <li>Delivery time: Subject to route availability and customs clearance.</li>
+                <li>Payment terms: <strong>50% upfront required before dispatch</strong>, the rest on delivery.</li>
+                <li>Late payment: <strong>10% penalty</strong> if not paid within 7 days.</li>
+                <li>All prices are in <strong>South African Rand (ZAR)</strong>.</li>
+                <li>Delivery time: Approximately <strong>14 Days</strong> after dispatch and TRA release.</li>
                 <li>Insurance: Basic coverage included, additional coverage available.</li>
-                <li>All prices are in <strong>South African Rand (ZAR)</strong> and include VAT.</li>
+                <li>Extra insurance available on request at additional cost.</li>
               </ul>
               <div class="thank-you-text">
                 <span>
                   <svg width="14" height="14" style="vertical-align:middle;margin-right:3px;" fill="#2563eb" viewBox="0 0 20 20">
                     <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm1 11H9v-1h2v1zm0-3H9V7h2v3z" />
                   </svg>
-                  Thank you for choosing <?= esc_html($company['company_name'] ?? 'Our Company'); ?>!
+                  Thank you for choosing 08600 Africa (Pty) Ltd!
                 </span><br>
                 <span style="color:#444; font-weight:400;">
                   For any queries, contact us at
-                  <a href="mailto:<?= esc_html($company['company_email'] ?? ''); ?>" style="color:#2563eb; text-decoration:none;"><?= esc_html($company['company_email'] ?? ''); ?></a>
-                  <?php if (!empty($company['company_phone'])): ?>
-                    or <a href="tel:<?= esc_html($company['company_phone']); ?>" style="color:#2563eb; text-decoration:none;"><?= esc_html($company['company_phone']); ?></a>
-                  <?php endif; ?>
+                  <a href="mailto:info@08600.co.za" style="color:<?= $pTextColor ?>; text-decoration:none;">info@08600.co.za</a>
+                  or <a href="tel:+27813934500" style="color:<?= $pTextColor ?>; text-decoration:none;">+27813934500</a>
                 </span>
               </div>
             </div>

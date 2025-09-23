@@ -6,201 +6,207 @@
     'icon' => '<path d="M16 7a4 4 0 1 0-8 0v2a4 4 0 0 0 8 0V7z" /><path d="M12 19v-2m0 0a7 7 0 0 1-7-7V7a7 7 0 0 1 14 0v3a7 7 0 0 1-7 7z" />',
     'words' => 'Customer Information'
 ]) ?>
-<?php $is_existing_customer = $atts['is_existing_customer'] ?>
+<?php 
+$is_existing_customer = $atts['is_existing_customer'];
+// Initialize customer_id with a default value if not set
+$customer_id = isset($customer_id) ? $customer_id : (isset($customer) && isset($customer->cust_id) ? $customer->cust_id : '');
+?>
 <input type="hidden" id="cust_id" name="cust_id" value="<?php echo esc_attr($customer_id); ?>">
 
-<?php $customers = KIT_Customers::tholaMaCustomer(); ?>
-<div class="mb-6">
-    <label for="customer-search" class="block text-sm font-semibold text-gray-700 mb-2">Select Customer</label>
-    <div class="relative">
-        <!-- Search Input -->
-        <input 
-            type="text" 
-            id="customer-search" 
-            name="customer_search" 
-            placeholder="Type to search customers..."
-            class="block w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition px-4 py-2 bg-white text-gray-800"
-            autocomplete="off"
-        >
-        
-        <!-- Hidden select for form submission -->
-        <input type="hidden" id="customer-select" name="customer_select" value="<?php echo $customer_id ? $customer_id : 'new'; ?>">
-        
-        <!-- Dropdown Arrow -->
-        <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-            <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-            </svg>
-        </div>
-        
-        <!-- Search Results Dropdown -->
-        <div id="customer-results" class="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg hidden max-h-60 overflow-y-auto">
-            <!-- Results will be populated by JavaScript -->
-        </div>
-    </div>
-    
-    <!-- Quick Actions -->
-    <div class="mt-2 flex flex-wrap gap-2">
-        <button type="button" id="add-new-customer-btn" class="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 transition">
-            + Add New Customer
-        </button>
-        <button type="button" id="recent-customers-btn" class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition">
-            Recent Customers
-        </button>
-    </div>
-</div>
+<?php 
+// Use customer data passed from shortcode if available, otherwise load from database
+if (isset($customers_data) && is_array($customers_data)) {
+    $customers = $customers_data;
+} else {
+    // Use the standalone function that returns properly aliased data
+    $customers = tholaMaCustomer();
+}
+?>
 
-<div class="rounded-xl border border-gray-200 bg-gradient-to-br from-blue-50 to-white shadow-inner mb-8 overflow-hidden">
-    <button type="button" class="customer-accordion-toggle w-full flex items-center justify-between px-6 py-4 bg-blue-100 hover:bg-blue-200 transition focus:outline-none focus:ring-2 focus:ring-blue-400 text-blue-800 font-semibold text-lg">
-        <span>Customer Details</span>
-        <svg class="w-5 h-5 transition-transform duration-200" id="customer-details-arrow" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path d="M19 9l-7 7-7-7" />
-        </svg>
-    </button>
-    <div class="customer-details-content px-6 py-6 bg-white space-y-6 border-t border-gray-100" style="display: none;">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <!-- Row 1: Company Name & Customer Name -->
-            <div>
-                <?= KIT_Commons::Linput([
-                    'label' => 'Company Name',
-                    'name'  => 'company_name',
-                    'id'    => 'company_name',
-                    'type'  => 'text',
-                    'value' => esc_attr($is_existing_customer ? $customer->company_name ?? $customer->name : ''),
-                    'class' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-2 text-gray-800 bg-gray-50 transition',
-                    'special' => 'autocomplete="organization"'
-                ]); ?>
-            </div>
-            <div>
-                <?= KIT_Commons::Linput([
-                    'label' => 'Customer Name',
-                    'name'  => 'customer_name',
-                    'id'    => 'customer_name',
-                    'type'  => 'text',
-                    'value' => esc_attr($is_existing_customer ? $customer->name : ''),
-                    'class' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-2 text-gray-800 bg-gray-50 transition',
-                    'special' => 'autocomplete="given-name"'
-                ]); ?>
-            </div>
 
-            <!-- Row 2: Customer Surname & Cell -->
-            <div>
-                <?= KIT_Commons::Linput([
-                    'label' => 'Customer Surname',
-                    'name'  => 'customer_surname',
-                    'id'    => 'customer_surname',
-                    'type'  => 'text',
-                    'value' => esc_attr($is_existing_customer ? $customer->surname : ''),
-                    'class' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-2 text-gray-800 bg-gray-50 transition',
-                    'special' => 'autocomplete="family-name"'
-                ]); ?>
-            </div>
-            <div>
-                <?= KIT_Commons::Linput([
-                    'label' => 'Cell',
-                    'name'  => 'cell',
-                    'id'    => 'cell',
-                    'type'  => 'tel',
-                    'value' => esc_attr($is_existing_customer ? $customer->cell : ''),
-                    'class' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-2 text-gray-800 bg-gray-50 transition',
-                    'special' => 'autocomplete="tel"'
-                ]); ?>
-            </div>
+<!-- Step 2: Customer Selection and Details - Symmetrical, Simple UI -->
 
-            <!-- Row 3: Email (full width) -->
-            <div class="md:col-span-2">
-                <?= KIT_Commons::Linput([
-                    'label' => 'Email',
-                    'name'  => 'email_address',
-                    'id'    => 'email_address',
-                    'type'  => 'email',
-                    'value' => esc_attr($is_existing_customer ? $customer->email_address : ''),
-                    'class' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-2 text-gray-800 bg-gray-50 transition',
-                    'special' => 'autocomplete="email"'
-                ]); ?>
+<div class="max-w-3xl mx-auto">
+    <div class="grid grid-cols-1 gap-8 mb-8">
+        <!-- Left: Customer Search & Type -->
+        <div class="flex flex-col gap-6">
+            <!-- Customer Search -->
+            <div>
+                <label for="customer-search" class="block text-sm font-semibold text-gray-700 mb-2">Select Customer</label>
+                <div class="relative">
+                    <input 
+                        type="text" 
+                        id="customer-search" 
+                        name="customer_search" 
+                        placeholder="Type to search customers..."
+                        class="block w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition px-4 py-2 bg-white text-gray-800"
+                        autocomplete="off"
+                    >
+                    <input type="hidden" id="customer-select" name="customer_select" value="<?php echo !empty($customer_id) ? $customer_id : 'new'; ?>">
+                    
+                    <div id="customer-results" class="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg hidden max-h-60 overflow-y-auto">
+                        <!-- Results will be populated by JavaScript -->
+                    </div>
+                </div>
+                <div class="mt-2 flex flex-wrap gap-2">
+                    <button type="button" id="add-new-customer-btn" class="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 transition">
+                        + Add New Customer
+                    </button>
+                    <button type="button" id="recent-customers-btn" class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition">
+                        Recent Customers
+                    </button>
+                </div>
             </div>
-            <!-- Row 4: Address (full width) -->
-            <div class="md:col-span-2">
-                <?= KIT_Commons::Linput([
-                    'label' => 'Address',
-                    'name'  => 'address',
-                    'id'    => 'address',
-                    'type'  => 'text',
-                    'value' => esc_attr($is_existing_customer ? $customer->address : ''),
-                    'class' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-2 text-gray-800 bg-gray-50 transition',
-                    'special' => 'autocomplete="street-address"'
-                ]); ?>
+            <!-- Client Type -->
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Is the client a business or an individual?</label>
+                <div class="flex gap-4">
+                    <label class="inline-flex items-center">
+                        <input type="radio" name="client_type" id="client_type_business" value="business" class="client-type-radio" checked>
+                        <span class="ml-2">Business</span>
+                    </label>
+                    <label class="inline-flex items-center">
+                        <input type="radio" name="client_type" id="client_type_individual" value="individual" class="client-type-radio">
+                        <span class="ml-2">Individual</span>
+                    </label>
+                </div>
             </div>
         </div>
-        <?php require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/selectsOrigin.php'); ?>
+        <!-- Right: Customer Details (always visible, no accordion) -->
+        <div class="rounded-xl border border-gray-200 bg-gradient-to-br from-blue-50 to-white shadow-inner px-6 py-6">
+            <div class="grid grid-cols-1 gap-4">
+                <div id="company_name_wrapper">
+                    <?= KIT_Commons::Linput([
+                        'label' => 'Company Name',
+                        'name'  => 'company_name',
+                        'id'    => 'company_name',
+                        'type'  => 'text',
+                        'value' => esc_attr($is_existing_customer ? $customer->company_name ?? $customer->customer_name : ''),
+                        'class' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-2 text-gray-800 bg-gray-50 transition',
+                        'special' => 'autocomplete="organization"'
+                    ]); ?>
+                </div>
+                <div>
+                    <?= KIT_Commons::Linput([
+                        'label' => 'Customer Name',
+                        'name'  => 'customer_name',
+                        'id'    => 'customer_name',
+                        'type'  => 'text',
+                        'value' => esc_attr($is_existing_customer ? $customer->customer_name : ''),
+                        'class' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-2 text-gray-800 bg-gray-50 transition',
+                        'special' => 'autocomplete="given-name"'
+                    ]); ?>
+                </div>
+                <div>
+                    <?= KIT_Commons::Linput([
+                        'label' => 'Customer Surname',
+                        'name'  => 'customer_surname',
+                        'id'    => 'customer_surname',
+                        'type'  => 'text',
+                        'value' => esc_attr($is_existing_customer ? $customer->customer_surname : ''),
+                        'class' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-2 text-gray-800 bg-gray-50 transition',
+                        'special' => 'autocomplete="family-name"'
+                    ]); ?>
+                </div>
+                <div>
+                    <?= KIT_Commons::Linput([
+                        'label' => 'Telephone',
+                        'name'  => 'telephone',
+                        'id'    => 'telephone',
+                        'type'  => 'tel',
+                        'value' => esc_attr($is_existing_customer ? $customer->cell : ''),
+                        'class' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-2 text-gray-800 bg-gray-50 transition',
+                        'special' => 'autocomplete="tel"'
+                    ]); ?>
+                </div>
+                <div>
+                    <?= KIT_Commons::Linput([
+                        'label' => 'Cell',
+                        'name'  => 'cell',
+                        'id'    => 'cell',
+                        'type'  => 'tel',
+                        'value' => esc_attr($is_existing_customer ? $customer->cell : ''),
+                        'class' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-2 text-gray-800 bg-gray-50 transition',
+                        'special' => 'autocomplete="tel"'
+                    ]); ?>
+                </div>
+                <div>
+                    <?= KIT_Commons::Linput([
+                        'label' => 'Email',
+                        'name'  => 'email_address',
+                        'id'    => 'email_address',
+                        'type'  => 'email',
+                        'value' => esc_attr($is_existing_customer ? $customer->email_address : ''),
+                        'class' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-2 text-gray-800 bg-gray-50 transition',
+                        'special' => 'autocomplete="email"'
+                    ]); ?>
+                </div>
+                <div>
+                    <?= KIT_Commons::Linput([
+                        'label' => 'Address',
+                        'name'  => 'address',
+                        'id'    => 'address',
+                        'type'  => 'text',
+                        'value' => esc_attr($is_existing_customer ? $customer->address : ''),
+                        'class' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-2 text-gray-800 bg-gray-50 transition',
+                        'special' => 'autocomplete="street-address"'
+                    ]); ?>
+                </div>
+                <div>
+                    <?php require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/selectsOrigin.php'); ?>
+                </div>
+            </div>
+        </div>
     </div>
-</div>
-
-<div class="flex flex-col md:flex-row justify-between items-center gap-4 mt-8">
-    <?php echo KIT_Commons::renderButton('Next: Waybill Items', 'primary', 'md', [
-        'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />',
-        'iconPosition' => 'right',
-        'data-target' => 'step-3',
-        'classes' => 'next-step w-full md:w-auto px-8 py-3 rounded-lg text-base font-semibold bg-gradient-to-r from-blue-500 to-blue-700 text-white shadow-md hover:from-blue-600 hover:to-blue-800 transition',
-        'gradient' => true,
-        'disabled' => "false"
-    ]); ?>
+    <div class="flex flex-col md:flex-row justify-between items-center gap-4 mt-8">
+        <?php echo KIT_Commons::renderButton('Next: Waybill Items', 'primary', 'md', [
+            'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />',
+            'iconPosition' => 'right',
+            'data-target' => 'step-3',
+            'classes' => 'next-step w-full md:w-auto px-8 py-3 rounded-lg text-base font-semibold bg-gradient-to-r from-blue-500 to-blue-700 text-white shadow-md hover:from-blue-600 hover:to-blue-800 transition',
+            'gradient' => true,
+            'disabled' => "false"
+        ]); ?>
+    </div>
 </div>
 
 <script>
     window.CUSTOMERS_DATA = window.CUSTOMERS_DATA || (function() {
         try {
             const customers = <?php echo json_encode($customers, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
-            // Convert array to object indexed by cust_id for easier lookup
             const customersObj = {};
-            customers.forEach(customer => {
-                customersObj[customer.cust_id] = customer;
-            });
+            if (customers && Array.isArray(customers)) {
+                customers.forEach(customer => {
+                    customersObj[customer.cust_id] = customer;
+                });
+            }
             return customersObj;
         } catch (e) {
+            console.error('Error loading customers:', e);
             return {};
         }
     })();
 
     document.addEventListener('DOMContentLoaded', function() {
-        // Accordion toggle for customer details
-        const accordionBtn = document.querySelector('.customer-accordion-toggle');
-        const detailsContent = document.querySelector('.customer-details-content');
-        const arrowIcon = document.getElementById('customer-details-arrow');
-        
-        console.log('Accordion elements found:', { accordionBtn, detailsContent, arrowIcon });
-        
-        if (accordionBtn && detailsContent) {
-            // Start collapsed on mobile, open on desktop
-            if (window.innerWidth < 768) {
-                detailsContent.style.display = 'none';
+        // Client type radio logic
+        const clientTypeRadios = document.querySelectorAll('.client-type-radio');
+        const companyNameWrapper = document.getElementById('company_name_wrapper');
+        const companyNameInput = document.getElementById('company_name');
+
+        function updateCompanyNameVisibility() {
+            const selectedType = document.querySelector('input[name="client_type"]:checked')?.value;
+            if (selectedType === 'individual') {
+                if (companyNameWrapper) companyNameWrapper.style.display = 'none';
+                if (companyNameInput) companyNameInput.value = '1ndividual';
             } else {
-                detailsContent.style.display = 'block';
+                if (companyNameWrapper) companyNameWrapper.style.display = '';
             }
-            
-            accordionBtn.addEventListener('click', function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                
-                console.log('Accordion clicked! Current display:', detailsContent.style.display);
-                
-                // Toggle the content visibility
-                if (detailsContent.style.display === 'none') {
-                    detailsContent.style.display = 'block';
-                } else {
-                    detailsContent.style.display = 'none';
-                }
-                
-                // Rotate the arrow
-                if (arrowIcon) {
-                    arrowIcon.classList.toggle('rotate-180');
-                }
-                
-                console.log('After toggle - display:', detailsContent.style.display);
-            });
-        } else {
-            console.error('Accordion elements not found!', { accordionBtn, detailsContent });
         }
+
+        clientTypeRadios.forEach(function(radio) {
+            radio.addEventListener('change', updateCompanyNameVisibility);
+        });
+        updateCompanyNameVisibility();
 
         // Customer selection logic
         const customerSearch = document.getElementById('customer-search');
@@ -221,27 +227,25 @@
         const cellInput = getCustomerInput('cell');
         const addressInput = getCustomerInput('address');
         const emailInput = getCustomerInput('email_address');
-        const companyNameInput = getCustomerInput('company_name');
 
-        // Search customers function
         function searchCustomers(query) {
+            
             if (!query || query.length < 2) {
                 customerResults.classList.add('hidden');
                 return;
             }
-
             const results = [];
             const searchTerm = query.toLowerCase();
-
-            // Search through customers data
+            
             if (window.CUSTOMERS_DATA) {
                 Object.values(window.CUSTOMERS_DATA).forEach(customer => {
-                    const name = (customer.name || '').toLowerCase();
-                    const surname = (customer.surname || '').toLowerCase();
+                    const name = (customer.customer_name || '').toLowerCase();
+                    const surname = (customer.customer_surname || '').toLowerCase();
                     const company = (customer.company_name || '').toLowerCase();
                     const cell = (customer.cell || '').toLowerCase();
                     const email = (customer.email_address || '').toLowerCase();
-
+                    
+                    
                     if (name.includes(searchTerm) || 
                         surname.includes(searchTerm) || 
                         company.includes(searchTerm) ||
@@ -252,14 +256,11 @@
                     }
                 });
             }
-
-            displaySearchResults(results.slice(0, 10)); // Limit to 10 results
+            displaySearchResults(results.slice(0, 10));
         }
 
-        // Display search results
         function displaySearchResults(results) {
             customerResults.innerHTML = '';
-            
             if (results.length === 0) {
                 customerResults.innerHTML = '<div class="px-4 py-2 text-gray-500 text-sm">No customers found</div>';
             } else {
@@ -267,46 +268,37 @@
                     const item = document.createElement('div');
                     item.className = 'px-4 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0';
                     item.innerHTML = `
-                        <div class="font-medium text-gray-900">${customer.name} ${customer.surname}</div>
+                        <div class="font-medium text-gray-900">${customer.customer_name} ${customer.customer_surname}</div>
                         <div class="text-sm text-gray-500">${customer.company_name || customer.cell || ''}</div>
                     `;
                     item.addEventListener('click', () => selectCustomer(customer));
                     customerResults.appendChild(item);
                 });
             }
-            
             customerResults.classList.remove('hidden');
         }
 
-        // Select customer function
         function selectCustomer(customer) {
-            customerSearch.value = `${customer.name} ${customer.surname}`;
+            customerSearch.value = `${customer.customer_name} ${customer.customer_surname}`;
             customerSelect.value = customer.cust_id;
             custIdInput.value = customer.cust_id;
             customerResults.classList.add('hidden');
-            
-            // Populate customer details
             populateCustomerDetails(customer.cust_id);
         }
 
-        // Add new customer function
         function addNewCustomer() {
-            customerSearch.value = 'Add New Customer';
+            customerSearch.value = '';
             customerSelect.value = 'new';
             custIdInput.value = '0';
             customerResults.classList.add('hidden');
             clearCustomerFields();
         }
 
-        // Show recent customers
         function showRecentCustomers() {
             if (!window.CUSTOMERS_DATA) return;
-            
-            // Get last 10 customers (you can modify this logic)
             const recentCustomers = Object.values(window.CUSTOMERS_DATA)
                 .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
                 .slice(0, 10);
-            
             displaySearchResults(recentCustomers);
         }
 
@@ -314,15 +306,13 @@
             if (!window.CUSTOMERS_DATA || !window.CUSTOMERS_DATA[customerId]) {
                 return;
             }
-
             const customer = window.CUSTOMERS_DATA[customerId];
-            const dn = customer.name || '';
-            const ds = customer.surname || '';
+            const dn = customer.customer_name || '';
+            const ds = customer.customer_surname || '';
             const dc = customer.cell || '';
             const da = customer.address || '';
             const de = customer.email_address || '';
-            const dco = customer.company_name || customer.name || '';
-
+            const dco = customer.company_name || customer.customer_name || '';
             if (nameInput) nameInput.value = dn;
             if (surnameInput) surnameInput.value = ds;
             if (cellInput) cellInput.value = dc;
@@ -330,7 +320,7 @@
             if (emailInput) emailInput.value = de;
             if (companyNameInput) companyNameInput.value = dco;
             if (custIdInput) custIdInput.value = customerId;
-            
+            updateCompanyNameVisibility();
             populateOriginFromCustomer(customerId);
         }
 
@@ -338,32 +328,17 @@
             if (!window.CUSTOMERS_DATA || !window.CUSTOMERS_DATA[customerId]) {
                 return;
             }
-
             const customer = window.CUSTOMERS_DATA[customerId];
             const customerData = {
                 country_id: customer.country_id || '',
                 city_id: customer.city_id || ''
             };
-
             const originCountryId = customerData.country_id || 1;
             const originCountrySelect = document.getElementById('origin_country_select');
-
             if (originCountrySelect) {
-                // Set the country value
                 originCountrySelect.value = originCountryId;
-
-                // Trigger change event to load cities
-                const changeEvent = new Event('change', {
-                    bubbles: true
-                });
-                originCountrySelect.dispatchEvent(changeEvent);
-
-                // Load cities for the selected country
-                if (typeof handleCountryChange === 'function') {
-                    handleCountryChange(originCountryId, 'origin');
-                } else {
-                    loadCitiesForCountry(originCountryId, 'origin', customerData.city_id);
-                }
+                // Always use our custom function to ensure city gets set properly
+                loadCitiesForCountry(originCountryId, 'origin', customerData.city_id);
             }
         }
 
@@ -402,8 +377,6 @@
                                 option.textContent = city.city_name;
                                 citySelect.appendChild(option);
                             });
-
-                            // Set the default city if provided
                             if (defaultCityId) {
                                 citySelect.value = defaultCityId;
                             }
@@ -431,94 +404,47 @@
             if (emailInput) emailInput.value = '';
             if (companyNameInput) companyNameInput.value = '';
             if (custIdInput) custIdInput.value = '0';
+            const businessRadio = document.getElementById('client_type_business');
+            if (businessRadio) businessRadio.checked = true;
+            updateCompanyNameVisibility();
         }
 
-        // Event listeners for new search interface
         if (customerSearch) {
-            // Search input events
             customerSearch.addEventListener('input', function() {
                 searchCustomers(this.value);
             });
-
             customerSearch.addEventListener('focus', function() {
                 if (this.value.length >= 2) {
                     searchCustomers(this.value);
                 }
             });
-
-            // Hide results when clicking outside
             document.addEventListener('click', function(e) {
                 if (!customerSearch.contains(e.target) && !customerResults.contains(e.target)) {
                     customerResults.classList.add('hidden');
                 }
             });
-
-            // Handle keyboard navigation
             customerSearch.addEventListener('keydown', function(e) {
                 if (e.key === 'Escape') {
                     customerResults.classList.add('hidden');
                 }
             });
         }
-
-        // Quick action buttons
         if (addNewCustomerBtn) {
             addNewCustomerBtn.addEventListener('click', addNewCustomer);
         }
-
         if (recentCustomersBtn) {
             recentCustomersBtn.addEventListener('click', showRecentCustomers);
         }
-
-        // Initialize with existing customer if any
         const initialCustomerId = custIdInput?.value;
         if (initialCustomerId && initialCustomerId !== '0' && window.CUSTOMERS_DATA && window.CUSTOMERS_DATA[initialCustomerId]) {
             const customer = window.CUSTOMERS_DATA[initialCustomerId];
-            customerSearch.value = `${customer.name} ${customer.surname}`;
+            customerSearch.value = `${customer.customer_name} ${customer.customer_surname}`;
             customerSelect.value = initialCustomerId;
             populateCustomerDetails(initialCustomerId);
         } else if (initialCustomerId === '0' || !initialCustomerId) {
-            customerSearch.value = 'Add New Customer';
+            customerSearch.value = '';
             customerSelect.value = 'new';
         }
-
-        // Delivery card highlight logic (if used elsewhere)
-        (function setupDeliverySelection() {
-            function updateVisual() {
-                const cards = document.querySelectorAll('.delivery-card');
-                const checked = document.querySelector('input[name="delivery_id"]:checked');
-                const checkedId = checked ? checked.value : null;
-                cards.forEach(card => {
-                    card.classList.toggle('ring-2', checkedId && card.getAttribute('data-delivery-id') === checkedId);
-                    card.classList.toggle('ring-blue-500', checkedId && card.getAttribute('data-delivery-id') === checkedId);
-                    card.classList.toggle('bg-blue-50', checkedId && card.getAttribute('data-delivery-id') === checkedId);
-                    card.classList.toggle('border-blue-500', checkedId && card.getAttribute('data-delivery-id') === checkedId);
-                    card.classList.toggle('border-gray-200', !(checkedId && card.getAttribute('data-delivery-id') === checkedId));
-                    card.classList.toggle('bg-white', !(checkedId && card.getAttribute('data-delivery-id') === checkedId));
-                });
-            }
-            document.addEventListener('click', function(e) {
-                const card = e.target.closest('.delivery-card');
-                if (!card) return;
-                const id = card.getAttribute('data-delivery-id');
-                const radio = document.querySelector('input[name="delivery_id"][value="' + id + '"]');
-                if (radio) {
-                    radio.checked = true;
-                    updateVisual();
-                }
-            });
-            document.addEventListener('change', function(e) {
-                if (e.target && e.target.name === 'delivery_id') {
-                    updateVisual();
-                }
-            });
-            const observer = new MutationObserver(updateVisual);
-            observer.observe(document.body, {
-                childList: true,
-                subtree: true
-            });
-            updateVisual();
-        })();
     });
 </script>
 <!-- End of Selection -->
