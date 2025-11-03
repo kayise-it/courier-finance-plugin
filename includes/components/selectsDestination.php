@@ -1,46 +1,36 @@
-<?php if (!defined('ABSPATH')) { exit; } ?>
-<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div>
-        <label for="destination_country_select" class="<?= KIT_Commons::labelClass() ?>">Destination Country</label>
-        <?php
-        $destinationCountryId = 1; // Default to South Africa
-        
-        // For edit mode, try to get destination country ID from waybill data
-        if (isset($waybill['delivery_id']) && !empty($waybill['delivery_id'])) {
-            $delData = KIT_Deliveries::get_delivery($waybill['delivery_id']);
-            if ($delData && isset($delData->destination_country_id)) {
-                $destinationCountryId = $delData->destination_country_id;
-            }
-        } elseif (isset($waybillToStats['country_id']) || isset($routeData->destination_country_id)) {
-            $destinationCountryId = isset($waybillToStats['country_id'])
-                ? $waybillToStats['country_id']
-                : (isset($routeData->destination_country_id)
-                    ? $routeData->destination_country_id
-                    : 1);
-        }
+<?php if (!defined('ABSPATH')) {
+    exit;
+}
+$destination_city_id = ($waybill['miscellaneous']['others']['destination_city_id']) ?? 0;
+$destination_country_id = ($waybill['miscellaneous']['others']['destination_country_id']) ?? 0;
 
-        echo KIT_Deliveries::selectAllCountries('destination_country', 'destination_country_select', $destinationCountryId, "required", 'destination');
-        ?>
-    </div>
-    <div>
-        <label for="destination_city_select" class="<?= KIT_Commons::labelClass() ?>">Destination City</label>
-        <?php
-        $destinationCityId = 1; // Default city
-        
-        // For edit mode, try to get destination city ID from waybill data
-        if (isset($waybill['delivery_id']) && !empty($waybill['delivery_id'])) {
-            $delData = KIT_Deliveries::get_delivery($waybill['delivery_id']);
-            if ($delData && isset($delData->destination_city_id)) {
-                $destinationCityId = $delData->destination_city_id;
-            }
-        } elseif (isset($waybillToStats['country_id'])) {
-            $delData = KIT_Deliveries::get_delivery($waybill['delivery_id']);
-            if ($delData && isset($delData->destination_city_id)) {
-                $destinationCityId = $delData->destination_city_id;
-            }
-        }
-        
-        echo KIT_Deliveries::selectAllCitiesByCountry('destination_city', 'destination_city_select', $destinationCountryId, $destinationCityId);
-        ?>
-    </div>
+$defaultCountryId = ($destination_country_id) ? $destination_country_id : 1;
+
+
+?>
+<div>
+    <label for="destination_country_select" class="<?= KIT_Commons::labelClass() ?>">Destination Country</label>
+    <?php
+
+
+    // Auto-detect context for enhanced behavior - routes need all countries
+    $options = [];
+    if (isset($_GET['page']) && in_array($_GET['page'], ['route-create'])) {
+        $options = [
+            'show_all_countries' => true,
+            'show_inactive_indicators' => true
+        ];
+    }
+
+    echo KIT_Deliveries::selectAllCountries('destination_country', 'destination_country_select', $defaultCountryId, "required", 'destination', $options);
+    ?>
+</div>
+<div>
+    <label for="destination_city_select" class="<?= KIT_Commons::labelClass() ?>">Destination City</label>
+    <?php
+    $defaultCityId = ($destination_city_id) ? $destination_city_id : 1;
+
+
+    echo KIT_Deliveries::selectAllCitiesByCountry('destination_city', 'destination_city_select', $destination_country_id, $defaultCityId);
+    ?>
 </div>

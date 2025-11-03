@@ -173,17 +173,5 @@ document.addEventListener('click', function (e) {
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function () {
     initItemsPerPage();
-    // Auto-load cities if a country is already selected on load (e.g., after validation redirect)
-    try {
-        var destCountry = document.getElementById('stepDestinationSelect');
-        if (destCountry && destCountry.value) {
-            handleCountryChange(destCountry.value, 'destination_country');
-        }
-
-        var originCountry = document.getElementById('origin_country_select');
-        if (originCountry && originCountry.value) {
-            handleCountryChange(originCountry.value, 'origin_country');
-        }
-    } catch (e) {
-    }
+    // Removed auto city-loading on page load to preserve server-selected defaults
 });

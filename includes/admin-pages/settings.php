@@ -5,6 +5,16 @@ if (!defined('ABSPATH')) {
 
 // Include user roles for strict access control
 require_once plugin_dir_path(__FILE__) . '../user-roles.php';
+// Seed helpers (JSON generation and seeding) - optional
+$seed_json_path = plugin_dir_path(__FILE__) . '../seed/seed-json.php';
+if (file_exists($seed_json_path)) {
+    require_once $seed_json_path;
+}
+// SQL seed generator helper - optional
+$seed_sql_path = plugin_dir_path(__FILE__) . '../seed/seed-sql.php';
+if (file_exists($seed_sql_path)) {
+    require_once $seed_sql_path;
+}
 
 // Check if current user has admin capabilities
 $wpdb_global_was_set = true; // marker
@@ -17,17 +27,14 @@ if (!KIT_User_Roles::can_access_settings()) {
 
 // Handle form submissions
 if ($_POST && isset($_POST['action'])) {
-    // Handle seeding action
-    if ($_POST['action'] === 'seed_customers' && wp_verify_nonce($_POST['seeding_nonce'], 'seed_customers')) {
-        $seeding_result = handle_customer_seeding();
+    // Handle setup seed: execute SQL from assets/seed_full.sql
+    if ($_POST['action'] === 'seed_setup' && isset($_POST['setup_seed_nonce']) && wp_verify_nonce($_POST['setup_seed_nonce'], 'seed_setup')) {
+        $setup_seed_result = handle_setup_seed_sql();
     }
 
-    // Handle unseeding action
-    if ($_POST['action'] === 'unseed_customers' && wp_verify_nonce($_POST['unseeding_nonce'], 'unseed_customers')) {
-        $unseeding_result = handle_customer_unseeding();
-    }
-
-    if (wp_verify_nonce($_POST['settings_nonce'], 'save_settings')) {
+    // Handle banking, company, and charges forms (all use same nonce)
+    if (isset($_POST['settings_nonce']) && wp_verify_nonce($_POST['settings_nonce'], 'save_settings') && 
+        isset($_POST['action']) && in_array($_POST['action'], ['save_banking', 'save_company', 'save_charges'])) {
         global $wpdb;
         $table = $wpdb->prefix . 'kit_company_details';
         // Only update columns that were posted to avoid wiping existing values
@@ -107,31 +114,32 @@ if ($_POST && isset($_POST['action'])) {
         }
     }
 
-    // Save server configuration
-    if (isset($_POST['action']) && $_POST['action'] === 'save_server_config' && wp_verify_nonce($_POST['settings_nonce'], 'save_settings')) {
-        $server_config = [
-            'kit_server_name' => sanitize_text_field($_POST['server_name'] ?? ''),
-            'kit_server_type' => sanitize_text_field($_POST['server_type'] ?? ''),
-            'kit_server_host' => sanitize_text_field($_POST['server_host'] ?? ''),
-            'kit_server_port' => intval($_POST['server_port'] ?? 3306),
-            'kit_server_username' => sanitize_text_field($_POST['server_username'] ?? ''),
-            'kit_server_password' => sanitize_text_field($_POST['server_password'] ?? ''),
-            'kit_server_database' => sanitize_text_field($_POST['server_database'] ?? ''),
-            'kit_server_ssl' => intval($_POST['server_ssl'] ?? 0),
-            'kit_api_endpoint' => esc_url_raw($_POST['api_endpoint'] ?? ''),
-            'kit_api_timeout' => intval($_POST['api_timeout'] ?? 30),
-            'kit_api_headers' => sanitize_textarea_field($_POST['api_headers'] ?? ''),
-            'kit_api_retry_attempts' => intval($_POST['api_retry_attempts'] ?? 3),
-            'kit_webhook_url' => esc_url_raw($_POST['webhook_url'] ?? ''),
-            'kit_webhook_secret' => sanitize_text_field($_POST['webhook_secret'] ?? ''),
-            'kit_webhook_events' => array_map('sanitize_text_field', $_POST['webhook_events'] ?? [])
-        ];
-
-        foreach ($server_config as $key => $value) {
-            update_option($key, $value);
+    // Save Terms & Conditions
+    if (isset($_POST['action']) && $_POST['action'] === 'save_terms' && wp_verify_nonce($_POST['settings_nonce'], 'save_settings')) {
+        // Prefer list items if provided
+        $built_html = '';
+        if (!empty($_POST['terms_items']) && is_array($_POST['terms_items'])) {
+            $items = array_map('sanitize_text_field', $_POST['terms_items']);
+            $items = array_values(array_filter($items, function($v){ return strlen(trim((string)$v)) > 0; }));
+            if (!empty($items)) {
+                $html = '<ul class="terms-conditions">';
+                foreach ($items as $it) {
+                    $html .= '<li>' . esc_html($it) . '</li>';
+                }
+                $html .= '</ul>';
+                $built_html = $html;
+            }
         }
 
-        $message = 'Server configuration saved successfully.';
+        // Fallback: accept pasted HTML (sanitized) if no list inputs were used
+        if ($built_html === '') {
+            $allowed_html_terms = wp_kses_allowed_html('post');
+            $terms_raw = $_POST['terms_content'] ?? '';
+            $built_html = wp_kses((string)$terms_raw, $allowed_html_terms);
+        }
+
+        update_option('kit_terms_conditions', $built_html);
+        $message = 'Terms & Conditions saved successfully.';
     }
 
     // Save brand colors (60/30/10 rule)
@@ -170,6 +178,81 @@ if ($_POST && isset($_POST['action'])) {
     }
 }
 
+// Auto-generate assets/seed_full.sql from Excel if missing (non-destructive)
+try {
+    $assetsDir_autogen = plugin_dir_path(__FILE__) . '../../assets/';
+    $seed_full_path = $assetsDir_autogen . 'seed_full.sql';
+    $excel_path_autogen = plugin_dir_path(__FILE__) . '../../waybill_excel/Waybills_31-10-2025.xlsx';
+    if (!file_exists($seed_full_path)) {
+        // Prefer DB export to avoid shell_exec dependency
+        $export = kit_export_seed_sql_from_db();
+        if (!$export['success'] && file_exists($excel_path_autogen) && function_exists('shell_exec')) {
+            kit_generate_seed_sql_from_excel();
+        }
+    }
+} catch (Exception $e) {
+    // ignore
+}
+
+// Manual exporter: create assets/seed_full.sql from current DB (drivers, customers, deliveries, waybills)
+function kit_export_seed_sql_from_db(): array
+{
+    global $wpdb;
+    $assetsDir = plugin_dir_path(__FILE__) . '../../assets/';
+    if (!is_dir($assetsDir)) { @mkdir($assetsDir, 0755, true); }
+    $target = $assetsDir . 'seed_full.sql';
+
+    $drivers = $wpdb->get_results("SELECT name, is_active FROM {$wpdb->prefix}kit_drivers ORDER BY id ASC", ARRAY_A) ?: [];
+    $customers = $wpdb->get_results("SELECT cust_id, name, surname, company_name, country_id FROM {$wpdb->prefix}kit_customers ORDER BY id ASC", ARRAY_A) ?: [];
+    $deliveries = $wpdb->get_results("SELECT id, delivery_reference, direction_id, destination_city_id, dispatch_date, driver_id, status FROM {$wpdb->prefix}kit_deliveries ORDER BY id ASC", ARRAY_A) ?: [];
+    $waybills = $wpdb->get_results("SELECT description, direction_id, delivery_id, customer_id, waybill_no, warehouse, product_invoice_number, product_invoice_amount, waybill_items_total, total_mass_kg, total_volume, mass_charge, volume_charge, charge_basis, miscellaneous, include_sad500, include_sadc, vat_include, tracking_number, status, created_at, last_updated_at FROM {$wpdb->prefix}kit_waybills ORDER BY id ASC", ARRAY_A) ?: [];
+
+    $lines = [];
+    $lines[] = 'START TRANSACTION';
+    foreach ($drivers as $r) {
+        $name = addslashes($r['name']);
+        $active = (int)($r['is_active'] ?? 1);
+        $lines[] = "INSERT INTO wp_kit_drivers (name, is_active) SELECT '{$name}', {$active} FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM wp_kit_drivers WHERE name = '{$name}')";
+    }
+    foreach ($customers as $r) {
+        $cust_id = (int)$r['cust_id'];
+        $name = addslashes($r['name']);
+        $surname = addslashes($r['surname']);
+        $company = addslashes($r['company_name']);
+        $country = (int)$r['country_id'];
+        $lines[] = "INSERT INTO wp_kit_customers (cust_id, name, surname, company_name, country_id) SELECT {$cust_id}, '{$name}', '{$surname}', '{$company}', {$country} FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM wp_kit_customers WHERE cust_id = {$cust_id})";
+    }
+    foreach ($deliveries as $r) {
+        $ref = addslashes($r['delivery_reference']);
+        $dir = (int)$r['direction_id'];
+        $city = (int)$r['destination_city_id'];
+        $date = addslashes($r['dispatch_date']);
+        $driver_id = (int)$r['driver_id'];
+        $status = addslashes($r['status']);
+        $lines[] = "INSERT INTO wp_kit_deliveries (delivery_reference, direction_id, destination_city_id, dispatch_date, driver_id, status) SELECT '{$ref}', {$dir}, {$city}, '{$date}', (SELECT id FROM wp_kit_drivers d WHERE d.id = {$driver_id} LIMIT 1), '{$status}' FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM wp_kit_deliveries WHERE delivery_reference = '{$ref}')";
+    }
+    foreach ($waybills as $r) {
+        $cols = ['description','direction_id','delivery_id','customer_id','waybill_no','warehouse','product_invoice_number','product_invoice_amount','waybill_items_total','total_mass_kg','total_volume','mass_charge','volume_charge','charge_basis','miscellaneous','include_sad500','include_sadc','vat_include','tracking_number','status','created_at','last_updated_at'];
+        $vals = [];
+        foreach ($cols as $c) {
+            $v = $r[$c];
+            if (is_null($v)) { $vals[] = 'NULL'; continue; }
+            if (is_numeric($v) && !in_array($c, ['description','product_invoice_number','tracking_number','status','charge_basis','miscellaneous','created_at','last_updated_at'])) {
+                $vals[] = (string)$v;
+            } else {
+                $vals[] = "'" . addslashes((string)$v) . "'";
+            }
+        }
+        $lines[] = 'INSERT INTO wp_kit_waybills (' . implode(',', $cols) . ') SELECT ' . implode(',', $vals) . ' FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM wp_kit_waybills WHERE waybill_no = ' . (int)$r['waybill_no'] . ')';
+    }
+    $lines[] = 'COMMIT';
+
+    $ok = @file_put_contents($target, implode(";\n\n", $lines) . ";\n");
+    if ($ok === false) {
+        return ['success' => false, 'message' => 'Failed to write assets/seed_full.sql'];
+    }
+    return ['success' => true, 'message' => 'seed_full.sql exported from DB', 'path' => $target];
+}
 /**
  * Ensure a prefix-adjusted copy of assets/customers.sql exists as assets/customers_dynamic.sql
  * Recreates the file if it is missing or older than the source file.
@@ -316,7 +399,6 @@ function handle_customer_unseeding()
     $customers_table = $wpdb->prefix . 'kit_customers';
     $waybills_table = $wpdb->prefix . 'kit_waybills';
     $waybill_items_table = $wpdb->prefix . 'kit_waybill_items';
-    $warehouse_tracking_table = $wpdb->prefix . 'kit_warehouse_tracking';
 
     try {
         // Start transaction
@@ -354,9 +436,9 @@ function handle_customer_unseeding()
         }
 
         // Delete warehouse tracking for these customers
-        $warehouse_tracking_deleted = 0;
+        $warehouse_waybills_deleted = 0;
         if (!empty($customer_ids_str)) {
-            $warehouse_tracking_deleted = $wpdb->query("DELETE FROM $warehouse_tracking_table WHERE customer_id IN ($customer_ids_str)");
+            $warehouse_waybills_deleted = $wpdb->query("DELETE FROM $waybills_table WHERE customer_id IN ($customer_ids_str) AND status IN ('pending', 'assigned', 'shipped', 'delivered')");
         }
 
         // Delete all customers
@@ -375,7 +457,7 @@ function handle_customer_unseeding()
             $wpdb->query('COMMIT');
             return [
                 'success' => true,
-                'message' => "Successfully unseeded customers! Deleted: $customers_deleted customers, $waybills_deleted waybills, $waybill_items_deleted waybill items, $warehouse_tracking_deleted warehouse tracking records."
+                'message' => "Successfully unseeded customers! Deleted: $customers_deleted customers, $waybills_deleted waybills, $waybill_items_deleted waybill items, $warehouse_waybills_deleted warehouse waybills."
             ];
         } else {
             $wpdb->query('ROLLBACK');
@@ -391,6 +473,379 @@ function handle_customer_unseeding()
             'message' => 'Unseeding failed: ' . $e->getMessage()
         ];
     }
+}
+
+// Function to handle waybill import
+function handle_waybill_import()
+{
+    // Include the import script
+    $import_file = plugin_dir_path(__FILE__) . '../../import_excel_waybills.php';
+    error_log("Attempting to load import script from: $import_file");
+    
+    if (!file_exists($import_file)) {
+        error_log("Import script file not found: $import_file");
+        return [
+            'success' => false,
+            'message' => 'Import script file not found.'
+        ];
+    }
+    
+    require_once $import_file;
+    error_log("Import script loaded successfully");
+    
+    // Check if file exists
+    $excel_file = plugin_dir_path(__FILE__) . '../../waybill_excel/Waybills_31-10-2025.xlsx';
+    error_log("Checking for Excel file at: $excel_file");
+    
+    if (!file_exists($excel_file)) {
+        error_log("Excel file not found: $excel_file");
+        return [
+            'success' => false,
+            'message' => 'Excel file not found. Please ensure the file exists in the waybill_excel folder.'
+        ];
+    }
+    
+    error_log("Excel file found, starting import...");
+    
+    try {
+        // Run the import
+        $importer = new Excel_Waybill_Importer($excel_file);
+        $result = $importer->import();
+        
+        error_log("Import completed with success: " . ($result['success'] ? 'true' : 'false'));
+        
+        if ($result['success']) {
+            return [
+                'success' => true,
+                'message' => 'Waybill import completed successfully!',
+                'stats' => $result['stats']
+            ];
+        } else {
+            return [
+                'success' => false,
+                'message' => $result['message'],
+                'stats' => $result['stats']
+            ];
+        }
+    } catch (Exception $e) {
+        error_log("Import exception: " . $e->getMessage());
+        return [
+            'success' => false,
+            'message' => 'Import failed: ' . $e->getMessage()
+        ];
+    } catch (Error $e) {
+        error_log("Import fatal error: " . $e->getMessage());
+        return [
+            'success' => false,
+            'message' => 'Import fatal error: ' . $e->getMessage()
+        ];
+    }
+}
+
+// Execute SQL from assets/seed_full.sql with dynamic table prefix replacement
+function handle_setup_seed_sql()
+{
+    global $wpdb;
+
+    $assetsDir = plugin_dir_path(__FILE__) . '../../assets/';
+    $seed_full_fixed_file = $assetsDir . 'seed_full_fixed.sql';  // Primary: fixed seed file
+    $seed_full_file = $assetsDir . 'seed_full.sql';               // Fallback: original seed file
+
+    try {
+        // Check for files that actually exist
+        $sql_file = null;
+        if (file_exists($seed_full_fixed_file)) {
+            $sql_file = $seed_full_fixed_file;
+        } elseif (file_exists($seed_full_file)) {
+            $sql_file = $seed_full_file;
+        } else {
+            // Try to generate from Excel automatically as last resort
+            $generated = kit_generate_seed_sql_from_excel();
+            if ($generated['success'] && file_exists($generated['path'])) {
+                $sql_file = $generated['path'];
+            } else {
+                return [
+                    'success' => false,
+                    'message' => 'Seed SQL not found. Please ensure assets/seed_full_fixed.sql or assets/seed_full.sql exists'
+                ];
+            }
+        }
+
+        // Log which SQL file is being used
+        if (function_exists('error_log')) {
+            @error_log('[SetupSeed] Using SQL file: ' . $sql_file);
+        }
+        $sql_content = file_get_contents($sql_file);
+        if ($sql_content === false) {
+            return [
+                'success' => false,
+                'message' => 'Failed to read seed SQL file.'
+            ];
+        }
+
+        // Replace hardcoded wp_ prefixes with dynamic prefix if needed
+        // First replace {PREFIX} placeholder (new format)
+        $sql_content = str_replace('{PREFIX}', $wpdb->prefix, $sql_content);
+        // Then handle legacy wp_ prefixes (backward compatibility)
+        $sql_content = preg_replace('/`wp_([a-zA-Z_]+)`/', '`' . $wpdb->prefix . '$1`', $sql_content);
+        $sql_content = preg_replace('/(?<![a-zA-Z0-9_])wp_([a-zA-Z_]+)/', $wpdb->prefix . '$1', $sql_content);
+        
+        // Determine created_by user_id based on prefix
+        // If prefix is NOT 'wp_', we're in production/live -> use user_id 1593
+        // If prefix IS 'wp_', we're in development -> use Thando@kayiseit.com user_id
+        $created_by_user_id = 1593; // Default for production/live (non-wp_ prefix)
+        
+        if ($wpdb->prefix === 'wp_') {
+            // Development environment - get user_id for Thando@kayiseit.com
+            $thando_user = get_user_by('email', 'Thando@kayiseit.com');
+            if ($thando_user) {
+                $created_by_user_id = $thando_user->ID;
+            } else {
+                // Fallback to 1 if user not found
+                $created_by_user_id = 1;
+            }
+        }
+        
+        // Replace {CREATED_BY} placeholder with the determined user_id
+        $sql_content = str_replace('{CREATED_BY}', $created_by_user_id, $sql_content);
+
+        // Split and execute statements - handle quoted strings properly
+        // This function respects SQL string literals and doesn't split inside them
+        $statements = [];
+        $current = '';
+        $in_string = false;
+        $string_char = '';
+        $len = strlen($sql_content);
+        
+        for ($i = 0; $i < $len; $i++) {
+            $char = $sql_content[$i];
+            $next_char = ($i < $len - 1) ? $sql_content[$i + 1] : '';
+            $current .= $char;
+            
+            // Handle SQL string literals with proper escaping
+            if (!$in_string && ($char === "'" || $char === '"')) {
+                $in_string = true;
+                $string_char = $char;
+            } elseif ($in_string && $char === $string_char) {
+                // Check for SQL escape: '' (two single quotes) or escaped quote
+                if ($char === "'" && $next_char === "'") {
+                    // Double single quote escape in SQL - skip next char
+                    $i++;
+                    $current .= $next_char;
+                } elseif ($char === '\\' && ($next_char === "'" || $next_char === '"')) {
+                    // Escaped quote - skip next char
+                    $i++;
+                    $current .= $next_char;
+                } else {
+                    // End of string
+                    $in_string = false;
+                    $string_char = '';
+                }
+            } elseif (!$in_string && $char === ';') {
+                $stmt = trim($current);
+                // Only add non-empty statements that aren't just a semicolon
+                if ($stmt !== '' && $stmt !== ';' && strlen($stmt) > 1) {
+                    // Skip comment-only statements
+                    $stmt_clean = preg_replace('/--.*$/m', '', $stmt);
+                    $stmt_clean = preg_replace('/\/\*.*?\*\//s', '', $stmt_clean);
+                    $stmt_clean = trim($stmt_clean);
+                    if ($stmt_clean !== '' && !preg_match('/^\s*--/', $stmt_clean)) {
+                        $statements[] = $stmt;
+                    }
+                }
+                $current = '';
+            }
+        }
+        
+        // Add remaining statement if any (after trimming comments)
+        if (trim($current) !== '') {
+            $stmt = trim($current);
+            $stmt_clean = preg_replace('/--.*$/m', '', $stmt);
+            $stmt_clean = preg_replace('/\/\*.*?\*\//s', '', $stmt_clean);
+            $stmt_clean = trim($stmt_clean);
+            if ($stmt_clean !== '' && !preg_match('/^\s*--/', $stmt_clean)) {
+                $statements[] = $stmt;
+            }
+        }
+        
+        $executed = 0; $errors = [];
+        foreach ($statements as $statement) {
+            if ($statement === '') { continue; }
+            
+            // Remove SQL comments (both -- style and /* */ style) before executing
+            // This prevents statements with leading comments from being skipped
+            $statement = preg_replace('/--.*$/m', '', $statement); // Remove -- comments
+            $statement = preg_replace('/\/\*.*?\*\//s', '', $statement); // Remove /* */ comments
+            $statement = trim($statement);
+            
+            if ($statement === '' || strpos($statement, '--') === 0) { continue; }
+            $result = $wpdb->query($statement);
+            if ($result === false) {
+                $err = $wpdb->last_error ?: 'Unknown DB error';
+                $errors[] = $err;
+                if (function_exists('error_log')) {
+                    @error_log('[SetupSeed] DB Error: ' . $err . ' | SQL: ' . substr($statement, 0, 300));
+                }
+            } else {
+                $executed++;
+            }
+        }
+
+        if (!empty($errors)) {
+            return [
+                'success' => false,
+                'message' => 'Seeding completed with errors. See first error below.',
+                'stats' => [ 'executed' => $executed, 'errors' => $errors ]
+            ];
+        }
+
+        $used_file = basename($sql_file);
+        return [
+            'success' => true,
+            'message' => 'Setup seed executed successfully using ' . $used_file . '.',
+            'stats' => [ 'executed' => $executed ]
+        ];
+    } catch (Exception $e) {
+        return [ 'success' => false, 'message' => 'Setup seed failed: ' . $e->getMessage() ];
+    }
+}
+// Generate assets/seed_full.sql from Excel file (waybill_excel/*.xlsx)
+function kit_generate_seed_sql_from_excel(): array
+{
+    $excel_file = plugin_dir_path(__FILE__) . '../../waybill_excel/Waybills_31-10-2025.xlsx';
+    $assetsDir = plugin_dir_path(__FILE__) . '../../assets/';
+    $target_sql = $assetsDir . 'seed_full.sql';
+
+    if (!file_exists($excel_file)) {
+        return ['success' => false, 'message' => 'Excel file not found', 'path' => null];
+    }
+
+    $python = "\nimport pandas as pd\nimport json\nimport sys\n\ntry:\n    df = pd.read_excel('" . $excel_file . "', sheet_name='waybills')\n    for col in df.columns:\n        if str(df[col].dtype).startswith('datetime'):\n            df[col] = df[col].astype(str)\n    df = df.fillna('')\n    print(json.dumps(df.to_dict('records')))\nexcept Exception as e:\n    print(json.dumps({'error': str(e)}))\n    sys.exit(0)\n";
+
+    if (!function_exists('shell_exec')) {
+        return ['success' => false, 'message' => 'shell_exec disabled; cannot read Excel', 'path' => null];
+    }
+    $tmp = tempnam(sys_get_temp_dir(), 'seedgen_');
+    @file_put_contents($tmp, $python);
+    $json = @shell_exec('python3 ' . escapeshellarg($tmp) . ' 2>/dev/null');
+    @unlink($tmp);
+    if (!$json) {
+        return ['success' => false, 'message' => 'Python failed to read Excel', 'path' => null];
+    }
+    $rows = json_decode($json, true);
+    if (!is_array($rows) || isset($rows['error'])) {
+        return ['success' => false, 'message' => 'Excel parse error', 'path' => null];
+    }
+
+    $drivers = [];
+    $deliveries = [];
+    $customers = [];
+    $waybillRows = [];
+    foreach ($rows as $r) {
+        $driver = trim((string)($r['Driver'] ?? ''));
+        $date = trim((string)($r['Truck Dispatch Date'] ?? ''));
+        if ($date === '' || strtolower($date) === 'nat' || strtolower($date) === 'nan' || $date === '0000-00-00') {
+            $date = date('Y-m-d');
+        }
+        $customer = trim((string)($r['Customer'] ?? ''));
+        if ($driver === '' || $date === '' || $customer === '') { continue; }
+        $drivers[$driver] = true;
+        $deliveries[$driver . '|' . $date] = ['driver' => $driver, 'date' => $date];
+        $customers[$customer] = true;
+        $waybillRows[] = $r;
+    }
+
+    $sql = [];
+    $sql[] = 'START TRANSACTION';
+    foreach (array_keys($drivers) as $name) {
+        $esc = addslashes($name);
+        $sql[] = "INSERT INTO wp_kit_drivers (name, is_active) \nSELECT '{$esc}', 1 FROM DUAL \nWHERE NOT EXISTS (SELECT 1 FROM wp_kit_drivers WHERE name = '{$esc}')";
+    }
+    foreach ($deliveries as $d) {
+        $escName = addslashes($d['driver']);
+        $escDate = addslashes($d['date']);
+        $sql[] = "INSERT INTO wp_kit_deliveries (delivery_reference, direction_id, destination_city_id, dispatch_date, driver_id, status)\nSELECT CONCAT('IMPORT-', LEFT(UUID(),8)), 1, 1, '{$escDate}', d.id, 'scheduled'\nFROM wp_kit_drivers d\nWHERE d.name = '{$escName}'\nAND NOT EXISTS (SELECT 1 FROM wp_kit_deliveries WHERE driver_id = d.id AND dispatch_date = '{$escDate}')";
+    }
+    foreach (array_keys($customers) as $fullname) {
+        $parts = explode(' ', trim($fullname), 2);
+        $first = addslashes($parts[0] ?? '');
+        $last = addslashes($parts[1] ?? 'LastName');
+        $custId = rand(1000, 9999);
+        $sql[] = "INSERT INTO wp_kit_customers (cust_id, name, surname, company_name, country_id) \nSELECT {$custId}, '{$first}', '{$last}', 'Individual', 0 FROM DUAL \nWHERE NOT EXISTS (SELECT 1 FROM wp_kit_customers WHERE name = '{$first}' AND surname = '{$last}')";
+    }
+    foreach ($waybillRows as $row) {
+        // --- Extract fields with defensive fallbacks ---
+        $driver = addslashes(trim((string)($row['Driver'] ?? '')));
+        $dateVal = trim((string)($row['Truck Dispatch Date'] ?? ''));
+        if ($dateVal === '' || strtolower($dateVal) === 'nat' || strtolower($dateVal) === 'nan' || $dateVal === '0000-00-00') {
+            $dateVal = date('Y-m-d');
+        }
+        $date = addslashes($dateVal);
+
+        $customer = trim((string)($row['Customer'] ?? ''));
+        $parts = explode(' ', $customer, 2);
+        $first = addslashes($parts[0] ?? '');
+        $last  = addslashes($parts[1] ?? 'LastName');
+
+        // Quantities / totals
+        $qty       = (int)($row['QUANTITY'] ?? 0);
+        $mass      = (float)($row['T MASS'] ?? 0);
+        $vol       = (float)($row['T VOLUME'] ?? 0);
+        $length    = (float)($row['LENGTH'] ?? 0);
+        $width     = (float)($row['WIDTH'] ?? 0);
+        $height    = (float)($row['HEIGHT'] ?? 0);
+        $basis     = trim((string)($row['BASIS'] ?? ''));
+
+        $massCost  = addslashes(preg_replace('/[^0-9\.]/','', (string)($row['MASS COST'] ?? '0')));
+        $volCost   = addslashes(preg_replace('/[^0-9\.]/','', (string)($row['VOL COST'] ?? '0')));
+        $totalCost = (float)max((float)$massCost, (float)$volCost);
+
+        // Waybill description from Excel column exactly as provided
+        $waybill_description = addslashes(trim((string)($row['Waybill  description'] ?? $row['Waybill description'] ?? $row['Waybill_description'] ?? '')));
+
+        // VAT / SADC / SAD500 mapping from Excel (tolerant to headers and values)
+        $vatRaw = strtoupper(trim((string)($row['VAT'] ?? $row['Vat'] ?? $row['vat_include'] ?? '')));
+        $vatFlag = in_array($vatRaw, ['TRUE','1','YES','SAD500','SADC'], true) ? 1 : 0;
+        $include_sad500 = ($vatRaw === 'SAD500') ? 1 : 0;
+        $include_sadc   = ($vatRaw === 'SADC')   ? 1 : 0;
+
+        // Item fields (small boxes) — must use "Item description" (NOT waybill description)
+        $itemDesc = trim((string)($row['Item description'] ?? $row['ITEM DESCRIPTION'] ?? $row['Item_Description'] ?? ''));
+        $itemDescSql = $itemDesc !== '' ? ("'" . addslashes($itemDesc) . "'") : "NULL";
+        $itemQty  = (int)($row['QUANTITY'] ?? 0);
+
+        // Client invoice (W) and total price (Y) — tolerant to header variants
+        $clientInv = trim((string)($row['CL INV #'] ?? $row['CLIENT INVOICE'] ?? $row['Client invoice'] ?? $row['Client_Invoice'] ?? ''));
+        $clientInvSql = $clientInv !== '' ? ("'" . addslashes($clientInv) . "'") : "NULL";
+        $totalPriceRaw = trim((string)($row['TOTAL PRICE'] ?? $row['Total price'] ?? $row['Total_Price'] ?? $row['TOTAL'] ?? ''));
+        $totalPrice = preg_replace('/[^0-9\.]/','', $totalPriceRaw);
+        $totalPriceSql = ($totalPrice === '' ? 'NULL' : $totalPrice);
+
+        // 1) Insert WAYBILL (no product_invoice_number; PHP generates it later if you use save_waybill route)
+        $sql[] = "INSERT INTO wp_kit_waybills (description, direction_id, delivery_id, customer_id, waybill_no, warehouse, product_invoice_number, product_invoice_amount, waybill_items_total, total_mass_kg, total_volume, item_length, item_width, item_height, mass_charge, volume_charge, charge_basis, miscellaneous, include_sad500, include_sadc, vat_include, tracking_number, status, created_at, last_updated_at)\n"
+               . "SELECT " . ($waybill_description ? "'{$waybill_description}'" : "NULL") . ", 1, del.id, cust.cust_id, FLOOR(RAND()*900000)+100000, 0, NULL, {$totalCost}, {$totalCost}, {$mass}, {$vol}, {$length}, {$width}, {$height}, {$massCost}, {$volCost}, " . ($basis !== '' ? "'" . addslashes($basis) . "'" : "'mass'") . ", '', {$include_sad500}, {$include_sadc}, {$vatFlag}, CONCAT('TRK-', LEFT(UUID(),8)), 'pending', NOW(), NOW()\n"
+               . "FROM wp_kit_deliveries del\n"
+               . "JOIN wp_kit_drivers d ON d.id = del.driver_id AND d.name = '{$driver}' AND del.dispatch_date = '{$date}'\n"
+               . "JOIN wp_kit_customers cust ON cust.name = '{$first}' AND cust.surname = '{$last}'\n"
+               . "WHERE NOT EXISTS (SELECT 1 FROM wp_kit_waybills w JOIN wp_kit_customers c2 ON w.customer_id = c2.cust_id WHERE c2.name = '{$first}' AND c2.surname = '{$last}' AND w.delivery_id = del.id)";
+
+        // 2) Insert WAYBILL ITEM using Item description (NOT the waybill description)
+        //    We reference the waybill just inserted via the same join keys (customer+delivery) to get its waybill_no
+        $sql[] = "INSERT INTO wp_kit_waybill_items (waybillno, item_name, quantity, unit_price, unit_mass, unit_volume, total_price, client_invoice)\n"
+               . "SELECT w.waybill_no, {$itemDescSql}, " . ($itemQty > 0 ? $itemQty : 1) . ", 0.00, 0.00, 0.00, {$totalPriceSql}, {$clientInvSql}\n"
+               . "FROM wp_kit_waybills w\n"
+               . "JOIN wp_kit_deliveries del ON del.id = w.delivery_id\n"
+               . "JOIN wp_kit_drivers d ON d.id = del.driver_id AND d.name = '{$driver}' AND del.dispatch_date = '{$date}'\n"
+               . "JOIN wp_kit_customers cust ON cust.cust_id = w.customer_id AND cust.name = '{$first}' AND cust.surname = '{$last}'\n"
+               . "WHERE NOT EXISTS (SELECT 1 FROM wp_kit_waybill_items i WHERE i.waybillno = w.waybill_no AND i.item_name = {$itemDescSql})";
+    }
+    $sql[] = 'COMMIT';
+    if (!is_dir($assetsDir)) { @mkdir($assetsDir, 0755, true); }
+    $ok = @file_put_contents($target_sql, implode(";\n\n", $sql) . ";\n");
+    if ($ok === false) {
+        return ['success' => false, 'message' => 'Failed to write seed_full.sql', 'path' => null];
+    }
+    return ['success' => true, 'message' => 'Generated from Excel', 'path' => $target_sql];
 }
 ?>
 
@@ -415,8 +870,8 @@ function handle_customer_unseeding()
             <?php echo KIT_Commons::renderButton('Company Details', 'ghost', 'sm', ['id' => 'tab-company', 'classes' => 'tab-button', 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>', 'iconPosition' => 'left']); ?>
             <?php echo KIT_Commons::renderButton('VAT & Charges', 'ghost', 'sm', ['id' => 'tab-charges', 'classes' => 'tab-button', 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"></path>', 'iconPosition' => 'left']); ?>
             <?php echo KIT_Commons::renderButton('Color Scheme', 'ghost', 'sm', ['id' => 'tab-colors', 'classes' => 'tab-button', 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7a4 4 0 018 0v10a4 4 0 11-8 0V7zm8 0a4 4 0 018 0v4a4 4 0 01-4 4h-4" />', 'iconPosition' => 'left']); ?>
-            <?php echo KIT_Commons::renderButton('Seeding', 'ghost', 'sm', ['id' => 'tab-seeding', 'classes' => 'tab-button', 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>', 'iconPosition' => 'left']); ?>
-            <?php echo KIT_Commons::renderButton('Server Connections', 'ghost', 'sm', ['id' => 'tab-servers', 'classes' => 'tab-button', 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"></path>', 'iconPosition' => 'left']); ?>
+            <?php echo KIT_Commons::renderButton('Setup Seed', 'ghost', 'sm', ['id' => 'tab-setup-seed', 'classes' => 'tab-button', 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />', 'iconPosition' => 'left']); ?>
+            <?php echo KIT_Commons::renderButton('Terms & Conditions', 'ghost', 'sm', ['id' => 'tab-terms', 'classes' => 'tab-button', 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"></path>', 'iconPosition' => 'left']); ?>
         </nav>
     </div>
 
@@ -693,8 +1148,11 @@ function handle_customer_unseeding()
                             <!-- Database Migration Button -->
                             <div class="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                                 <h4 class="text-sm font-medium text-yellow-800 mb-2">Database Migration</h4>
-                                <p class="text-xs text-yellow-700 mb-3">If the International Price field is not working, click the button below to add it to the database.</p>
-                                <?php echo KIT_Commons::renderButton('Add International Price Field to Database', 'warning', 'md', ['id' => 'migrate-db', 'type' => 'button', 'gradient' => true]); ?>
+                                <p class="text-xs text-yellow-700 mb-3">Use these tools to add missing fields/tables safely without wiping data.</p>
+                                <div class="flex flex-wrap gap-3">
+                                    <?php echo KIT_Commons::renderButton('Add International Price Field', 'warning', 'md', ['id' => 'migrate-db', 'type' => 'button', 'gradient' => true]); ?>
+                                    <?php echo KIT_Commons::renderButton('Run Full DB Migration (Add missing columns/tables)', 'secondary', 'md', ['id' => 'kit-run-migration', 'type' => 'button']); ?>
+                                </div>
                                 <div id="migration-result" class="mt-2 text-sm"></div>
                             </div>
                         </div>
@@ -751,169 +1209,94 @@ function handle_customer_unseeding()
             </div>
         </div>
 
-        <!-- Seeding Tab -->
-        <div id="content-seeding" class="tab-panel hidden">
+        <!-- Setup Seed Tab -->
+        <div id="content-setup-seed" class="tab-panel hidden">
             <div class="bg-white rounded-xl shadow-sm border border-gray-200">
                 <div class="px-6 py-4 border-b border-gray-200">
-                    <h2 class="text-xl font-semibold text-gray-900">Customer Data Seeding</h2>
-                    <p class="text-sm text-gray-600 mt-1">Seed customer data from CSV file to the database. This can only be done once per plugin installation.</p>
+                    <h2 class="text-xl font-semibold text-gray-900">Setup Seed</h2>
+                    <p class="text-sm text-gray-600 mt-1">Seed drivers, customers, deliveries and waybills programmatically.</p>
                 </div>
 
                 <div class="p-6">
                     <?php
-                    // Check seeding status
-                    $already_seeded = get_option('kit_customers_seeded', false);
-                    $existing_count = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}kit_customers WHERE cust_id >= 100001");
-                    $can_seed = !$already_seeded && $existing_count == 0;
+                    // Show seed SQL status - match the priority order in handle_setup_seed_sql()
+                    $assetsDir = plugin_dir_path(__FILE__) . '../../assets/';
+                    $seed_full_fixed_file = $assetsDir . 'seed_full_fixed.sql';  // Primary: fixed seed file
+                    $seed_full_file = $assetsDir . 'seed_full.sql';               // Fallback: original seed file
+                    
+                    // Determine which file exists and will be used (matching handle_setup_seed_sql priority)
+                    $sql_file = null;
+                    $file_display_name = '';
+                    if (file_exists($seed_full_fixed_file)) {
+                        $sql_file = $seed_full_fixed_file;
+                        $file_display_name = 'assets/seed_full_fixed.sql';
+                    } elseif (file_exists($seed_full_file)) {
+                        $sql_file = $seed_full_file;
+                        $file_display_name = 'assets/seed_full.sql';
+                    }
+                    
+                    $file_exists = ($sql_file !== null);
                     ?>
 
-                    <!-- Seeding Status -->
-                    <div class="mb-6 p-4 rounded-lg border <?php echo $already_seeded ? 'bg-green-50 border-green-200' : ($existing_count > 0 ? 'bg-yellow-50 border-yellow-200' : 'bg-blue-50 border-blue-200'); ?>">
+                    <div class="mb-6 p-4 rounded-lg border <?php echo $file_exists ? 'bg-blue-50 border-blue-200' : 'bg-yellow-50 border-yellow-200'; ?>">
                         <div class="flex items-center">
                             <div class="flex-shrink-0">
-                                <?php if ($already_seeded): ?>
-                                    <svg class="h-5 w-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                                    </svg>
-                                <?php elseif ($existing_count > 0): ?>
-                                    <svg class="h-5 w-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
-                                    </svg>
+                                <?php if ($file_exists): ?>
+                                    <svg class="h-5 w-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
                                 <?php else: ?>
-                                    <svg class="h-5 w-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                    </svg>
+                                    <svg class="h-5 w-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
                                 <?php endif; ?>
                             </div>
-                            <div class="ml-3">
-                                <h3 class="text-sm font-medium <?php echo $already_seeded ? 'text-green-800' : ($existing_count > 0 ? 'text-yellow-800' : 'text-blue-800'); ?>">
-                                    <?php if ($already_seeded): ?>
-                                        ✅ Customers Already Seeded
-                                    <?php elseif ($existing_count > 0): ?>
-                                        ⚠️ Customer Data Exists
-                                    <?php else: ?>
-                                        ℹ️ Ready to Seed
-                                    <?php endif; ?>
-                                </h3>
-                                <div class="mt-2 text-sm <?php echo $already_seeded ? 'text-green-700' : ($existing_count > 0 ? 'text-yellow-700' : 'text-blue-700'); ?>">
-                                    <?php if ($already_seeded): ?>
-                                        <p>Customer data has been successfully seeded and is protected from re-seeding.</p>
-                                    <?php elseif ($existing_count > 0): ?>
-                                        <p>Customer data already exists in the database (<?php echo $existing_count; ?> records). Seeding is not allowed to prevent data duplication.</p>
-                                    <?php else: ?>
-                                        <p>No customer data found. You can safely seed the customer data from the CSV file.</p>
-                                    <?php endif; ?>
-                                </div>
+                            <div class="ml-3 text-sm">
+                                <p class="font-medium <?php echo $file_exists ? 'text-blue-800' : 'text-yellow-800'; ?>"><?php echo $file_exists ? 'Seed SQL Found' : 'Seed SQL Not Found'; ?></p>
+                                <?php if ($file_exists): ?>
+                                    <p class="mt-1 text-blue-700">
+                                        Primary: <code class="px-2 py-1 rounded bg-gray-100"><?php echo esc_html($file_display_name); ?></code>
+                                    </p>
+                                <?php else: ?>
+                                    <p class="mt-1 text-yellow-700">
+                                        Please ensure <code class="px-2 py-1 rounded bg-gray-100">assets/seed_full_fixed.sql</code> or <code class="px-2 py-1 rounded bg-gray-100">assets/seed_full.sql</code> exists
+                                    </p>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Seeding Form -->
-                    <?php if ($can_seed): ?>
-                        <form method="post" action="" id="seeding-form">
-                            <?php wp_nonce_field('seed_customers', 'seeding_nonce'); ?>
-                            <input type="hidden" name="action" value="seed_customers">
-
-                            <div class="bg-gray-50 rounded-lg p-4 mb-6">
-                                <h4 class="text-sm font-medium text-gray-900 mb-2">What will be seeded:</h4>
-                                <ul class="text-sm text-gray-600 space-y-1">
-                                    <li>• Customer data from <code>assets/customers.sql</code></li>
-                                    <li>• All foreign key relationships will be respected</li>
-                                    <li>• Data will be validated against existing countries and cities</li>
-                                    <li>• This operation can only be performed once per plugin installation</li>
-                                </ul>
-                            </div>
-
-                            <div class="flex items-center justify-between">
-                                <div class="text-sm text-gray-600">
-                                    <p><strong>Warning:</strong> This action cannot be undone and can only be performed once.</p>
-                                </div>
-                                <div>
-                                    <?php echo KIT_Commons::renderButton('Seed Customer Data', 'primary', 'lg', ['type' => 'submit', 'gradient' => true, 'id' => 'seed-button']); ?>
-                                </div>
-                            </div>
+                    <form method="post" action="">
+                        <?php wp_nonce_field('seed_setup', 'setup_seed_nonce'); ?>
+                        <input type="hidden" name="action" value="seed_setup">
+                        <?php echo KIT_Commons::renderButton('Run Setup Seed', 'primary', 'md', ['type' => 'submit', 'gradient' => true]); ?>
                         </form>
-                    <?php else: ?>
-                        <div class="text-center py-8">
-                            <div class="text-gray-500">
-                                <?php if ($already_seeded): ?>
-                                    <p class="text-lg font-medium">Seeding is not available</p>
-                                    <p class="text-sm mt-2">Customer data has already been seeded and is protected from re-seeding.</p>
-                                <?php else: ?>
-                                    <p class="text-lg font-medium">Seeding is not available</p>
-                                    <p class="text-sm mt-2">Customer data already exists in the database. Please clear the data first if you need to re-seed.</p>
-                                <?php endif; ?>
-                            </div>
 
-                            <?php
-                            // Offer to regenerate customers_dynamic.sql if missing
-                            $ensure = kit_ensure_dynamic_customers_sql();
-                            if (!$ensure['success']) {
-                                echo '<p class="mt-4 text-sm text-yellow-700">' . esc_html($ensure['message']) . '</p>';
-                            }
-                            ?>
-
-                            <!-- Unseed Button -->
-                            <?php if ($already_seeded || $existing_count > 0): ?>
-                                <div class="mt-6">
-                                    <form method="post" action="" id="unseeding-form" onsubmit="return confirm('⚠️ WARNING: This will permanently delete ALL customers and their related data (waybills, waybill items, warehouse tracking). This action cannot be undone. Are you sure you want to continue?');">
-                                        <?php wp_nonce_field('unseed_customers', 'unseeding_nonce'); ?>
-                                        <input type="hidden" name="action" value="unseed_customers">
-                                        <?php echo KIT_Commons::renderButton('🗑️ Unseed All Customers', 'danger', 'lg', ['type' => 'submit', 'gradient' => true]); ?>
-                                    </form>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                    <?php endif; ?>
-
-                    <!-- Seeding Result -->
-                    <?php if (isset($seeding_result)): ?>
-                        <div class="mt-6 p-4 rounded-lg border <?php echo $seeding_result['success'] ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'; ?>">
+                    <?php if (isset($setup_seed_result)): ?>
+                        <div class="mt-6 p-4 rounded-lg border <?php echo $setup_seed_result['success'] ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'; ?>">
                             <div class="flex">
                                 <div class="flex-shrink-0">
-                                    <?php if ($seeding_result['success']): ?>
-                                        <svg class="h-5 w-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                                        </svg>
+                                    <?php if ($setup_seed_result['success']): ?>
+                                        <svg class="h-5 w-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
                                     <?php else: ?>
-                                        <svg class="h-5 w-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                                        </svg>
+                                        <svg class="h-5 w-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                                     <?php endif; ?>
                                 </div>
-                                <div class="ml-3">
-                                    <h3 class="text-sm font-medium <?php echo $seeding_result['success'] ? 'text-green-800' : 'text-red-800'; ?>">
-                                        <?php echo $seeding_result['success'] ? 'Seeding Successful' : 'Seeding Failed'; ?>
-                                    </h3>
-                                    <div class="mt-2 text-sm <?php echo $seeding_result['success'] ? 'text-green-700' : 'text-red-700'; ?>">
-                                        <p><?php echo esc_html($seeding_result['message']); ?></p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    <?php endif; ?>
-
-                    <!-- Unseeding Result -->
-                    <?php if (isset($unseeding_result)): ?>
-                        <div class="mt-6 p-4 rounded-lg border <?php echo $unseeding_result['success'] ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'; ?>">
-                            <div class="flex">
-                                <div class="flex-shrink-0">
-                                    <?php if ($unseeding_result['success']): ?>
-                                        <svg class="h-5 w-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                                        </svg>
-                                    <?php else: ?>
-                                        <svg class="h-5 w-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                                        </svg>
-                                    <?php endif; ?>
-                                </div>
-                                <div class="ml-3">
-                                    <h3 class="text-sm font-medium <?php echo $unseeding_result['success'] ? 'text-green-800' : 'text-red-800'; ?>">
-                                        <?php echo $unseeding_result['success'] ? 'Unseeding Successful' : 'Unseeding Failed'; ?>
-                                    </h3>
-                                    <div class="mt-2 text-sm <?php echo $unseeding_result['success'] ? 'text-green-700' : 'text-red-700'; ?>">
-                                        <p><?php echo esc_html($unseeding_result['message']); ?></p>
+                                <div class="ml-3 text-sm">
+                                    <p class="font-medium <?php echo $setup_seed_result['success'] ? 'text-green-800' : 'text-red-800'; ?>"><?php echo $setup_seed_result['success'] ? 'Setup Seed Successful' : 'Setup Seed Failed'; ?></p>
+                                    <div class="mt-2 <?php echo $setup_seed_result['success'] ? 'text-green-700' : 'text-red-700'; ?>">
+                                        <p><?php echo esc_html($setup_seed_result['message'] ?? ''); ?></p>
+                                        <?php if (!empty($setup_seed_result['stats'])): ?>
+                                            <div class="mt-3 space-y-1">
+                                                <p><strong>Statistics:</strong></p>
+                                                <p>• Statements executed: <?php echo intval($setup_seed_result['stats']['executed'] ?? 0); ?></p>
+                                                <?php if (!empty($setup_seed_result['stats']['errors'])): ?>
+                                                    <p>• Errors: <?php echo count($setup_seed_result['stats']['errors']); ?></p>
+                                                    <div class="mt-2 text-xs">
+                                                        <p><strong>Error details:</strong></p>
+                                                        <?php foreach (array_slice($setup_seed_result['stats']['errors'], 0, 5) as $error): ?>
+                                                            <p class="text-red-600">• <?php echo esc_html($error); ?></p>
+                                                        <?php endforeach; ?>
+                                                    </div>
+                                                <?php endif; ?>
+                                            </div>
+                                        <?php endif; ?>
                                     </div>
                                 </div>
                             </div>
@@ -923,245 +1306,60 @@ function handle_customer_unseeding()
             </div>
         </div>
 
-        <!-- Server Connections Tab -->
-        <div id="content-servers" class="tab-panel hidden">
+        <!-- Import Tab removed -->
+
+        <!-- Terms & Conditions Tab -->
+        <div id="content-terms" class="tab-panel hidden">
             <div class="bg-white rounded-xl shadow-sm border border-gray-200">
                 <div class="px-6 py-4 border-b border-gray-200">
-                    <h2 class="text-xl font-semibold text-gray-900">Server Connections</h2>
-                    <p class="text-sm text-gray-600 mt-1">Configure external server connections for data synchronization and API integrations</p>
+                    <h2 class="text-xl font-semibold text-gray-900">Terms & Conditions</h2>
+                    <p class="text-sm text-gray-600 mt-1">Manage the Terms & Conditions shown to customers.</p>
                 </div>
 
                 <div class="p-6">
-                    <!-- Connection Status Overview -->
-                    <div class="mb-8">
-                        <h3 class="text-lg font-medium text-gray-900 mb-4">Connection Status</h3>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div class="bg-green-50 border border-green-200 rounded-lg p-4">
-                                <div class="flex items-center">
-                                    <div class="flex-shrink-0">
-                                        <svg class="h-5 w-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                                        </svg>
-                                    </div>
-                                    <div class="ml-3">
-                                        <p class="text-sm font-medium text-green-800">Database</p>
-                                        <p class="text-sm text-green-600">Connected</p>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                                <div class="flex items-center">
-                                    <div class="flex-shrink-0">
-                                        <svg class="h-5 w-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
-                                        </svg>
-                                    </div>
-                                    <div class="ml-3">
-                                        <p class="text-sm font-medium text-yellow-800">External API</p>
-                                        <p class="text-sm text-yellow-600">Not Configured</p>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                                <div class="flex items-center">
-                                    <div class="flex-shrink-0">
-                                        <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                        </svg>
-                                    </div>
-                                    <div class="ml-3">
-                                        <p class="text-sm font-medium text-gray-800">Webhook</p>
-                                        <p class="text-sm text-gray-600">Not Configured</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Server Configuration Form -->
-                    <form method="post" action="" id="server-config-form">
+                    <form method="post" action="">
                         <?php wp_nonce_field('save_settings', 'settings_nonce'); ?>
-                        <input type="hidden" name="action" value="save_server_config">
+                        <input type="hidden" name="action" value="save_terms">
 
-                        <div class="space-y-6">
-                            <!-- Primary Server Configuration -->
-                            <div class="bg-gray-50 rounded-lg p-6">
-                                <h3 class="text-lg font-medium text-gray-900 mb-4">Primary Server Configuration</h3>
-                                
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div class="form-group">
-                                        <label for="server_name" class="block text-sm font-medium text-gray-700 mb-2">Server Name</label>
-                                        <input type="text" id="server_name" name="server_name" 
-                                            value="<?php echo esc_attr(get_option('kit_server_name', '')); ?>"
-                                            class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            placeholder="e.g., Main Database Server">
-                                    </div>
-
-                                    <div class="form-group">
-                                        <label for="server_type" class="block text-sm font-medium text-gray-700 mb-2">Server Type</label>
-                                        <select id="server_type" name="server_type" 
-                                            class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                            <option value="mysql" <?php selected(get_option('kit_server_type', ''), 'mysql'); ?>>MySQL Database</option>
-                                            <option value="api" <?php selected(get_option('kit_server_type', ''), 'api'); ?>>REST API</option>
-                                            <option value="webhook" <?php selected(get_option('kit_server_type', ''), 'webhook'); ?>>Webhook</option>
-                                            <option value="ftp" <?php selected(get_option('kit_server_type', ''), 'ftp'); ?>>FTP Server</option>
-                                        </select>
-                                    </div>
+                        <?php
+                        $existing_terms_html = get_option('kit_terms_conditions', '');
+                        $existing_items = [];
+                        if (is_string($existing_terms_html) && preg_match_all('/<li[^>]*>(.*?)<\/li>/si', $existing_terms_html, $m)) {
+                            foreach ($m[1] as $seg) {
+                                $existing_items[] = wp_strip_all_tags($seg);
+                            }
+                        }
+                        if (empty($existing_items)) {
+                            $existing_items = [''];
+                        }
+                        ?>
 
                                     <div class="form-group">
-                                        <label for="server_host" class="block text-sm font-medium text-gray-700 mb-2">Host/URL</label>
-                                        <input type="text" id="server_host" name="server_host" 
-                                            value="<?php echo esc_attr(get_option('kit_server_host', '')); ?>"
-                                            class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            placeholder="e.g., api.example.com or 192.168.1.100">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Terms & Conditions Items</label>
+                            <div id="terms-list" class="space-y-2">
+                                <?php foreach ($existing_items as $txt): ?>
+                                    <div class="flex items-center gap-2">
+                                        <input type="text" name="terms_items[]" value="<?php echo esc_attr($txt); ?>" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Enter a term item">
+                                        <button type="button" class="remove-term-item px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100">Remove</button>
+                                    </div>
+                                <?php endforeach; ?>
+                                    </div>
+                            <div class="mt-3">
+                                <button type="button" id="add-term-item" class="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100">Add Item</button>
+                                    </div>
+                            <p class="text-xs text-gray-500 mt-2">Items will be saved as a bullet list in PDFs. You can still paste full HTML below if needed.</p>
                                     </div>
 
-                                    <div class="form-group">
-                                        <label for="server_port" class="block text-sm font-medium text-gray-700 mb-2">Port</label>
-                                        <input type="number" id="server_port" name="server_port" 
-                                            value="<?php echo esc_attr(get_option('kit_server_port', '3306')); ?>"
-                                            class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            placeholder="3306">
+                        <div class="form-group mt-4">
+                            <label for="terms_content" class="block text-sm font-medium text-gray-700 mb-2">Or paste Terms HTML (optional)</label>
+                            <textarea id="terms_content" name="terms_content" rows="6" class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="<ul><li>Example term</li></ul>"></textarea>
+                            <p class="text-xs text-gray-500 mt-1">If provided, pasted HTML will be used when list items are empty.</p>
                                     </div>
 
-                                    <div class="form-group">
-                                        <label for="server_username" class="block text-sm font-medium text-gray-700 mb-2">Username</label>
-                                        <input type="text" id="server_username" name="server_username" 
-                                            value="<?php echo esc_attr(get_option('kit_server_username', '')); ?>"
-                                            class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            placeholder="Database or API username">
-                                    </div>
-
-                                    <div class="form-group">
-                                        <label for="server_password" class="block text-sm font-medium text-gray-700 mb-2">Password/API Key</label>
-                                        <input type="password" id="server_password" name="server_password" 
-                                            value="<?php echo esc_attr(get_option('kit_server_password', '')); ?>"
-                                            class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            placeholder="Database password or API key">
-                                    </div>
-
-                                    <div class="form-group">
-                                        <label for="server_database" class="block text-sm font-medium text-gray-700 mb-2">Database Name</label>
-                                        <input type="text" id="server_database" name="server_database" 
-                                            value="<?php echo esc_attr(get_option('kit_server_database', '')); ?>"
-                                            class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            placeholder="Database name (if applicable)">
-                                    </div>
-
-                                    <div class="form-group">
-                                        <label for="server_ssl" class="block text-sm font-medium text-gray-700 mb-2">SSL/TLS</label>
-                                        <select id="server_ssl" name="server_ssl" 
-                                            class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                            <option value="0" <?php selected(get_option('kit_server_ssl', '0'), '0'); ?>>Disabled</option>
-                                            <option value="1" <?php selected(get_option('kit_server_ssl', '0'), '1'); ?>>Enabled</option>
-                                        </select>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- API Configuration -->
-                            <div class="bg-blue-50 rounded-lg p-6">
-                                <h3 class="text-lg font-medium text-gray-900 mb-4">API Configuration</h3>
-                                
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div class="form-group">
-                                        <label for="api_endpoint" class="block text-sm font-medium text-gray-700 mb-2">API Endpoint</label>
-                                        <input type="url" id="api_endpoint" name="api_endpoint" 
-                                            value="<?php echo esc_attr(get_option('kit_api_endpoint', '')); ?>"
-                                            class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            placeholder="https://api.example.com/v1/">
-                                    </div>
-
-                                    <div class="form-group">
-                                        <label for="api_timeout" class="block text-sm font-medium text-gray-700 mb-2">Timeout (seconds)</label>
-                                        <input type="number" id="api_timeout" name="api_timeout" 
-                                            value="<?php echo esc_attr(get_option('kit_api_timeout', '30')); ?>"
-                                            class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            placeholder="30">
-                                    </div>
-
-                                    <div class="form-group">
-                                        <label for="api_headers" class="block text-sm font-medium text-gray-700 mb-2">Custom Headers (JSON)</label>
-                                        <textarea id="api_headers" name="api_headers" rows="3"
-                                            class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            placeholder='{"Content-Type": "application/json", "Authorization": "Bearer token"}'><?php echo esc_textarea(get_option('kit_api_headers', '')); ?></textarea>
-                                    </div>
-
-                                    <div class="form-group">
-                                        <label for="api_retry_attempts" class="block text-sm font-medium text-gray-700 mb-2">Retry Attempts</label>
-                                        <input type="number" id="api_retry_attempts" name="api_retry_attempts" 
-                                            value="<?php echo esc_attr(get_option('kit_api_retry_attempts', '3')); ?>"
-                                            class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            placeholder="3">
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Webhook Configuration -->
-                            <div class="bg-purple-50 rounded-lg p-6">
-                                <h3 class="text-lg font-medium text-gray-900 mb-4">Webhook Configuration</h3>
-                                
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div class="form-group">
-                                        <label for="webhook_url" class="block text-sm font-medium text-gray-700 mb-2">Webhook URL</label>
-                                        <input type="url" id="webhook_url" name="webhook_url" 
-                                            value="<?php echo esc_attr(get_option('kit_webhook_url', '')); ?>"
-                                            class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            placeholder="https://webhook.example.com/endpoint">
-                                    </div>
-
-                                    <div class="form-group">
-                                        <label for="webhook_secret" class="block text-sm font-medium text-gray-700 mb-2">Webhook Secret</label>
-                                        <input type="password" id="webhook_secret" name="webhook_secret" 
-                                            value="<?php echo esc_attr(get_option('kit_webhook_secret', '')); ?>"
-                                            class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            placeholder="Secret key for webhook verification">
-                                    </div>
-
-                                    <div class="form-group">
-                                        <label for="webhook_events" class="block text-sm font-medium text-gray-700 mb-2">Events to Send</label>
-                                        <div class="space-y-2">
-                                            <label class="flex items-center">
-                                                <input type="checkbox" name="webhook_events[]" value="waybill_created" 
-                                                    <?php checked(in_array('waybill_created', get_option('kit_webhook_events', []))); ?>
-                                                    class="form-checkbox">
-                                                <span class="ml-2 text-sm text-gray-700">Waybill Created</span>
-                                            </label>
-                                            <label class="flex items-center">
-                                                <input type="checkbox" name="webhook_events[]" value="waybill_updated" 
-                                                    <?php checked(in_array('waybill_updated', get_option('kit_webhook_events', []))); ?>
-                                                    class="form-checkbox">
-                                                <span class="ml-2 text-sm text-gray-700">Waybill Updated</span>
-                                            </label>
-                                            <label class="flex items-center">
-                                                <input type="checkbox" name="webhook_events[]" value="delivery_created" 
-                                                    <?php checked(in_array('delivery_created', get_option('kit_webhook_events', []))); ?>
-                                                    class="form-checkbox">
-                                                <span class="ml-2 text-sm text-gray-700">Delivery Created</span>
-                                            </label>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="mt-8 pt-6 border-t border-gray-200 flex justify-between">
-                            <div>
-                                <?php echo KIT_Commons::renderButton('Test Connection', 'secondary', 'lg', ['type' => 'button', 'id' => 'test-connection', 'gradient' => true]); ?>
-                            </div>
-                            <div>
-                                <?php echo KIT_Commons::renderButton('Save Server Configuration', 'primary', 'lg', ['type' => 'submit', 'gradient' => true]); ?>
-                            </div>
+                        <div class="mt-8 pt-6 border-t border-gray-200">
+                            <?php echo KIT_Commons::renderButton('Save Terms & Conditions', 'primary', 'lg', ['type' => 'submit', 'gradient' => true]); ?>
                         </div>
                     </form>
-
-                    <!-- Connection Test Results -->
-                    <div id="connection-test-results" class="mt-6 hidden">
-                        <div class="bg-white border rounded-lg p-4">
-                            <h4 class="text-lg font-medium text-gray-900 mb-2">Connection Test Results</h4>
-                            <div id="test-results-content"></div>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>
@@ -1338,6 +1536,7 @@ function handle_customer_unseeding()
 
         // Database Migration Functionality
         const migrateButton = document.getElementById('migrate-db');
+        const runMigrationButton = document.getElementById('kit-run-migration');
         const migrationResult = document.getElementById('migration-result');
 
         if (migrateButton) {
@@ -1377,31 +1576,16 @@ function handle_customer_unseeding()
             });
         }
 
-        // Server Connection Test Functionality
-        const testConnectionButton = document.getElementById('test-connection');
-        const connectionTestResults = document.getElementById('connection-test-results');
-        const testResultsContent = document.getElementById('test-results-content');
-
-        if (testConnectionButton) {
-            testConnectionButton.addEventListener('click', async function() {
-                testConnectionButton.disabled = true;
-                testConnectionButton.textContent = 'Testing...';
-                connectionTestResults.classList.remove('hidden');
-                testResultsContent.innerHTML = '<div class="flex items-center"><svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Testing connection...</div>';
+        if (runMigrationButton) {
+            runMigrationButton.addEventListener('click', async function() {
+                runMigrationButton.disabled = true;
+                runMigrationButton.textContent = 'Running Migration...';
+                migrationResult.innerHTML = '<span class="text-blue-600">⏳ Running database migration (adding missing tables/columns)...</span>';
 
                 try {
                     const formData = new FormData();
-                    formData.append('action', 'test_server_connection');
-                    formData.append('nonce', '<?php echo wp_create_nonce("test_server_connection"); ?>');
-                    
-                    // Get form data
-                    const serverForm = document.getElementById('server-config-form');
-                    const formDataObj = new FormData(serverForm);
-                    
-                    // Append all form fields
-                    for (let [key, value] of formDataObj.entries()) {
-                        formData.append(key, value);
-                    }
+                    formData.append('action', 'kit_migrate_schema');
+                    formData.append('nonce', '<?php echo wp_create_nonce("kit_migrate_schema"); ?>');
 
                     const response = await fetch(ajaxurl || '/wp-admin/admin-ajax.php', {
                         method: 'POST',
@@ -1411,65 +1595,70 @@ function handle_customer_unseeding()
                     const result = await response.json();
 
                     if (result.success) {
-                        testResultsContent.innerHTML = `
-                            <div class="bg-green-50 border border-green-200 rounded-lg p-4">
-                                <div class="flex">
-                                    <div class="flex-shrink-0">
-                                        <svg class="h-5 w-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                                        </svg>
-                                    </div>
-                                    <div class="ml-3">
-                                        <h3 class="text-sm font-medium text-green-800">Connection Successful!</h3>
-                                        <div class="mt-2 text-sm text-green-700">
-                                            <p>${result.data.message}</p>
-                                            ${result.data.details ? '<pre class="mt-2 text-xs bg-green-100 p-2 rounded">' + JSON.stringify(result.data.details, null, 2) + '</pre>' : ''}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
+                        migrationResult.innerHTML = '<span class="text-green-600">✅ ' + result.data.message + '</span>';
+                        setTimeout(() => { location.reload(); }, 2000);
                     } else {
-                        testResultsContent.innerHTML = `
-                            <div class="bg-red-50 border border-red-200 rounded-lg p-4">
-                                <div class="flex">
-                                    <div class="flex-shrink-0">
-                                        <svg class="h-5 w-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                                        </svg>
-                                    </div>
-                                    <div class="ml-3">
-                                        <h3 class="text-sm font-medium text-red-800">Connection Failed</h3>
-                                        <div class="mt-2 text-sm text-red-700">
-                                            <p>${result.data.message || 'Unknown error occurred'}</p>
-                                            ${result.data.details ? '<pre class="mt-2 text-xs bg-red-100 p-2 rounded">' + JSON.stringify(result.data.details, null, 2) + '</pre>' : ''}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
+                        migrationResult.innerHTML = '<span class="text-red-600">❌ ' + (result.data.message || 'Migration failed') + '</span>';
                     }
                 } catch (error) {
-                    testResultsContent.innerHTML = `
-                        <div class="bg-red-50 border border-red-200 rounded-lg p-4">
-                            <div class="flex">
-                                <div class="flex-shrink-0">
-                                    <svg class="h-5 w-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                                    </svg>
-                                </div>
-                                <div class="ml-3">
-                                    <h3 class="text-sm font-medium text-red-800">Connection Test Error</h3>
-                                    <div class="mt-2 text-sm text-red-700">
-                                        <p>Error: ${error.message}</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    `;
+                    migrationResult.innerHTML = '<span class="text-red-600">❌ Error: ' + error.message + '</span>';
                 } finally {
-                    testConnectionButton.disabled = false;
-                    testConnectionButton.textContent = 'Test Connection';
+                    runMigrationButton.disabled = false;
+                    runMigrationButton.textContent = 'Run Full DB Migration (Add missing columns/tables)';
+                }
+            });
+        }
+
+        // Removed: Server Connection Test Functionality (deprecated)
+
+        // Terms items add/remove
+        const addBtn = document.getElementById('add-term-item');
+        const list = document.getElementById('terms-list');
+        if (addBtn && list) {
+            addBtn.addEventListener('click', () => {
+                const row = document.createElement('div');
+                row.className = 'flex items-center gap-2';
+                row.innerHTML = '<input type="text" name="terms_items[]" value="" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Enter a term item">\n<button type="button" class="remove-term-item px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100">Remove</button>';
+                list.appendChild(row);
+            });
+            list.addEventListener('click', (e) => {
+                if (e.target && e.target.classList.contains('remove-term-item')) {
+                    const row = e.target.closest('.flex');
+                    if (row && list.children.length > 1) {
+                        row.remove();
+                    } else if (row) {
+                        // Clear the last remaining input instead of removing
+                        const input = row.querySelector('input[name="terms_items[]"]');
+                        if (input) input.value = '';
+                    }
+                }
+            });
+        }
+
+        // Waybill import form confirmation
+        const importForm = document.getElementById('import-form');
+        const importButton = document.getElementById('import-button');
+
+        if (importForm && importButton) {
+            importForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+
+                const confirmed = confirm(
+                    'Are you sure you want to import waybills from Excel?\n\n' +
+                    'This action:\n' +
+                    '• Will create drivers, customers, deliveries, and waybills\n' +
+                    '• Will skip duplicate waybill numbers\n' +
+                    '• May take several minutes depending on file size\n\n' +
+                    'Click OK to continue or Cancel to abort.'
+                );
+
+                if (confirmed) {
+                    // Show loading state
+                    importButton.disabled = true;
+                    importButton.innerHTML = '<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Importing...';
+
+                    // Submit the form
+                    this.submit();
                 }
             });
         }

@@ -56,27 +56,28 @@
              </div> -->
         </div>
 
-        <div class="md:col-span-2 items-section">
+        <div class="md:col-span-2 space-y-6 mb-6">
 
             <div class="p-6 rounded-lg bg-slate-100">
-                <?= KIT_Commons::prettyHeading([
-                    'icon' => '<path d="M16 7a4 4 0 1 0-8 0v2a4 4 0 0 0 8 0V7z" /><path d="M12 19v-2m0 0a7 7 0 0 1-7-7V7a7 7 0 0 1 14 0v3a7 7 0 0 1-7 7z" />',
-                    'words' => 'Items'
-                ]) ?>
                 <table class="table">
                     <tbody>
                         <!-- Dynamic Miscellaneous Charges -->
                         <tr id="misc-charges-container">
                             <td colspan="2">
                                 <?php
-                                echo KIT_Commons::miscItemsControl([
+                                echo KIT_Commons::dynamicItemsControl([
                                     'container_id' => 'misc-items',
                                     'button_id' => 'add-misc-item',
                                     'group_name' => 'misc',
+                                    'item_type' => 'misc',
+                                    'title' => 'Miscellaneous Items',
                                     'input_class' => '',
-                                    'existing_items' => [
-                                        /*  ['misc_item' => 'Shipping', 'misc_price' => 15.00, 'qty' => 1],
-                                            ['misc_item' => 'Handling', 'misc_price' => 5.50, 'qty' => 1] */]
+                                    'existing_items' => [],
+                                    'subtotal_id' => 'misc-total',
+                                    'currency_symbol' => KIT_Commons::currency(),
+                                    'show_subtotal' => true,
+                                    'show_invoices' => true,
+                                    'waybill_no' => 'TEMP-' . uniqid()
                                 ]);
                                 ?>
 
@@ -103,6 +104,12 @@
                         </tr>
                     </tbody>
                 </table>
+            </div>
+
+            <div class="p-6 rounded-lg bg-slate-100">
+            <div id="totalOverride">
+                <!-- total override, client wants to override the total and manually enter the total -->
+                <?php require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/totalOverride.php'); ?>
             </div>
         </div>
     </div>

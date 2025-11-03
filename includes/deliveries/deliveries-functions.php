@@ -1,19 +1,22 @@
 <?php
-if (!defined('ABSPATH')) {
+if (! defined('ABSPATH')) {
     exit;
 }
 
 // Include the DeliveryCard component
 require_once plugin_dir_path(__FILE__) . '../components/deliveryCard.php';
 
+// Include the Modal component
+require_once plugin_dir_path(__FILE__) . '../components/modal.php';
+
 class KIT_Deliveries
 {
     public static function init()
     {
         add_action('admin_menu', [self::class, 'add_admin_menu']);
-        add_action('wp_ajax_kit_deliveries_crud', [self::class, 'handle_ajax']);
-        add_action('admin_post_kit_deliveries_crud', [self::class, 'handle_ajax']);
-        add_action('wp_ajax_kit_deliveries_crud', [self::class, 'handle_ajax']);
+        add_action('admin_post_kit_deliveries_crud', [self::class, 'updateShippingDirection']);
+        add_action('wp_ajax_kit_deliveries_crud', [self::class, 'updateShippingDirection']);
+        add_action('wp_ajax_nopriv_kit_deliveries_crud', [self::class, 'updateShippingDirection']);
         add_action('wp_ajax_delivery_changeTo_Intransit', [self::class, 'delivery_changeTo_Intransit']);
         add_action('wp_ajax_delivery_changeTo_Delivered', [self::class, 'delivery_changeTo_Delivered']);
         add_action('wp_ajax_delivery_changeTo_Scheduled', [self::class, 'delivery_changeTo_Scheduled']);
@@ -23,6 +26,7 @@ class KIT_Deliveries
         add_action('wp_ajax_nopriv_get_deliveries_by_country', [self::class, 'handle_get_deliveries_by_country']);
         add_action('wp_ajax_get_deliveries_by_country_id', [self::class, 'handle_get_deliveries_by_country_id']);
         add_action('wp_ajax_nopriv_get_deliveries_by_country_id', [self::class, 'handle_get_deliveries_by_country_id']);
+        // Removed: destination city from misc->others - use waybills.city_id instead
         add_shortcode('country_select', [self::class, 'CountrySelect']);
         add_action('wp_ajax_handle_get_cities_for_country', [self::class, 'handle_get_cities_for_country_callback']);
         add_action('wp_ajax_nopriv_handle_get_cities_for_country', [self::class, 'handle_get_cities_for_country_callback']);
@@ -31,6 +35,8 @@ class KIT_Deliveries
         add_action('wp_ajax_nopriv_handle_get_price_per_kg', [self::class, 'handle_get_price_per_kg']);
         add_action('wp_ajax_handle_get_price_per_m3', [self::class, 'handle_get_price_per_m3']);
         add_action('wp_ajax_nopriv_handle_get_price_per_m3', [self::class, 'handle_get_price_per_m3']);
+        add_action('wp_ajax_list_delivery_backups', [self::class, 'handle_list_delivery_backups']);
+        add_action('wp_ajax_restore_delivery_backup', [self::class, 'handle_restore_delivery_backup']);
     }
     public static function shippingDirections()
     {
@@ -53,18 +59,17 @@ class KIT_Deliveries
     {
         global $wpdb;
 
-        if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'get_waybills_nonce')) {
+        if (! isset($_POST['nonce']) || ! wp_verify_nonce($_POST['nonce'], 'get_waybills_nonce')) {
             wp_send_json_error(['message' => 'Invalid security token.']);
         }
 
-        $direction_id = isset($_POST['direction_id']) ? intval($_POST['direction_id']) : 0;
+        $direction_id    = isset($_POST['direction_id']) ? intval($_POST['direction_id']) : 0;
         $total_volume_m3 = isset($_POST['total_volume_m3']) ? floatval($_POST['total_volume_m3']) : 0;
-        $chargeGroup = KIT_Waybills::chargeGroup($_POST['origin_country_id'] ?? 0);
+        $chargeGroup     = KIT_Waybills::chargeGroup($_POST['origin_country_id'] ?? 0);
 
-        if (!$chargeGroup || !$total_volume_m3) {
+        if (! $chargeGroup || ! $total_volume_m3) {
             wp_send_json_error(['message' => 'Missing chargeGroup or volume.']);
         }
-
 
         $table = $wpdb->prefix . 'kit_shipping_rates_volume';
 
@@ -89,14 +94,14 @@ class KIT_Deliveries
         // ✅ BULLETPROOF: Comprehensive input validation and sanitization
         try {
             // Validate nonce for security
-            if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'get_waybills_nonce')) {
+            if (! isset($_POST['nonce']) || ! wp_verify_nonce($_POST['nonce'], 'get_waybills_nonce')) {
                 wp_send_json_error(['message' => 'Invalid security token.']);
                 return;
             }
 
             // Sanitize and validate inputs
-            $direction_id = isset($_POST['direction_id']) ? intval($_POST['direction_id']) : 0;
-            $total_mass_kg = isset($_POST['total_mass_kg']) ? floatval($_POST['total_mass_kg']) : 0;
+            $direction_id      = isset($_POST['direction_id']) ? intval($_POST['direction_id']) : 0;
+            $total_mass_kg     = isset($_POST['total_mass_kg']) ? floatval($_POST['total_mass_kg']) : 0;
             $origin_country_id = isset($_POST['origin_country_id']) ? intval($_POST['origin_country_id']) : 0;
 
             // ✅ BULLETPROOF: Comprehensive validation
@@ -117,7 +122,7 @@ class KIT_Deliveries
 
             // Get charge group with fallback
             $chargeGroup = KIT_Waybills::chargeGroup($origin_country_id);
-            if (!$chargeGroup) {
+            if (! $chargeGroup) {
                 wp_send_json_error(['message' => 'Unable to determine charge group.']);
                 return;
             }
@@ -137,7 +142,7 @@ class KIT_Deliveries
             // ✅ BULLETPROOF: Comprehensive error handling and fallbacks
             if ($rate_per_kg !== null && $rate_per_kg > 0) {
                 $total_charge = round($rate_per_kg * $total_mass_kg, 2);
-                
+
                 // Validate calculated charge
                 if ($total_charge <= 0) {
                     wp_send_json_error(['message' => 'Invalid calculated charge.']);
@@ -145,11 +150,11 @@ class KIT_Deliveries
                 }
 
                 wp_send_json_success([
-                    'rate_per_kg' => floatval($rate_per_kg),
+                    'rate_per_kg'  => floatval($rate_per_kg),
                     'total_charge' => $total_charge,
                     'direction_id' => $direction_id,
-                    'mass_kg' => $total_mass_kg,
-                    'charge_group' => $chargeGroup
+                    'mass_kg'      => $total_mass_kg,
+                    'charge_group' => $chargeGroup,
                 ]);
             } else {
                 // ✅ BULLETPROOF: Try fallback rate lookup
@@ -159,35 +164,34 @@ class KIT_Deliveries
                 WHERE direction_id = %d
                 ORDER BY effective_date DESC, min_weight ASC
                 LIMIT 1", $chargeGroup));
-                
+
                 if ($fallback_rate !== null && $fallback_rate > 0) {
                     $total_charge = round($fallback_rate * $total_mass_kg, 2);
                     wp_send_json_success([
-                        'rate_per_kg' => floatval($fallback_rate),
+                        'rate_per_kg'  => floatval($fallback_rate),
                         'total_charge' => $total_charge,
                         'direction_id' => $direction_id,
-                        'mass_kg' => $total_mass_kg,
+                        'mass_kg'      => $total_mass_kg,
                         'charge_group' => $chargeGroup,
-                        'fallback' => true
+                        'fallback'     => true,
                     ]);
                 } else {
                     wp_send_json_error([
-                        'message' => 'No matching rate found for the specified criteria.',
+                        'message'    => 'No matching rate found for the specified criteria.',
                         'debug_info' => [
                             'direction_id' => $direction_id,
-                            'mass_kg' => $total_mass_kg,
-                            'charge_group' => $chargeGroup
-                        ]
+                            'mass_kg'      => $total_mass_kg,
+                            'charge_group' => $chargeGroup,
+                        ],
                     ]);
                 }
             }
-            
         } catch (Exception $e) {
             // ✅ BULLETPROOF: Catch any unexpected errors
             error_log('Rate fetch error: ' . $e->getMessage());
             wp_send_json_error([
-                'message' => 'An unexpected error occurred while fetching rates.',
-                'error_code' => 'RATE_FETCH_ERROR'
+                'message'    => 'An unexpected error occurred while fetching rates.',
+                'error_code' => 'RATE_FETCH_ERROR',
             ]);
         }
     }
@@ -199,8 +203,7 @@ class KIT_Deliveries
 
         $country_id = isset($_POST['country_id']) ? ($_POST['country_id']) : 0;
 
-
-        if (!$country_id) {
+        if (! $country_id) {
             wp_send_json_error(['message' => 'Missing country country_id']);
         }
 
@@ -233,7 +236,7 @@ class KIT_Deliveries
         // Verify nonce
         check_ajax_referer('get_waybills_nonce', 'nonce');
 
-        if (!isset($_POST['country_id'])) {
+        if (! isset($_POST['country_id'])) {
             wp_send_json_error('Country ID is required');
         }
 
@@ -259,11 +262,11 @@ class KIT_Deliveries
         global $wpdb;
         $table = $wpdb->prefix . 'kit_deliveries';
 
-        $date = date('Ymd');
+        $date    = date('Ymd');
         $counter = 1;
 
         do {
-            $ref = sprintf('DEL-%s-%03d', $date, $counter);
+            $ref    = sprintf('DEL-%s-%03d', $date, $counter);
             $exists = $wpdb->get_var($wpdb->prepare(
                 "SELECT COUNT(*) FROM $table WHERE delivery_reference = %s",
                 $ref
@@ -301,7 +304,6 @@ class KIT_Deliveries
         //Create a packing list for the deliver. So it must show waybills for the current delivery truck and then show the destinations
         //Group the packing list based on the destination, infuture this will allow us to create a route for delivery
 
-
     }
     public static function handle_get_deliveries_by_country()
     {
@@ -320,17 +322,17 @@ class KIT_Deliveries
         ob_start();
         foreach ($deliveries as $delivery): ?>
             <?php
-                renderDeliveryCard(
-                    $delivery,
-                    'scheduled',
-                    true,
-                    'handleDeliveryClick',
-                    [
-                        'type' => 'radio',
-                        'name' => 'delivery_id',
-                        'checked_id' => 1
-                    ]
-                );
+            renderDeliveryCard(
+                $delivery,
+                'scheduled',
+                true,
+                'handleDeliveryClick',
+                [
+                    'type'       => 'radio',
+                    'name'       => 'delivery_id',
+                    'checked_id' => 1,
+                ]
+            );
             ?>
         <?php endforeach;
         $html = ob_get_clean();
@@ -356,7 +358,7 @@ class KIT_Deliveries
             $country_id
         ));
 
-        if (!$country_exists) {
+        if (! $country_exists) {
             wp_send_json_error(['message' => 'Country not found']);
         }
 
@@ -381,31 +383,31 @@ class KIT_Deliveries
      */
     public static function render_scheduled_delivery_card($delivery, $options = [])
     {
-        
+
         // Convert delivery data to match our component format
-        $component_delivery = (object)[
-            'direction_id' => $delivery->delivery_id,
-            'id' => $delivery->delivery_id,
-            'origin_country' => $delivery->origin_country, // Use country names directly
+        $component_delivery = (object) [
+            'direction_id'        => $delivery->delivery_id,
+            'id'                  => $delivery->delivery_id,
+            'origin_country'      => $delivery->origin_country, // Use country names directly
             'destination_country' => $delivery->destination_country,
-            'dispatch_date' => $delivery->dispatch_date,
-            'truck_number' => $delivery->truck_number ?? '',
-            'description' => $delivery->description ?? ''
+            'dispatch_date'       => $delivery->dispatch_date,
+            'truck_number'        => $delivery->truck_number ?? '',
+            'description'         => $delivery->description ?? '',
         ];
-        
+
         // Reduce noisy logs: keep a single concise line (id + ref) during development
         // error_log('Delivery loaded: id=' . ($delivery->delivery_id ?? 'n/a') . ' ref=' . ($delivery->delivery_reference ?? '')); // Uncomment if needed for debugging
-        
+
         // Use our reusable component with radio button options
         $radio_options = [
-            'type' => $options['input_type'] ?? 'radio',
-            'name' => $options['input_name'] ?? 'delivery_id',
-            'checked_id' => $options['checked_id'] ?? null
+            'type'       => $options['input_type'] ?? 'radio',
+            'name'       => $options['input_name'] ?? 'delivery_id',
+            'checked_id' => $options['checked_id'] ?? null,
         ];
-        
+
         ob_start();
         renderDeliveryCard($component_delivery, 'scheduled', true, 'handleDeliveryClick', $radio_options);
-        
+
         return ob_get_clean();
     }
 
@@ -419,7 +421,7 @@ class KIT_Deliveries
     {
         global $wpdb;
 
-        $deliveryTable = $wpdb->prefix . 'kit_deliveries';
+        $deliveryTable      = $wpdb->prefix . 'kit_deliveries';
         $shipDirectionTable = $wpdb->prefix . 'kit_shipping_directions';
 
         // Validate country ID and ensure it's active
@@ -428,7 +430,7 @@ class KIT_Deliveries
             $country_id
         ));
 
-        if (!$destinationCountry_id) {
+        if (! $destinationCountry_id) {
             return false;
         }
 
@@ -471,7 +473,7 @@ class KIT_Deliveries
         ob_start();
 
         $delivery_id = isset($atts['delivery_id']) ? esc_attr($atts['delivery_id']) : '';
-        $status = isset($atts['status']) ? $atts['status'] : '';
+        $status      = isset($atts['status']) ? $atts['status'] : '';
         ?>
         <div class="relative">
             <button type="button"
@@ -479,11 +481,11 @@ class KIT_Deliveries
                 id="delivery-status-button-<?php echo $delivery_id; ?>"
                 onclick="toggleDropdownDeliveryStatus('<?php echo $delivery_id; ?>')">
                 <span class="flex items-center">
-                    <?php 
-                // Ensure status is not null before using string functions
-                $status = $status ?? '';
-                ?>
-                <span class="mr-2"><?php echo esc_html(ucfirst(str_replace('_', ' ', (string)($status ?? '')))); ?></span>
+                    <?php
+                    // Ensure status is not null before using string functions
+                    $status = $status ?? '';
+                    ?>
+                    <span class="mr-2"><?php echo esc_html(ucfirst(str_replace('_', ' ', (string) ($status ?? '')))); ?></span>
                     <svg class="-mr-1 ml-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
                         <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
                     </svg>
@@ -510,25 +512,25 @@ class KIT_Deliveries
             //just get the delivery status from the database
             global $wpdb;
             $table_name = $wpdb->prefix . 'kit_deliveries';
-            $status = $wpdb->get_var($wpdb->prepare("SELECT status FROM $table_name WHERE id = %d", $atts['delivery_id']));
+            $status     = $wpdb->get_var($wpdb->prepare("SELECT status FROM $table_name WHERE id = %d", $atts['delivery_id']));
 
             //just get the delivery status from the database
             $status = $wpdb->get_var($wpdb->prepare("SELECT status FROM $table_name WHERE id = %d", $atts['delivery_id']));
 
             ob_start();
         ?>
-            <form method="POST" action="<?= esc_url(admin_url('admin-post.php')) ?>" id="delivery-status-form">
+            <form method="POST" action="<?php echo esc_url(admin_url('admin-post.php')) ?>" id="delivery-status-form">
                 <input type="hidden" name="action" value="update_delivery_status">
-                <input type="hidden" name="delivery_id" value="<?= esc_attr($atts['delivery_id'] ?? '') ?>">
+                <input type="hidden" name="delivery_id" value="<?php echo esc_attr($atts['delivery_id'] ?? '') ?>">
                 <?php wp_nonce_field('update_delivery_status_nonce'); ?>
                 <div class="relative inline-block text-left">
-                    <?= self::tailSelect($atts) ?>
+                    <?php echo self::tailSelect($atts) ?>
                 </div>
             </form>
 
         <?php
         } else {
-            return  self::tailSelect($atts);
+            return self::tailSelect($atts);
         }
     }
 
@@ -544,6 +546,7 @@ class KIT_Deliveries
                     $table_name.direction_id, 
                     $table_name.dispatch_date, 
                     $table_name.truck_number, 
+                    $table_name.driver_id,
                     $table_name.status, 
                     sd.description,
                     sd.destination_country_id,
@@ -551,7 +554,11 @@ class KIT_Deliveries
                     oc1.country_name AS origin_country, 
                     oc1.country_code AS origin_code,
                     oc2.country_name AS destination_country, 
-                    oc2.country_code AS destination_code
+                    oc2.country_code AS destination_code,
+                    d.name AS driver_name,
+                    d.phone AS driver_phone,
+                    d.email AS driver_email,
+                    d.license_number AS driver_license
 
                 FROM $table_name 
 
@@ -563,11 +570,14 @@ class KIT_Deliveries
 
                 LEFT JOIN {$wpdb->prefix}kit_operating_countries oc2 
                     ON sd.destination_country_id = oc2.id 
+
+                LEFT JOIN {$wpdb->prefix}kit_drivers d
+                    ON $table_name.driver_id = d.id
                 WHERE $table_name.status = 'scheduled'
-                AND  $table_name.delivery_reference != 'warehoused'
+                AND  $table_name.delivery_reference != 'pending'
                 AND oc2.is_active = 1";
 
-        if (!empty($country_code)) {
+        if (! empty($country_code)) {
             // Filter by the joined destination country name column
             $query .= $wpdb->prepare(" AND oc2.country_name = %s", $country_code);
         }
@@ -576,210 +586,349 @@ class KIT_Deliveries
         return $wpdb->get_results($query);
     }
 
-
     public static function getCityData($city_id)
     {
         global $wpdb;
 
         $cities_table = $wpdb->prefix . 'kit_operating_cities';
-        $query = $wpdb->prepare(
+        $query        = $wpdb->prepare(
             "SELECT id, city_name FROM $cities_table WHERE id = %d",
             $city_id
         );
         return $wpdb->get_row($query, OBJECT);
     }
 
+    //Create function that will chnage delivery but looking at todays date, if the delivery date is in the past, it will change the delivery status to unconfirmed, since no one updated it.
+    
+    /**
+     * Auto-update deliveries to 'unconfirmed' if dispatch_date is in the past
+     * Only updates deliveries that are currently 'scheduled'
+     * 
+     * @return int|false Number of deliveries updated, or false on error
+     */
+    public static function auto_update_past_deliveries()
+    {
+        global $wpdb;
+        
+        $table = $wpdb->prefix . 'kit_deliveries';
+        
+        // Get today's date
+        $today = date('Y-m-d');
+        
+        // Update all scheduled deliveries with past dispatch dates to unconfirmed
+        $result = $wpdb->query($wpdb->prepare(
+            "UPDATE $table 
+            SET status = 'unconfirmed' 
+            WHERE status = 'scheduled' 
+            AND dispatch_date < %s 
+            AND dispatch_date IS NOT NULL",
+            $today
+    ));
+        
+        if ($result === false) {
+            error_log('Failed to auto-update past deliveries: ' . $wpdb->last_error);
+            return false;
+        }
+        
+        // Log how many were updated
+        if ($result > 0) {
+            error_log("Auto-updated {$result} past deliveries to unconfirmed status");
+        }
+        
+        return $result;
+    }
+
+    // Removed legacy endpoint that read destination city from misc->others
     public static function view_deliveries_page()
     {
-        if (!isset($_GET['delivery_id']) || !is_numeric($_GET['delivery_id'])) {
+        // Auto-update past deliveries to unconfirmed before loading the page
+        self::auto_update_past_deliveries();
+        
+        // Enqueue necessary CSS for styling - using plugin's standard approach
+        wp_enqueue_style('autsincss', plugin_dir_url(__FILE__) . '../../assets/css/austin.css', [], '1.0');
+        wp_enqueue_style('kit-tailwindcss', plugin_dir_url(__FILE__) . '../../assets/css/frontend.css', [], '1.0');
+
+        // Add CSS class wrapper to admin body for scoping
+        add_filter('admin_body_class', function ($classes) {
+            return $classes . ' courier-finance-plugin';
+        });
+
+        // Enqueue necessary JavaScript
+        wp_enqueue_script('jquery');
+        wp_enqueue_script('kitscript', plugin_dir_url(__FILE__) . '../../js/kitscript.js', ['jquery'], '1.0.0', true);
+        wp_enqueue_script('components', plugin_dir_url(__FILE__) . '../../js/components.js', ['jquery'], '1.0.0', true);
+
+        // Handle success/error messages from form submissions
+        if (isset($_GET['delivery_success']) && $_GET['delivery_success'] === '1') {
+            $message = isset($_GET['message']) ? urldecode($_GET['message']) : 'Operation completed successfully!';
+            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html($message) . '</p></div>';
+        }
+
+        if (isset($_GET['delivery_error'])) {
+            $error_message = urldecode($_GET['delivery_error']);
+            echo '<div class="notice notice-error is-dismissible"><p>' . esc_html($error_message) . '</p></div>';
+        }
+
+        if (! isset($_GET['delivery_id']) || ! is_numeric($_GET['delivery_id'])) {
             echo '<div class="notice notice-error"><p>Invalid delivery ID.</p></div>';
             return;
         }
 
         $delivery_id = intval($_GET['delivery_id']);
-        $delivery = self::get_delivery($delivery_id);
+        $delivery    = self::get_delivery($delivery_id);
 
-        if (!$delivery) {
+        if (! $delivery) {
             echo '<div class="notice notice-error"><p>Delivery not found.</p></div>';
             return;
         }
 
-        // Fetch waybills for this delivery
-        global $wpdb;
-        $waybill_table = $wpdb->prefix . 'kit_waybills';
-        $waybills = $wpdb->get_results(
-            $wpdb->prepare("SELECT * FROM $waybill_table WHERE delivery_id = %d", $delivery_id)
-        );
+        // Waybills will be fetched using KIT_Waybills::truckWaybills() method below
+        $customers         = tholaMaCustomer();
+        $customers_encoded = base64_encode(json_encode($customers));
+        $form_action       = admin_url('admin-post.php?action=add_waybill_action');
+
+        // Include modal component
+        require_once COURIER_FINANCE_PLUGIN_PATH . 'includes/components/modal.php';
+
+        // Include waybill functions to access KIT_Waybills class
+        require_once COURIER_FINANCE_PLUGIN_PATH . 'includes/waybill/waybill-functions.php';
+
+        // Get waybills for this delivery early so we can use the data
+        $waybillsandItems = KIT_Waybills::truckWaybills($delivery_id);
+
         ?>
 
         <div class="wrap">
             <?php
+            // Initialize variables for modal if not already set
+            if (!isset($form_action)) {
+                $form_action = admin_url('admin-post.php?action=add_waybill_action');
+            }
+            if (!isset($customers_encoded)) {
+                $customers = tholaMaCustomer();
+                $customers_encoded = base64_encode(json_encode($customers));
+            }
+            if (!isset($delivery_id)) {
+                $delivery_id = intval($_GET['delivery_id'] ?? 0);
+            }
+            
             echo KIT_Commons::showingHeader([
-                'title' => 'Delivery Details',
-                'desc' => "View and manage delivery details and associated waybills",
+                'title'   => 'Delivery De32tails',
+                'icon'    => KIT_Commons::icon('receipt'),
+                'content' => KIT_Modal::render(
+                    'create-waybill-modal',
+                    'Create New Waybill',
+                    '<!-- DEBUG: Modal content start -->' . kit_render_waybill_multiform([
+                        'form_action'          => $form_action,
+                        'waybill_id'           => '',
+                        'is_edit_mode'         => '0',
+                        'waybill'              => '{}',
+                        'customer_id'          => '0',
+                        'delivery_id'          => $delivery_id,
+                        'is_existing_customer' => '0',
+                        'customer'             => $customers_encoded,
+                    ]) . '<!-- DEBUG: Modal content end -->',
+                    '3xl'
+                ),
             ]);
             ?>
-            <div class="<?= KIT_Commons::container() ?>">
-                <div class="grid md:grid-cols-8 gap-4">
-                    <div class="md:col-span-2">
-                        <div class=" bg-white rounded-lg shadow p-6 space-y-6">
-                            <h2 class="text-xl font-semibold text-gray-700">Truck Details</h2>
-                            <hr>
-                            <?php
-                            if (isset($_GET['edit_delivery']) && $_GET['edit_delivery'] == 1) {
-                                echo self::deliveryForm($delivery_id);
-                            } else {
-                            ?>
-                                <table class="min-w-full divide-y divide-gray-200">
-                                    <tbody class="bg-white divide-y divide-gray-100">
-                                        <tr>
-                                            <th class="text-left py-2 pr-4 text-black font-medium">Reference Number</th>
-                                            <td class="py-2 text-gray-900"><?php echo esc_html($delivery->delivery_reference); ?></td>
-                                        </tr>
-                                        <tr>
-                                            <th class="text-left py-2 pr-4 text-black font-medium">Origin Country</th>
-                                            <td class="py-2 text-gray-900"><?php echo esc_html($delivery->origin_country); ?></td>
-                                        </tr>
-                                        <tr>
-                                            <th class="text-left py-2 pr-4 text-black font-medium">Destination Country</th>
-                                            <td class="py-2 text-gray-900"><?php echo esc_html($delivery->destination_country); ?></td>
-                                        </tr>
-                                        <tr>
-                                            <th class="text-left py-2 pr-4 text-black font-medium">Dispatch Date</th>
-                                            <td class="py-2 text-gray-900">
-                                                <?php echo esc_html(date('Y-m-d', strtotime($delivery->dispatch_date))); ?></td>
-                                        </tr>
-                                        <tr>
-                                            <th class="text-left py-2 pr-4 text-black font-medium">Truck Number</th>
-                                            <td class="py-2 text-gray-900"><?php echo esc_html($delivery->truck_number); ?></td>
-                                        </tr>
-                                        <tr>
-                                            <th class="text-left py-2 pr-4 text-black font-medium">Status</th>
-                                            <td class="py-2">
-                                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
-                                    <?php
-                                    echo $delivery->status === 'delivered'
-                                        ? 'bg-green-100 text-green-800'
-                                        : ($delivery->status === 'in_transit'
-                                            ? 'bg-yellow-100 text-yellow-800'
-                                            : 'bg-blue-100 text-blue-800');
-                                    ?>">
-                                                    <?php echo esc_html(ucfirst(str_replace('_', ' ', (string)($delivery->status ?? '')))); ?>
-                                                </span>
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <th class="text-left py-2 pr-4 text-black font-medium">Created By</th>
-                                            <td class="py-2 text-gray-900">
-                                                <?php echo esc_html(self::get_customer_name($delivery->created_by)); ?></td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                                <!-- Edit delivery button kitButton -->
-                                <?php echo KIT_Commons::kitButton([
-                                    'color' => 'blue',
-                                    'href' => admin_url('admin.php?page=view-deliveries&delivery_id=' . $delivery_id . '&edit_delivery=1')
-                                ], 'Edit Delivery'); ?>
-                            <?php
-                            } ?>
-                        </div>
-                    </div>
-                    <div class="md:col-span-6 bg-white rounded-lg shadow p-6">
-                        <div class="flex justify-between items-center mb-4">
-                            <h2 class="text-xl font-semibold text-gray-700">Waybills on Truck</h2>
-                            <?php if (isset($delivery_id)) :
-                                $customers   = KIT_Customers::tholaMaCustomer();
-                                $form_action = admin_url('admin-post.php?action=add_waybill_action');
 
-                                $modal_path = realpath(plugin_dir_path(__FILE__) . '../components/modal.php');
+            <?php
+            // Display success message if waybill was created
+            if (isset($_GET['waybill_created']) && $_GET['waybill_created'] === '1') {
+                $waybill_no = isset($_GET['waybill_no']) ? sanitize_text_field($_GET['waybill_no']) : '';
+                $message    = isset($_GET['message']) ? sanitize_text_field($_GET['message']) : 'Waybill created successfully!';
+                echo '<div class="notice notice-success is-dismissible"><p>' . esc_html($message) . '</p></div>';
+            }
+            ?>
 
-                                if (file_exists($modal_path)) {
-                                    require_once $modal_path;
-                                } else {
-                                    error_log("Modal.php not found at: " . $modal_path);
-                                    // Optional: Show a safe error or fallback content
-                                }
-                                echo KIT_Modal::render(
-                                    'create-waybill-modal',
-                                    'Create New W33aybill',
-                                    kit_render_waybill_multiform([
-                                        'form_action'          => $form_action,
-                                        'waybill_id'           => '',
-                                        'is_edit_mode'         => '0',
-                                        'waybill'              => '{}',
-                                        'customer_id'          => '0',
-                                        'delivery_id'          => $delivery_id,
-                                        'is_existing_customer' => '0',
-                                        'customer'             => $customers
-                                    ]),
-                                    '3xl'
-                                );
-                            endif; ?>
-                        </div>
-                        <?php if (!empty($waybills)): ?>
-                            <div class="overflow-x-auto">
+            <div class="<?php echo KIT_Commons::container() ?>">
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
+                    <div class="md:col-span-4 min-w-0">
+                        <div class="bg-white rounded-lg shadow p-3 sm:p-4 md:p-6 space-y-3 md:space-y-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <h2 class="text-base sm:text-lg md:text-md font-semibold text-gray-700">Truck Details</h2>
                                 <?php
-                                $waybillsandItems = KIT_Waybills::truckWaybills($delivery->id);
-
-                                $options = [
-                                    'itemsPerPage' => 20,
-                                    'currentPage' => $_GET['paged'] ?? 1,
-                                    'tableClass' => 'min-w-full text-left text-xs text-gray-700',
-                                    'emptyMessage' => 'No customers records found',
-                                    'id' => 'customerTable',
-                                    'role' => 'waybills'
-                                ];
-
-                                $columns = [
-                                    'waybill_no' => ['label' => 'Waybill #', 'align' => 'text-left'],
-                                    'customer_name' => ['label' => 'Name', 'align' => 'text-left'],
-                                    'approval' => ['label' => 'Approval', 'align' => 'text-left'],
-                                    'total' => ['label' => 'Total', 'align' => 'text-right'],
-                                    'actions' => ['label' => 'Actions', 'align' => 'text-center'],
-                                ];
-
-                                $waybill_actions = function ($key, $row) {
-                                    if ($key === 'waybill_no') {
-
-                                        return '<a target="_blank" href="?page=08600-Waybill-view&waybill_id=' . $row->waybill_id . '&waybill_atts=view_waybill" class="text-blue-600 hover:underline">' . $row->waybill_no . '</a>';
-                                    }
-                                    if ($key === 'customer_name') {
-
-                                        return $row->customer_name . ' ' . $row->customer_surname;
-                                    }
-                                    if ($key === 'total') {
-                                        return KIT_Commons::currency() . ' ' . ((int) $row->product_invoice_amount + (int) $row->miscellaneous);
-                                    }
-                                    if ($key === 'approval') {
-
-                                        return KIT_Commons::waybillApprovalStatus($row->waybill_no, $row->waybill_id, $row->approval, 'select');
-                                    }
-                                    if ($key === 'actions') {
-                                        $html = '<a target="_blank" href="?page=08600-Waybill-view&waybill_id=' . $row->waybill_id . '&waybill_atts=view_waybill" class="text-blue-600 hover:underline">View</a>';
-                                        $html .= ' | <a href="?page=08600-Waybill-view&waybill_id=' . $row->waybill_id . '&edit=true" class="text-blue-600 hover:underline">Edit</a> ';
-                                        $html .= ' | <a href="?page=waybill-dashboard&delete_waybill=' . $row->waybill_no . '" class="text-red-600 hover:underline" onclick="return confirm(\'Are you sure you want to delete this waybill?\');">Delete</a>';
-                                        return $html;
-                                    }
-                                    return htmlspecialchars(($row->$key ?? '') ?: '');
-                                };
-
-
-                                echo KIT_Unified_Table::simple($waybillsandItems, $columns, [
-                                    'title' => 'Delivery Waybills',
-                                    'actions' => [
-                                        [
-                                            'label' => 'View',
-                                            'href' => '?page=08600-Waybill-view&waybill_id={waybill_id}',
-                                            'class' => 'text-blue-600 hover:text-blue-800'
-                                        ]
-                                    ]
-                                ]);
-
+                                // Render Edit Delivery Modal
+                                $edit_delivery_form = self::deliveryForm($delivery_id, true);
+                                echo KIT_Modal::render(
+                                    'edit-delivery-truck-modal',
+                                    'Edit Delivery Truck',
+                                    $edit_delivery_form,
+                                    '3xl',
+                                    true,
+                                    'Edit Delivery'
+                                );
                                 ?>
                             </div>
-                        <?php else: ?>
-                            <div class="text-gray-500">No waybills found for this delivery.</div>
-                        <?php endif; ?>
+                            <hr>
+                            <table class="min-w-full divide-y divide-gray-200 text-xs md:text-sm">
+                                <tbody class="bg-white divide-y divide-gray-100">
+                                <tr>
+                                    <th class="text-left py-1.5 md:py-2 pr-2 md:pr-4 text-black font-medium whitespace-nowrap w-1/3">Reference</th>
+                                    <td class="py-1.5 md:py-2 text-gray-900 break-words"><?php echo esc_html($delivery->delivery_reference); ?></td>
+                                </tr>
+                                <tr>
+                                    <th class="text-left py-1.5 md:py-2 pr-2 md:pr-4 text-black font-medium whitespace-nowrap w-1/3">Origin</th>
+                                    <td class="py-1.5 md:py-2 text-gray-900 break-words"><?php echo esc_html($delivery->origin_country); ?></td>
+                                </tr>
+                                <tr>
+                                    <th class="text-left py-1.5 md:py-2 pr-2 md:pr-4 text-black font-medium whitespace-nowrap w-1/3">Destination</th>
+                                    <td class="py-1.5 md:py-2 text-gray-900 break-words"><?php echo esc_html($delivery->destination_country); ?></td>
+                                </tr>
+                                <tr>
+                                    <th class="text-left py-1.5 md:py-2 pr-2 md:pr-4 text-black font-medium whitespace-nowrap w-1/3">Departure</th>
+                                    <td class="py-1.5 md:py-2 text-gray-900">
+                                        <?php echo esc_html(date('Y-m-d', strtotime($delivery->dispatch_date))); ?></td>
+                                </tr>
+                                <tr>
+                                    <th class="text-left py-1.5 md:py-2 pr-2 md:pr-4 text-black font-medium whitespace-nowrap w-1/3">Driver</th>
+                                    <td class="py-1.5 md:py-2 text-gray-900">
+                                        <?php 
+                                        if (isset($delivery->driver_name) && !empty($delivery->driver_name)) {
+                                            echo esc_html($delivery->driver_name);
+                                            if (!empty($delivery->driver_phone)) {
+                                                echo ' <span class="text-gray-500">(' . esc_html($delivery->driver_phone) . ')</span>';
+                                            }
+                                        } else {
+                                            echo '<span class="text-gray-400">No driver assigned</span>';
+                                        }
+                                        ?>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th class="text-left py-1.5 md:py-2 pr-2 md:pr-4 text-black font-medium whitespace-nowrap w-1/3">Status</th>
+                                    <td class="py-1.5 md:py-2">
+                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
+                            <?php
+                            echo $delivery->status === 'delivered'
+                                ? 'bg-green-100 text-green-800'
+                                : ($delivery->status === 'in_transit'
+                                    ? 'bg-yellow-100 text-yellow-800'
+                                    : 'bg-blue-100 text-blue-800');
+                            ?>">
+                                            <?php echo esc_html(ucfirst(str_replace('_', ' ', (string) ($delivery->status ?? '')))); ?>
+                                        </span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th class="text-left py-1.5 md:py-2 pr-2 md:pr-4 text-black font-medium whitespace-nowrap w-1/3">Created By</th>
+                                    <td class="py-1.5 md:py-2 text-gray-900">
+                                        <?php echo esc_html(self::get_customer_name($delivery->created_by)); ?>
+                                    </td>
+                                </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="md:col-span-8 min-w-0 bg-white rounded-lg shadow p-3 sm:p-4 md:p-6">
+                        <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-3 md:mb-4">
+                            <h2 class="text-base sm:text-lg md:text-xl font-semibold text-gray-700">Waybills on Truck</h2>
+                            <div class="text-xs sm:text-sm text-gray-500">
+                                Showing: <?php echo is_array($waybillsandItems) ? count($waybillsandItems) : 0; ?> waybills
+                            </div>
+                        </div>
+
+                        <!-- Totals Summary Row -->
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-2 sm:p-3 md:p-4 mb-3 md:mb-4">
+                            <div class="flex flex-wrap justify-between items-center gap-2 md:gap-4 text-center">
+                                <div class="flex-1 min-w-[100px] px-1">
+                                    <div class="text-xs md:text-sm font-medium text-blue-800 truncate">Total Waybills</div>
+                                    <div class="text-lg md:text-2xl font-bold text-blue-900 truncate"><?php echo KIT_Waybills::calculate_total_waybills($delivery_id); ?></div>
+                                </div>
+                                <div class="flex-1 min-w-[100px] px-1">
+                                    <div class="text-xs md:text-sm font-medium text-blue-800 truncate">Total Weight</div>
+                                    <div class="text-sm md:text-2xl font-bold text-blue-900 truncate"><?php echo number_format(KIT_Waybills::calculate_total_mass($delivery_id), 1); ?> KG</div>
+                                </div>
+                                <div class="flex-1 min-w-[100px] px-1">
+                                    <div class="text-xs md:text-sm font-medium text-blue-800 truncate">Total Volume</div>
+                                    <div class="text-sm md:text-2xl font-bold text-blue-900 truncate"><?php echo number_format(KIT_Waybills::calculate_total_volume($delivery_id), 1); ?> m³</div>
+                                </div>
+                                <?php if (class_exists('KIT_User_Roles') && !KIT_User_Roles::can_see_prices()): ?>
+                                
+                                <?php else: ?>
+                                <div class="flex-1 min-w-[100px] px-1">
+                                    <div class="text-xs md:text-sm font-medium text-blue-800 truncate">Total Amount</div>
+                                    <div class="text-sm md:text-2xl font-bold text-blue-900 truncate"><?php echo KIT_Commons::currency() . ' ' . number_format(KIT_Waybills::calculate_total_amount($delivery_id), 2); ?></div>
+                                </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+
+                        <?php
+                        $columns = [
+                            'waybill_no'    => [
+                                'label'    => 'Waybill #',
+                                'callback' => function ($value, $row, $rowIndex) {
+                                    $waybill_no = $value ?? 'N/A';
+                                    $waybill_id = $row['waybill_id'] ?? 0;
+
+                                    if ($waybill_id > 0) {
+                                        $view_url = admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . $waybill_id);
+                                        return '<a href="' . esc_url($view_url) . '" class="text-blue-600 hover:text-blue-800 hover:underline font-medium">' . esc_html($waybill_no) . '</a>';
+                                    } else {
+                                        return esc_html($waybill_no);
+                                    }
+                                },
+                            ],
+                            'customer_name' => 'Name',
+                            'approval'      => 'Approval',
+                            'total_mass_kg' => [
+                                'label'    => 'Weight (kg)',
+                                'callback' => function ($value, $row, $rowIndex) {
+                                    $weight = $value ?? 0;
+                                    return number_format($weight, 1) . ' kg';
+                                },
+                            ],
+                            'destination_city' => [
+                                'label'    => 'Destination City',
+                                'callback' => function ($value, $row, $rowIndex) {
+                                    $city_id = $row['city_id'] ?? 0;
+                                    if ($city_id > 0) {
+                                        $city_name = KIT_Routes::get_city_name_by_id($city_id);
+                                        return !empty($city_name) ? esc_html($city_name) : '<span class="text-gray-400">N/A</span>';
+                                    }
+                                    return '<span class="text-gray-400">N/A</span>';
+                                },
+                            ],
+                            'total_volume'  => [
+                                'label'    => 'Volume (m³)',
+                                'callback' => function ($value, $row, $rowIndex) {
+                                    $volume = $value ?? 0;
+                                    return number_format($volume, 1) . ' m³';
+                                },
+                            ],
+                        ];
+                        
+                        // Conditionally add total column based on user permissions
+                        if (class_exists('KIT_User_Roles') && KIT_User_Roles::can_see_prices()) {
+                            $columns['total'] = [
+                                'label'    => 'Total',
+                                'callback' => function ($value, $row, $rowIndex) {
+                                    $total = $value ?? 0;
+                                    // Handle non-numeric values (like '***')
+                                    if (!is_numeric($total)) {
+                                        return $total; // Return as-is if not numeric
+                                    }
+                                    return KIT_Commons::currency() . ' ' . number_format(floatval($total), 2);
+                                },
+                            ];
+                        }
+                        // Debug: Check how many waybills we have
+                        $waybill_count = is_array($waybillsandItems) ? count($waybillsandItems) : 0;
+                        ?>
+                        <div class="overflow-x-auto -mx-3 md:mx-0">
+                            <?php
+                            echo KIT_Unified_Table::infinite($waybillsandItems, $columns, [
+                                'title'         => 'Waybills on Truck',
+                                'subtitle'      => 'Showing: ' . $waybill_count . ' waybills',
+                                'empty_message' => 'No waybills assigned',
+                                'class'         => 'min-w-full divide-y divide-gray-200',
+                            ]);
+                            ?>
+                        </div>
+                        <?php
+                        ?>
                     </div>
                 </div>
             </div>
@@ -798,12 +947,56 @@ class KIT_Deliveries
         $table_name = $wpdb->prefix . 'kit_operating_countries';
         return $wpdb->get_results("SELECT * FROM $table_name WHERE is_active = 1");
     }
+
+    /**
+     * Get countries with configurable filtering rules
+     * @param array $options Rules like ['only_active', 'show_all', 'order_by']
+     * @return array Country objects
+     */
+    public static function getCountriesWithRules($options = [])
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'kit_operating_countries';
+
+        // Default to showing active countries for backwards compatibility
+        $where_conditions = [];
+        $params           = [];
+
+        // Default behavior - show all countries for route creation
+        if (empty($options) || isset($options['show_all_countries'])) {
+            $query = "SELECT * FROM $table_name ORDER BY country_name ASC";
+        } else {
+            if (isset($options['only_active']) && $options['only_active']) {
+                $where_conditions[] = "is_active = %d";
+                $params[]           = 1;
+            }
+
+            if (isset($options['order_by'])) {
+                $order_sql = sanitize_sql_orderby($options['order_by']);
+                $query     = "SELECT * FROM $table_name" .
+                    (count($where_conditions) > 0 ? " WHERE " . implode(" AND ", $where_conditions) : "") .
+                    " ORDER BY " . $order_sql;
+            } else {
+                $query = "SELECT * FROM $table_name" .
+                    (count($where_conditions) > 0 ? " WHERE " . implode(" AND ", $where_conditions) : "") .
+                    " ORDER BY country_name ASC";
+            }
+        }
+
+        if (count($params) > 0) {
+            $results = $wpdb->get_results($wpdb->prepare($query, $params));
+        } else {
+            $results = $wpdb->get_results($query);
+        }
+
+        return $results ?: [];
+    }
     public static function get_Cities_forCountry($country_id)
     {
         global $wpdb;
         $table_name = $wpdb->prefix . 'kit_operating_cities';
-        $query = $wpdb->prepare("SELECT * FROM $table_name WHERE country_id = %d ORDER BY city_name ASC", $country_id);
-        $results = $wpdb->get_results($query);
+        $query      = $wpdb->prepare("SELECT * FROM $table_name WHERE country_id = %d ORDER BY city_name ASC", $country_id);
+        $results    = $wpdb->get_results($query);
 
         // Optional debug (disabled in production)
         // error_log("Getting cities for country ID: $country_id, found: " . count($results));
@@ -818,16 +1011,16 @@ class KIT_Deliveries
     {
         global $wpdb;
         $cities_table = $wpdb->prefix . 'kit_operating_cities';
-        $rows = $wpdb->get_results("SELECT id, country_id, city_name FROM $cities_table ORDER BY country_id ASC, city_name ASC");
+        $rows         = $wpdb->get_results("SELECT id, country_id, city_name FROM $cities_table ORDER BY country_id ASC, city_name ASC");
 
         $map = [];
         foreach ($rows as $row) {
             $key = (string) intval($row->country_id);
-            if (!isset($map[$key])) {
+            if (! isset($map[$key])) {
                 $map[$key] = [];
             }
             $map[$key][] = [
-                'id' => intval($row->id),
+                'id'        => intval($row->id),
                 'city_name' => (string) $row->city_name,
             ];
         }
@@ -851,11 +1044,28 @@ class KIT_Deliveries
                     }
                 });
             </script>
+            <script>
+                // Safe editDelivery handler to avoid null.classList errors
+                function editDelivery(deliveryId) {
+                    const panelId = 'delivery-edit-panel-' + deliveryId;
+                    const modalId = 'delivery-edit-modal';
+                    const target = document.getElementById(panelId) || document.getElementById(modalId);
+                    if (!target) {
+                        console.warn('Edit target not found for delivery', deliveryId, 'expected ids:', panelId, 'or', modalId);
+                        return false;
+                    }
+                    if (target.classList) {
+                        target.classList.remove('hidden');
+                        target.focus && target.focus();
+                    }
+                    return false; // prevent default
+                }
+            </script>
         <?php endif;
         ob_start();
         ?>
         <select onchange="handleCountryChange(this.value, '<?php echo esc_attr($name); ?>')" name="<?php echo esc_attr($name); ?>" id="<?php echo esc_attr($id); ?>" <?php echo $required_attr; ?>
-            class="<?= KIT_Commons::selectClass(); ?>">
+            class="<?php echo KIT_Commons::selectClass(); ?>">
             <option value="">Select Country</option>
             <?php foreach ($countries as $country): ?>
                 <option value="<?php echo esc_attr($country->id); ?>"
@@ -868,58 +1078,76 @@ class KIT_Deliveries
         return ob_get_clean();
     }
 
-    public static function deliveryForm($delivery_id = null)
+    public static function deliveryForm($delivery_id = null, $is_modal = false)
     {
         // Get delivery data for editing
         $delivery = null;
         if ($delivery_id) {
             $delivery = self::get_delivery($delivery_id);
         }
-        
+
         ob_start();
-        ?>
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+    ?>
+        <?php if (!$is_modal): ?>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+        <?php endif; ?>
+            <?php if (isset($_GET['updated']) && $_GET['updated'] == '1'): ?>
+                <div class="mb-4 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
+                    <strong>Success!</strong> Delivery updated successfully.
+                </div>
+            <?php endif; ?>
+
+            <?php if (isset($_GET['error']) && $_GET['error'] == '1'): ?>
+                <div class="mb-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+                    <strong>Error!</strong> Failed to update delivery. Please try again.
+                </div>
+            <?php endif; ?>
+
+            <?php if (!$is_modal): ?>
             <div class="mb-6">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <h2 class="text-xl font-semibold text-gray-900">
-                            <?= $delivery ? 'Edit Delivery' : 'Create New Delivery' ?>
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div class="flex-shrink-0">
+                        <h2 class="text-lg sm:text-xl font-semibold text-gray-900 whitespace-nowrap">
+                            <?php echo $delivery ? 'Edit Delivery Truck' : 'Create New Delivery Truck' ?>
                         </h2>
-                        <p class="text-sm text-gray-600 mt-1">
-                            <?= $delivery ? 'Update delivery information and settings' : 'Create a new delivery entry' ?>
+                        <p class="text-xs sm:text-sm text-gray-600 mt-1">
+                            <?php echo $delivery ? 'Update delivery truck information and settings' : 'Create a new delivery truck entry' ?>
                         </p>
                     </div>
                     <?php if ($delivery): ?>
-                    <div class="flex items-center space-x-2">
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                            <?= $delivery->status === 'delivered' ? 'bg-green-100 text-green-800' : 
-                                ($delivery->status === 'in_transit' ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-blue-800') ?>">
-                            <?= ucfirst(str_replace('_', ' ', (string)($delivery->status ?? ''))) ?>
-                        </span>
-                    </div>
+                        <div class="flex items-center space-x-2 flex-shrink-0">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                            <?php echo $delivery->status === 'delivered' ? 'bg-green-100 text-green-800' : ($delivery->status === 'in_transit' ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-blue-800') ?>">
+                                <?php echo ucfirst(str_replace('_', ' ', (string) ($delivery->status ?? ''))) ?>
+                            </span>
+                        </div>
                     <?php endif; ?>
                 </div>
             </div>
+            <?php endif; ?>
 
-            <form id="edit-delivery-form" class="space-y-6">
+            <form id="edit-delivery-form" method="POST" action="<?php echo admin_url('admin-post.php'); ?>" class="space-y-6">
                 <input type="hidden" name="action" value="kit_deliveries_crud">
-                <input type="hidden" name="delivery_id" id="delivery_id" value="<?= $delivery ? $delivery->id : 0 ?>">
+                <input type="hidden" name="task" value="<?php echo $delivery ? 'update_delivery' : 'create_delivery' ?>">
+                <input type="hidden" name="delivery_id" id="delivery_id" value="<?php echo $delivery ? $delivery->id : 0 ?>">
+                <input type="hidden" name="direction_id" id="direction_id" value="<?php echo $delivery ? $delivery->direction_id : 0 ?>">
+
                 <?php wp_nonce_field('get_waybills_nonce', 'nonce'); ?>
 
                 <!-- Reference Number -->
                 <div class="form-field">
-                    <label for="delivery_reference" class="block text-sm font-medium text-gray-700 mb-2">
+                    <label for="delivery_reference" class="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
                         <span class="flex items-center">
-                            <svg class="w-4 h-4 mr-1 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg class="w-3 h-3 sm:w-4 sm:h-4 mr-1 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                             </svg>
-                            Reference Number
+                            <span class="whitespace-nowrap">Reference Number</span>
                         </span>
                     </label>
                     <div class="relative">
                         <input type="text" name="delivery_reference" id="delivery_reference"
-                            readonly value="<?= $delivery ? esc_attr($delivery->delivery_reference) : KIT_Deliveries::generateDeliveryRef() ?>"
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50 text-gray-700 font-mono text-sm">
+                            readonly value="<?php echo $delivery ? esc_attr($delivery->delivery_reference) : KIT_Deliveries::generateDeliveryRef() ?>"
+                            class="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50 text-gray-700 font-mono text-xs sm:text-sm">
                         <div class="absolute inset-y-0 right-0 flex items-center pr-3">
                             <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
@@ -930,16 +1158,16 @@ class KIT_Deliveries
                 </div>
 
                 <!-- Route Information -->
-                <div class="bg-gray-50 rounded-lg p-4">
-                    <h3 class="text-sm font-medium text-gray-700 mb-4 flex items-center">
-                        <svg class="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div class="bg-gray-50 rounded-lg p-3 sm:p-4">
+                    <h3 class="text-xs sm:text-sm font-medium text-gray-700 mb-3 sm:mb-4 flex items-center">
+                        <svg class="w-3 h-3 sm:w-4 sm:h-4 mr-2 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
                         </svg>
-                        Route Information
+                        <span class="whitespace-nowrap">Route Information</span>
                     </h3>
-                    
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                    <div class="grid grid-cols-1 gap-4">
                         <!-- Origin -->
                         <div class="form-field">
                             <label for="origin_country_select" class="block text-sm font-medium text-gray-700 mb-2">
@@ -950,8 +1178,15 @@ class KIT_Deliveries
                                     Origin Country
                                 </span>
                             </label>
-                            <div class="relative">
-                                <?php require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/selectsOrigin.php'); ?>
+                            <div class="grid grid-cols-1 gap-4">
+                                <?php
+                                // Debug: Log delivery data for origin
+                                if ($delivery) {
+                                    error_log('Debug - Origin Country ID: ' . ($delivery->origin_country_id ?? 'not set'));
+                                    error_log('Debug - Origin Country Name: ' . ($delivery->origin_country ?? 'not set'));
+                                }
+                                require COURIER_FINANCE_PLUGIN_PATH . 'includes/components/selectsOrigin.php';
+                                ?>
                             </div>
                         </div>
 
@@ -966,71 +1201,92 @@ class KIT_Deliveries
                                     Destination Country
                                 </span>
                             </label>
-                            <div class="relative">
-                                <?php require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/selectsDestination.php'); ?>
+                            <div class="grid grid-cols-1 gap-4">
+                                <?php
+                                // Debug: Log delivery data for destination
+                                if ($delivery) {
+                                    error_log('Debug - Destination Country ID: ' . ($delivery->destination_country_id ?? 'not set'));
+                                    error_log('Debug - Destination Country Name: ' . ($delivery->destination_country ?? 'not set'));
+                                    error_log('Debug - Destination City ID: ' . ($delivery->destination_city_id ?? 'not set'));
+                                }
+                                require COURIER_FINANCE_PLUGIN_PATH . 'includes/components/selectsDestination.php';
+                                ?>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- Delivery Details -->
-                <div class="bg-gray-50 rounded-lg p-4">
-                    <h3 class="text-sm font-medium text-gray-700 mb-4 flex items-center">
-                        <svg class="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div class="bg-gray-50 rounded-lg p-3 sm:p-4">
+                    <h3 class="text-xs sm:text-sm font-medium text-gray-700 mb-3 sm:mb-4 flex items-center">
+                        <svg class="w-3 h-3 sm:w-4 sm:h-4 mr-2 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                         </svg>
-                        Delivery Details
+                        <span class="whitespace-nowrap">Delivery Details</span>
                     </h3>
-                    
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                    <div class="grid grid-cols-1 gap-4">
                         <!-- Dispatch Date -->
                         <div class="form-field">
-                            <label for="dispatch_date" class="block text-sm font-medium text-gray-700 mb-2">
+                            <label for="dispatch_date" class="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
                                 <span class="flex items-center">
-                                    <svg class="w-4 h-4 mr-1 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg class="w-3 h-3 sm:w-4 sm:h-4 mr-1 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                                     </svg>
-                                    Dispatch Date
+                                    <span class="whitespace-nowrap">Departure Date</span>
                                 </span>
                             </label>
                             <input type="date" name="dispatch_date" id="dispatch_date" required
-                                value="<?= $delivery ? esc_attr($delivery->dispatch_date) : '' ?>"
-                                class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors">
+                                value="<?php echo $delivery ? esc_attr($delivery->dispatch_date) : '' ?>"
+                                class="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-sm sm:text-base">
                         </div>
 
-                        <!-- Truck Number -->
+                        <!-- Driver -->
                         <div class="form-field">
-                            <label for="truck_number" class="block text-sm font-medium text-gray-700 mb-2">
+                            <label for="driver_id" class="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
                                 <span class="flex items-center">
-                                    <svg class="w-4 h-4 mr-1 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                    <svg class="w-3 h-3 sm:w-4 sm:h-4 mr-1 text-purple-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
                                     </svg>
-                                    Truck Number
+                                    <span class="whitespace-nowrap">Driver Name</span>
                                 </span>
                             </label>
-                            <input type="text" name="truck_number" id="truck_number" required
-                                value="<?= $delivery ? esc_attr($delivery->truck_number) : '' ?>"
-                                class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                                placeholder="Enter truck number">
+                            <?php
+                            $drivers = KIT_Deliveries::get_all_drivers();
+                            $selected_driver_id = $delivery ? ($delivery->driver_id ?? '') : '';
+                            ?>
+                            <select name="driver_id" id="driver_id" required
+                                class="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-sm sm:text-base">
+                                <option value="">Select Driver</option>
+                                <?php foreach ($drivers as $driver): ?>
+                                    <option value="<?php echo esc_attr($driver->id); ?>" 
+                                        <?php echo ($selected_driver_id == $driver->id) ? 'selected' : ''; ?>>
+                                        <?php echo esc_html($driver->name); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <?php if (empty($drivers)): ?>
+                                <p class="mt-1 text-xs text-yellow-600">No drivers available. <a href="<?php echo admin_url('admin.php?page=manage-drivers&add=1'); ?>" class="underline">Add a driver</a> first.</p>
+                            <?php endif; ?>
                         </div>
                     </div>
 
                     <!-- Status -->
                     <div class="form-field mt-4">
-                        <label for="status" class="block text-sm font-medium text-gray-700 mb-2">
+                        <label for="status" class="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
                             <span class="flex items-center">
-                                <svg class="w-4 h-4 mr-1 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg class="w-3 h-3 sm:w-4 sm:h-4 mr-1 text-orange-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                 </svg>
-                                Delivery Status
+                                <span class="whitespace-nowrap">Delivery Status</span>
                             </span>
                         </label>
                         <div class="relative">
                             <?php
                             $deliveries_status = [
-                                'scheduled' => 'Scheduled',
+                                'scheduled'  => 'Scheduled',
                                 'in_transit' => 'In Transit',
-                                'delivered' => 'Delivered'
+                                'delivered'  => 'Delivered',
                             ];
                             $current_status = $delivery ? $delivery->status : 'scheduled';
                             echo KIT_Commons::simpleSelect(
@@ -1046,204 +1302,68 @@ class KIT_Deliveries
                 </div>
 
                 <!-- Form Actions -->
-                <div class="flex gap-3 pt-6 border-t border-gray-200">
+                <div class="flex flex-col sm:flex-row gap-3 pt-6 border-t border-gray-200">
                     <button type="submit" id="save-delivery-btn"
-                        class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 sm:px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                         </svg>
-                        <span><?= $delivery ? 'Update Delivery' : 'Save Delivery' ?></span>
+                        <span class="text-sm sm:text-base"><?php echo $delivery ? 'Update Delivery Truck' : 'Save Delivery Truck' ?></span>
                     </button>
-                    <a href="?page=view-deliveries&delivery_id=<?= $delivery_id ?>" 
-                       class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center justify-center space-x-2">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <?php if ($is_modal): ?>
+                    <button type="button" class="modal-close flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 sm:px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center justify-center space-x-2">
+                        <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                         </svg>
-                        <span>Cancel</span>
+                        <span class="text-sm sm:text-base">Cancel</span>
+                    </button>
+                    <?php else: ?>
+                    <a href="?page=view-deliveries&delivery_id=<?php echo $delivery_id ?>"
+                        class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 sm:px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center justify-center space-x-2">
+                        <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                        <span class="text-sm sm:text-base">Cancel</span>
                     </a>
+                    <?php endif; ?>
                 </div>
             </form>
+        <?php if (!$is_modal): ?>
         </div>
+        <?php endif; ?>
 
         <style>
-        .form-field input:focus,
-        .form-field select:focus {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
-        }
-        
-        .form-field input.error,
-        .form-field select.error {
-            border-color: #ef4444;
-            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
-        }
-        
-        .success-toast {
-            animation: slideInRight 0.3s ease-out;
-        }
-        
-        @keyframes slideInRight {
-            from {
-                transform: translateX(100%);
-                opacity: 0;
+            .form-field input:focus,
+            .form-field select:focus {
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
             }
-            to {
-                transform: translateX(0);
-                opacity: 1;
+
+            .form-field input.error,
+            .form-field select.error {
+                border-color: #ef4444;
+                box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
             }
-        }
+
+            .success-toast {
+                animation: slideInRight 0.3s ease-out;
+            }
+
+            @keyframes slideInRight {
+                from {
+                    transform: translateX(100%);
+                    opacity: 0;
+                }
+
+                to {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+            }
         </style>
 
-        <script>
-        jQuery(document).ready(function($) {
-            // Enhanced form validation with visual feedback
-            function validateField(field) {
-                const $field = $(field);
-                const value = $field.val().trim();
-                const isRequired = $field.prop('required');
-                
-                if (isRequired && !value) {
-                    $field.addClass('error').removeClass('border-gray-300').addClass('border-red-500');
-                    $field.closest('.form-field').find('label').addClass('text-red-600');
-                    return false;
-                } else {
-                    $field.removeClass('error').removeClass('border-red-500').addClass('border-gray-300');
-                    $field.closest('.form-field').find('label').removeClass('text-red-600');
-                    return true;
-                }
-            }
 
-            // Real-time validation
-            $('#edit-delivery-form input, #edit-delivery-form select').on('blur', function() {
-                validateField(this);
-            });
-
-            $('#edit-delivery-form').on('submit', function(e) {
-                e.preventDefault();
-                
-                // Validate all fields
-                let isValid = true;
-                $(this).find('input[required], select[required]').each(function() {
-                    if (!validateField(this)) {
-                        isValid = false;
-                    }
-                });
-
-                if (!isValid) {
-                    // Show error message with better styling
-                    const errorMsg = $('<div class="fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2">' +
-                        '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
-                        '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>' +
-                        '</svg>' +
-                        '<span>Please fill in all required fields</span>' +
-                        '</div>');
-                    $('body').append(errorMsg);
-                    
-                    // Auto-remove error message
-                    setTimeout(function() {
-                        errorMsg.fadeOut(function() {
-                            $(this).remove();
-                        });
-                    }, 4000);
-                    
-                    // Scroll to first error
-                    $('html, body').animate({
-                        scrollTop: $('.error').first().offset().top - 100
-                    }, 500);
-                    
-                    return;
-                }
-
-                const formData = $(this).serializeArray();
-                formData.push({
-                    name: 'task',
-                    value: $('#delivery_id').val() === '0' ? 'create_delivery' : 'update_delivery'
-                });
-
-                // Show loading state with better UX
-                const $btn = $('#save-delivery-btn');
-                const originalText = $btn.find('span').text();
-                $btn.prop('disabled', true)
-                    .find('span').text('Saving...');
-                
-                // Add loading spinner
-                $btn.prepend('<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">' +
-                    '<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>' +
-                    '<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>' +
-                    '</svg>');
-
-                $.ajax({
-                    url: ajaxurl,
-                    type: 'POST',
-                    data: $.param(formData),
-                    success: function(response) {
-                        if (response.success) {
-                            // Enhanced success message
-                            const successMsg = $('<div class="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2 success-toast">' +
-                                '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
-                                '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>' +
-                                '</svg>' +
-                                '<span>Delivery saved successfully!</span>' +
-                                '</div>');
-                            $('body').append(successMsg);
-                            
-                            setTimeout(function() {
-                                successMsg.fadeOut(function() {
-                                    $(this).remove();
-                                    location.reload();
-                                });
-                            }, 2000);
-                        } else {
-                            // Enhanced error message
-                            const errorMsg = $('<div class="fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2">' +
-                                '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
-                                '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>' +
-                                '</svg>' +
-                                '<span>Error: ' + (response.data || 'Unknown error occurred') + '</span>' +
-                                '</div>');
-                            $('body').append(errorMsg);
-                            
-                            setTimeout(function() {
-                                errorMsg.fadeOut(function() {
-                                    $(this).remove();
-                                });
-                            }, 5000);
-                        }
-                    },
-                    error: function() {
-                        // Network error message
-                        const errorMsg = $('<div class="fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2">' +
-                            '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
-                            '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>' +
-                            '</svg>' +
-                            '<span>Network error occurred. Please try again.</span>' +
-                            '</div>');
-                        $('body').append(errorMsg);
-                        
-                        setTimeout(function() {
-                            errorMsg.fadeOut(function() {
-                                $(this).remove();
-                            });
-                        }, 5000);
-                    },
-                    complete: function() {
-                        // Reset button state
-                        $btn.prop('disabled', false)
-                            .find('span').text(originalText);
-                        $btn.find('svg.animate-spin').remove();
-                    }
-                });
-            });
-
-            // Add visual feedback for form interactions
-            $('#edit-delivery-form input, #edit-delivery-form select').on('focus', function() {
-                $(this).closest('.form-field').addClass('ring-2 ring-blue-500 ring-opacity-50');
-            }).on('blur', function() {
-                $(this).closest('.form-field').removeClass('ring-2 ring-blue-500 ring-opacity-50');
-            });
-        });
-        </script>
-        <?php
+    <?php
         return ob_get_clean();
     }
 
@@ -1260,12 +1380,12 @@ class KIT_Deliveries
 
         // Validate $type
         $type = strtolower($type);
-        if (!in_array($type, ['origin', 'destination'])) {
+        if (! in_array($type, ['origin', 'destination'])) {
             $type = 'origin';
         }
 
         // Set column names based on type
-        $country_id_col = $type === 'origin' ? 'origin_country_id' : 'destination_country_id';
+        $country_id_col      = $type === 'origin' ? 'origin_country_id' : 'destination_country_id';
         $country_table_alias = $type === 'origin' ? 'oc1' : 'oc2';
 
         // Get the country_id from the direction
@@ -1280,7 +1400,7 @@ class KIT_Deliveries
             ARRAY_A
         );
 
-        if (!$direction || empty($direction['country_id'])) {
+        if (! $direction || empty($direction['country_id'])) {
             return null;
         }
 
@@ -1301,10 +1421,11 @@ class KIT_Deliveries
         return $country ?: null;
     }
 
-
-
     public static function render_admin_page()
     {
+        // Auto-update past deliveries to unconfirmed before loading the page
+        self::auto_update_past_deliveries();
+        
         // Check if we're viewing a specific delivery
         if (isset($_GET['view_delivery']) && is_numeric($_GET['view_delivery'])) {
             // Set the delivery_id parameter for the view_deliveries_page function
@@ -1313,36 +1434,55 @@ class KIT_Deliveries
             return;
         }
 
-        // Enqueue necessary scripts for AJAX functionality
-        wp_enqueue_script('kitscript', plugin_dir_url(__FILE__) . '../js/kitscript.js', ['jquery'], null, true);
-        wp_enqueue_script('waybill-pagination', plugin_dir_url(__FILE__) . '../../js/waybill-pagination.js', ['jquery'], null, true);
+        // No JavaScript needed - pure PHP form submission
+
+        // Initialize variables for modal (in case it's shown in the main deliveries list)
+        $delivery_id = 0; // Default for main list view
+        $customers = tholaMaCustomer();
+        $customers_encoded = base64_encode(json_encode($customers));
+        $form_action = admin_url('admin-post.php?action=add_waybill_action');
 
         $deliveries = self::get_all_deliveries();
 
         // Get delivery statistics
-        $total_deliveries = count($deliveries);
+        $total_deliveries     = count($deliveries);
         $scheduled_deliveries = array_filter($deliveries, function ($d) {
             return $d->status === 'scheduled';
         });
-        $scheduled_count = count($scheduled_deliveries);
+        $scheduled_count       = count($scheduled_deliveries);
         $in_transit_deliveries = array_filter($deliveries, function ($d) {
             return $d->status === 'in_transit';
         });
-        $in_transit_count = count($in_transit_deliveries);
+        $in_transit_count     = count($in_transit_deliveries);
         $delivered_deliveries = array_filter($deliveries, function ($d) {
             return $d->status === 'delivered';
         });
-        $delivered_count = count($delivered_deliveries);
+        $delivered_count     = count($delivered_deliveries);
         $delivered_countries = array_unique(array_column($deliveries, 'destination_country_name'));
-        $countries_count = count($delivered_countries);
+        $countries_count     = count($delivered_countries);
     ?>
 
         <div class="wrap deliveries-page">
             <?php
+            // Get delivery form content for modal
+            $delivery_form_content = self::deliveryForm(null, true);
+            
+            // Render Add Delivery Truck Modal (button + hidden modal)
+            $add_delivery_modal = KIT_Modal::render(
+                'add-delivery-truck-modal',
+                'Add Delivery Truck',
+                $delivery_form_content,
+                '3xl',
+                true,
+                'Add Delivery Truck'
+            );
+            
+            // Render both modals in header
             echo KIT_Commons::showingHeader([
-                'title' => 'Deliveries Management',
-                'desc' => 'Manage and track all delivery operations',
-                'icon' => KIT_Commons::icon('truck')
+                'title'   => 'Deliveries Management',
+                'desc'    => 'Manage and track all delivery operations',
+                'icon'    => KIT_Commons::icon('truck'),
+                'content' => $add_delivery_modal,
             ]);
             ?>
 
@@ -1415,184 +1555,99 @@ class KIT_Deliveries
 
             <!-- Tabbed Interface -->
             <div class="bg-white rounded-xl shadow-sm border border-gray-200">
-                <!-- Tab Navigation -->
-                <div class="border-b border-gray-200">
-                    <nav class="flex space-x-8 px-6" aria-label="Tabs">
-                        <button id="tab-all-deliveries" class="tab-button active py-4 px-1 border-b-2 border-blue-500 font-medium text-sm text-blue-600">
-                            <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
-                            </svg>
-                            Show All Deliveries
-                        </button>
-                        <button id="tab-add-delivery" class="tab-button py-4 px-1 border-b-2 border-transparent font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300">
-                            <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-                            </svg>
-                            Add Delivery
-                        </button>
-                    </nav>
-                </div>
+
 
                 <!-- Tab Content -->
                 <div class="p-6">
                     <!-- Tab 1: Show All Deliveries -->
-                    <div id="tab-content-all-deliveries" class="tab-content active">
-                        <!-- View Toggle Buttons -->
-                        <div class="flex justify-between items-center mb-6">
-                            <div class="flex space-x-2">
-                                <button id="block-view-btn" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium transition-colors">
-                                    Bloc2k View
-                                </button>
-                                <button id="table-view-btn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors hover:bg-gray-300">
-                                    Table View
-                                </button>
+                    <!-- Table View -->
+                    <div id="table-view">
+                        <div class="bg-white shadow-sm rounded-lg border border-gray-200 overflow-hidden">
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reference</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Route</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dispatch Date</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Truck</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Driver</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Waybills</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-white divide-y divide-gray-200">
+                                        <?php foreach ($deliveries as $delivery): ?>
+                                            <tr class="hover:bg-gray-50">
+                                                <td class="px-6 py-4 whitespace-nowrap">
+                                                    <div class="text-sm font-medium text-gray-900"><?php echo esc_html($delivery->delivery_reference) ?></div>
+                                                </td>
+
+                                                <td class="px-6 py-4 whitespace-nowrap">
+                                                    <div class="text-sm text-gray-900">
+                                                        <?php 
+                                                        $origin = $delivery->origin_country_name ?? 'N/A';
+                                                        $dest = $delivery->destination_country_name ?? 'N/A';
+                                                        echo esc_html("$origin → $dest");
+                                                        ?>
+                                                    </div>
+                                                </td>
+                                                <td class="px-6 py-4 whitespace-nowrap">
+                                                    <div class="text-sm text-gray-900">
+                                                        <?php 
+                                                        if (!empty($delivery->dispatch_date) && $delivery->dispatch_date !== '0000-00-00') {
+                                                            echo esc_html(date('M j, Y', strtotime($delivery->dispatch_date)));
+                                                        } else {
+                                                            echo 'N/A';
+                                                        }
+                                                        ?>
+                                                    </div>
+                                                </td>
+                                                <td class="px-6 py-4 whitespace-nowrap">
+                                                    <div class="text-sm text-gray-900"><?php echo esc_html($delivery->truck_number ?? 'N/A') ?></div>
+                                                </td>
+                                                <td class="px-6 py-4 whitespace-nowrap">
+                                                    <div class="text-sm text-gray-900"><?php echo esc_html($delivery->driver_name ?? 'N/A') ?></div>
+                                                </td>
+                                                <td class="px-6 py-4 whitespace-nowrap">
+                                                    <?php
+                                                    $status_class = match ($delivery->status) {
+                                                        'scheduled'  => 'bg-blue-100 text-blue-800',
+                                                        'in_transit' => 'bg-yellow-100 text-yellow-800',
+                                                        'delivered'  => 'bg-green-100 text-green-800',
+                                                        'cancelled'  => 'bg-red-100 text-red-800',
+                                                        default      => 'bg-gray-100 text-gray-800'
+                                                    };
+                                                    ?>
+                                                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full <?php echo $status_class ?>">
+                                                        <?php echo esc_html(ucfirst($delivery->status ?? 'Unknown')) ?>
+                                                    </span>
+                                                </td>
+                                                <td class="px-6 py-4 whitespace-nowrap">
+
+                                                    <div class="text-sm text-gray-900"><?php echo esc_html($delivery->waybill_count ?? 0) ?></div>
+                                                </td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                                    <div class="flex space-x-2">
+                                                        <!-- view delivery and its waybills -->
+                                                        <!-- page=view-deliveries&delivery_id=2 -->
+                                                        <a href="<?php echo admin_url('admin.php?page=view-deliveries&delivery_id=' . $delivery->id); ?>" class="text-blue-600 hover:text-blue-900 view-delivery-btn" data-delivery-id="<?php echo $delivery->id; ?>">
+                                                            View
+                                                        </a>
+                                                        <button class="text-blue-600 hover:text-blue-900" onclick="return editDelivery(<?php echo $delivery->id ?>)">
+                                                            Edit
+                                                        </button>
+                                                        <button class="text-red-600 hover:text-red-900" onclick="deleteDelivery(<?php echo $delivery->id ?>)">
+                                                            Delete
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
                             </div>
-                            <div class="text-sm text-gray-600">
-                                <?php echo count($deliveries); ?> deliveries found
-                            </div>
-                        </div>
-
-                        <?php if (!empty($deliveries)): ?>
-                            <!-- Block View -->
-                            <?php
-                            // Use the component to render the delivery grid
-                            echo KIT_DeliveryCard::renderGrid($deliveries, [
-                                'show_actions' => true,
-                                'show_truck' => true,
-                                'show_waybill_count' => false,
-                                'grid_class' => 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6',
-                                'empty_message' => 'No deliveries found'
-                            ]);
-                            ?>
-
-                        <?php else: ?>
-                            <div class="text-center py-12">
-                                <div class="mx-auto w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                                    <svg class="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
-                                    </svg>
-                                </div>
-                                <h3 class="text-lg font-medium text-gray-900 mb-2">No deliveries yet</h3>
-                                <p class="text-gray-600 mb-6">Get started by creating your first delivery</p>
-                                <button id="create-first-delivery" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors">
-                                    Create First Delivery
-                                </button>
-                            </div>
-                        <?php endif; ?>
-                    </div>
-                </div>
-
-                <!-- Tab 2: Add Delivery -->
-                <div id="tab-content-add-delivery" class="tab-content hidden">
-                    <div class="max-w-2xl mx-auto">
-                        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                            <div class="mb-6">
-                                <h2 class="text-xl font-semibold text-gray-900">Add New Delivery</h2>
-                                <p class="text-sm text-gray-600 mt-1">Create a new delivery entry</p>
-                            </div>
-
-                            <form id="delivery-form" class="space-y-6">
-                                <input type="hidden" name="action" value="kit_deliveries_crud">
-                                <input type="hidden" name="delivery_id" id="delivery_id" value="0">
-                                <?php wp_nonce_field('get_waybills_nonce', 'nonce'); ?>
-
-                                <!-- Reference Number -->
-                                <div class="form-field">
-                                    <label for="delivery_reference" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Reference Number
-                                    </label>
-                                    <input type="text" name="delivery_reference" id="delivery_reference"
-                                        readonly value="<?= KIT_Deliveries::generateDeliveryRef() ?>"
-                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50">
-                                </div>
-
-                                <!-- Origin -->
-                                <div class="form-field">
-                                    <label for="origin_country_select" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Origin Country
-                                    </label>
-                                    <?php echo KIT_Deliveries::CountrySelect('origin_country', 'origin_country_select', null, true); ?>
-                                </div>
-
-                                <div class="form-field">
-                                    <label for="origin_city_select" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Origin City
-                                    </label>
-                                    <select name="origin_city" id="origin_city_select" required class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                        <option value="">Select City</option>
-                                    </select>
-                                </div>
-
-                                <!-- Destination -->
-                                <div class="form-field">
-                                    <label for="destination_country_select" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Destination Country
-                                    </label>
-                                    <?php echo KIT_Deliveries::CountrySelect('destination_country', 'destination_country_select', null, true); ?>
-                                </div>
-
-                                <div class="form-field">
-                                    <label for="destination_city_select" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Destination City
-                                    </label>
-                                    <select name="destination_city" id="destination_city_select" required class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                        <option value="">Select City</option>
-                                    </select>
-                                </div>
-
-                                <!-- Dispatch Date -->
-                                <div class="form-field">
-                                    <label for="dispatch_date" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Dispatch Date
-                                    </label>
-                                    <input type="date" name="dispatch_date" id="dispatch_date" required
-                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                </div>
-
-                                <!-- Truck Number -->
-                                <div class="form-field">
-                                    <label for="truck_number" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Truck Number
-                                    </label>
-                                    <input type="text" name="truck_number" id="truck_number" required
-                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                        placeholder="Enter truck number">
-                                </div>
-
-                                <!-- Status -->
-                                <div class="form-field">
-                                    <label for="status" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Delivery Status
-                                    </label>
-                                    <?php
-                                    $deliveries_status = [
-                                        'scheduled' => 'Scheduled',
-                                        'in_transit' => 'In Transit',
-                                        'delivered' => 'Delivered'
-                                    ];
-                                    echo KIT_Commons::simpleSelect(
-                                        '',
-                                        'status',
-                                        'status',
-                                        $deliveries_status,
-                                        'scheduled'
-                                    );
-                                    ?>
-                                </div>
-
-                                <!-- Form Actions -->
-                                <div class="flex gap-3 pt-4">
-                                    <button type="submit" id="save-delivery-btn"
-                                        class="btn-primary flex-1">
-                                        Save Delivery
-                                    </button>
-                                    <button type="button" id="cancel-edit"
-                                        class="btn-secondary hidden">
-                                        Cancel
-                                    </button>
-
-                                </div>
-                            </form>
                         </div>
                     </div>
                 </div>
@@ -1677,7 +1732,7 @@ class KIT_Deliveries
         </style>
 
         <!-- Edit Delivery Modal -->
-        <div id="edit-delivery-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 hidden flex items-center justify-center p-4" style="display: none;">
+        <div id="edit-delivery-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4" style="display: none;">
             <div class="relative mx-auto w-11/12 md:w-3/4 lg:w-1/2 shadow-xl rounded-xl bg-white max-h-[90vh] overflow-y-auto">
                 <!-- Header -->
                 <div class="flex items-center justify-between p-6 border-b border-gray-200">
@@ -1688,7 +1743,7 @@ class KIT_Deliveries
                         </svg>
                     </button>
                 </div>
-                
+
                 <!-- Content -->
                 <div class="p-6">
                     <div id="modal-content" class="overflow-y-auto">
@@ -1704,7 +1759,7 @@ class KIT_Deliveries
         <script>
             // Define ajaxurl for WordPress admin
             var ajaxurl = '<?php echo admin_url('admin-ajax.php'); ?>';
-            
+
             // Tab functionality
             document.addEventListener('DOMContentLoaded', function() {
                 const tabButtons = document.querySelectorAll('.tab-button');
@@ -1756,13 +1811,11 @@ class KIT_Deliveries
                 console.log('Tab contents found:', tabContents.length);
             });
 
-            
+
 
             jQuery(document).ready(function($) {
-                // Set minimum date for dispatch date
-                const dispatchDateInput = document.getElementById('dispatch_date');
-                const today = new Date().toISOString().split('T')[0];
-                dispatchDateInput.min = today;
+                // Allow past dates for catch-up delivery creation
+                // No minimum date restriction - allow past dates
 
                 // Handle form submission
                 $('#delivery-form').on('submit', function(e) {
@@ -1799,8 +1852,10 @@ class KIT_Deliveries
                     $.ajax({
                         url: ajaxurl,
                         type: 'POST',
-                        data: $.param(formData),
+                        data: formData,
+                        dataType: 'json',
                         success: function(response) {
+                            console.log('AJAX Response:', response);
                             if (response.success) {
                                 // Show success message
                                 const successMsg = $('<div class="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50">Delivery saved successfully!</div>');
@@ -1815,7 +1870,9 @@ class KIT_Deliveries
                                 alert('Error: ' + (response.data || 'Unknown error occurred'));
                             }
                         },
-                        error: function() {
+                        error: function(xhr, status, error) {
+                            console.error('AJAX Error:', error);
+                            console.error('Response:', xhr.responseText);
                             alert('Network error occurred. Please try again.');
                         },
                         complete: function() {
@@ -1844,15 +1901,21 @@ class KIT_Deliveries
 
                 // Handle edit delivery
                 window.editDelivery = function(deliveryId) {
-                    console.log('Opening modal for delivery ID:', deliveryId);
+                    // Prevent call without delivery ID
+                    if (!deliveryId || deliveryId === '' || deliveryId === '0') {
+                        console.error('Cannot edit delivery: delivery ID is required');
+                        return;
+                    }
                     
+                    console.log('Opening modal for delivery ID:', deliveryId);
+
                     // Show modal
                     $('#edit-delivery-modal').removeClass('hidden').show();
-                    
+
                     // Get the AJAX URL - try multiple sources
                     const ajaxUrl = window.ajaxurl || (window.myPluginAjax && window.myPluginAjax.ajax_url) || '/wp-admin/admin-ajax.php';
                     console.log('Using AJAX URL:', ajaxUrl);
-                    
+
                     // Load delivery data via AJAX
                     $.ajax({
                         url: ajaxUrl,
@@ -1888,9 +1951,10 @@ class KIT_Deliveries
                 function loadDeliveryFormInModal(delivery, deliveryId) {
                     // Create form HTML
                     const formHtml = `
-                        <form id="modal-delivery-form" class="space-y-8">
+                        <form id="modal-delivery-form" class="space-y-8" method="post" action="${ajaxurl.replace('admin-ajax.php', 'admin-post.php')}">
                             <input type="hidden" name="action" value="kit_deliveries_crud">
                             <input type="hidden" name="delivery_id" value="${deliveryId}">
+                            <input type="hidden" name="task" value="update_delivery">
                             <input type="hidden" name="nonce" value="${$('#delivery-form input[name="nonce"]').val()}">
 
                             <!-- Reference Number -->
@@ -1996,7 +2060,8 @@ class KIT_Deliveries
                                             </span>
                                         </label>
                                         <input type="date" name="dispatch_date" value="${delivery.dispatch_date || ''}" required
-                                               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white">
+                                               class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white"
+                                               data-allow-past-dates="true">
                                     </div>
 
                                     <!-- Truck Number -->
@@ -2052,67 +2117,71 @@ class KIT_Deliveries
                             </div>
                         </form>
                     `;
-                    
-                    $('#modal-content').html(formHtml);
-                    
-                    // Handle modal form submission
-                    $('#modal-delivery-form').on('submit', function(e) {
-                        e.preventDefault();
-                        
-                        const formData = $(this).serializeArray();
-                        formData.push({
-                            name: 'task',
-                            value: 'update_delivery'
-                        });
 
+                    $('#modal-content').html(formHtml);
+
+                    // Remove date restriction to allow editing old deliveries
+                    // Use multiple attempts to catch the input after DOM insertion
+                    function removeDateRestriction() {
+                        const modalDateInput = document.querySelector('#modal-delivery-form input[name="dispatch_date"]');
+                        if (modalDateInput) {
+                            modalDateInput.removeAttribute('min');
+                            modalDateInput.removeAttribute('data-min');
+                            // Also prevent browser from setting min based on HTML5 validation
+                            if (modalDateInput.hasAttribute('min')) {
+                                modalDateInput.removeAttribute('min');
+                            }
+                            console.log('Date restriction removed from modal dispatch_date input');
+                        }
+                    }
+                    
+                    // Try immediately, then after short delay, and also on input focus
+                    removeDateRestriction();
+                    setTimeout(removeDateRestriction, 50);
+                    setTimeout(removeDateRestriction, 200);
+                    
+                    // Also remove on focus/click to catch any late-set restrictions
+                    $(document).on('focus click', '#modal-delivery-form input[name="dispatch_date"]', function() {
+                        const $input = $(this);
+                        $input.removeAttr('min').removeAttr('data-min');
+                        // Force remove any min attribute that might have been set
+                        this.removeAttribute('min');
+                    });
+                    
+                    // Monitor for any attempts to set min attribute using MutationObserver
+                    setTimeout(function() {
+                        const modalDateInput = document.querySelector('#modal-delivery-form input[name="dispatch_date"]');
+                        if (modalDateInput) {
+                            const observer = new MutationObserver(function(mutations) {
+                                mutations.forEach(function(mutation) {
+                                    if (mutation.type === 'attributes' && mutation.attributeName === 'min') {
+                                        const target = mutation.target;
+                                        if (target.hasAttribute('min')) {
+                                            target.removeAttribute('min');
+                                            console.log('Prevented min date restriction from being set');
+                                        }
+                                    }
+                                });
+                            });
+                            
+                            observer.observe(modalDateInput, {
+                                attributes: true,
+                                attributeFilter: ['min']
+                            });
+                        }
+                    }, 100);
+
+                    // Handle modal form submission - now using regular form submission
+                    $('#modal-delivery-form').on('submit', function(e) {
                         // Show loading state
                         const $btn = $('#modal-save-btn');
                         const originalText = $btn.find('span').text();
                         $btn.prop('disabled', true).find('span').text('Saving...');
-                        
-                        // Get the AJAX URL - try multiple sources
-                        const ajaxUrl = window.ajaxurl || (window.myPluginAjax && window.myPluginAjax.ajax_url) || '/wp-admin/admin-ajax.php';
-                        console.log('Using AJAX URL for form submission:', ajaxUrl);
-                        
-                        $.ajax({
-                            url: ajaxUrl,
-                            type: 'POST',
-                            data: $.param(formData),
-                            success: function(response) {
-                                console.log('Form submission response:', response);
-                                if (response.success) {
-                                    // Show success message
-                                    const successMsg = $('<div class="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2">' +
-                                        '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
-                                        '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>' +
-                                        '</svg>' +
-                                        '<span>Delivery updated successfully!</span>' +
-                                        '</div>');
-                                    $('body').append(successMsg);
-                                    
-                                    setTimeout(function() {
-                                        successMsg.fadeOut(function() {
-                                            $(this).remove();
-                                            $('#edit-delivery-modal').addClass('hidden').hide();
-                                            location.reload();
-                                        });
-                                    }, 2000);
-                                } else {
-                                    alert('Error: ' + (response.data || 'Unknown error occurred'));
-                                }
-                            },
-                            error: function(xhr, status, error) {
-                                console.error('Form submission AJAX error:', error);
-                                console.error('Status:', status);
-                                console.error('Response:', xhr.responseText);
-                                alert('Network error occurred. Please try again. Check console for details.');
-                            },
-                            complete: function() {
-                                $btn.prop('disabled', false).find('span').text(originalText);
-                            }
-                        });
+
+                        // Let the form submit normally - no preventDefault()
+                        // The form will submit to admin-post.php and redirect back
                     });
-                    
+
                     // Handle cancel button
                     $('#modal-cancel-btn').on('click', function() {
                         $('#edit-delivery-modal').addClass('hidden').hide();
@@ -2133,10 +2202,52 @@ class KIT_Deliveries
 
                 // Handle delete delivery
                 window.deleteDelivery = function(deliveryId) {
-                    if (confirm('Are you sure you want to delete this delivery?')) {
-                        // TODO: Implement delete functionality
-                        alert('Delete functionality will be implemented');
+                    if (confirm('Are you sure you want to delete this delivery? This will also delete all associated waybills and items. A backup will be created automatically.')) {
+                        // Show loading state
+                        const deleteBtn = event.target;
+                        const originalText = deleteBtn.innerHTML;
+                        deleteBtn.innerHTML = 'Deleting...';
+                        deleteBtn.disabled = true;
+
+                        // Make AJAX request to delete delivery
+                        $.ajax({
+                            url: ajaxurl,
+                            type: 'POST',
+                            data: {
+                                action: 'kit_deliveries_crud',
+                                task: 'delete_delivery',
+                                id: deliveryId,
+                                nonce: '<?php echo wp_create_nonce('get_waybills_nonce'); ?>'
+                            },
+                            success: function(response) {
+                                if (response.success) {
+                                    // Show success message with backup info
+                                    const backupInfo = response.data.backup;
+                                    alert('Delivery deleted successfully!\\n\\nBackup created:\\n- File: ' + backupInfo.file + '\\n- Waybills: ' + backupInfo.waybills_count + '\\n- Items: ' + backupInfo.items_count);
+
+                                    // Remove the row from the table
+                                    $('button[onclick="deleteDelivery(' + deliveryId + ')"]').closest('tr').fadeOut(500, function() {
+                                        $(this).remove();
+                                    });
+                                } else {
+                                    alert('Error deleting delivery: ' + response.data.message);
+                                }
+                            },
+                            error: function(xhr, status, error) {
+                                alert('Error deleting delivery: ' + error);
+                            },
+                            complete: function() {
+                                // Reset button state
+                                deleteBtn.innerHTML = originalText;
+                                deleteBtn.disabled = false;
+                            }
+                        });
                     }
+                };
+
+                // Handle edit delivery
+                window.editDelivery = function(deliveryId) {
+                    window.location.href = '?page=view-deliveries&delivery_id=' + deliveryId + '&edit_delivery=1';
                 };
 
                 // Add visual feedback for form interactions
@@ -2160,22 +2271,69 @@ class KIT_Deliveries
                     $('#table-view-btn').removeClass('bg-gray-200 text-gray-700').addClass('bg-blue-600 text-white');
                     $('#block-view-btn').removeClass('bg-blue-600 text-white').addClass('bg-gray-200 text-gray-700');
                 });
+
+
             });
         </script>
     <?php
     }
-
-    public static function handle_ajax()
+    public static function updateShippingDirection()
     {
+        global $wpdb;
 
+        // Check if this is a regular form submission (not AJAX)
+        if (! wp_doing_ajax()) {
+            // Handle regular form submission
+            if (! wp_verify_nonce($_POST['nonce'], 'get_waybills_nonce')) {
+                wp_die('Security check failed');
+            }
 
+            if (! current_user_can('kit_view_waybills') && ! current_user_can('edit_pages')) {
+                wp_die('Unauthorized');
+            }
 
-        check_ajax_referer('get_waybills_nonce', 'nonce');
+            $task = $_POST['task'] ?? 'update_delivery';
+            $data = $_POST;
 
-        if (!current_user_can('kit_view_waybills') && !current_user_can('edit_pages')) {
-            wp_send_json_error('Unauthorized');
+            if (empty($task)) {
+                wp_die('Task parameter missing');
+            }
+
+            // Process the form submission
+            switch ($task) {
+                case 'create_delivery':
+                case 'update_delivery':
+                    $result = self::save_delivery($data);
+                    if ($result) {
+                        // For create, redirect to view page (not edit mode). For update, redirect to edit mode.
+                        $delivery_id = $task === 'update_delivery' ? $data['delivery_id'] : $result;
+                        if ($task === 'create_delivery') {
+                            wp_redirect(admin_url('admin.php?page=view-deliveries&delivery_id=' . $delivery_id . '&updated=1'));
+                        } else {
+                            wp_redirect(admin_url('admin.php?page=view-deliveries&delivery_id=' . $delivery_id . '&edit_delivery=1&updated=1'));
+                        }
+                        exit;
+                    } else {
+                        // Redirect back with error message
+                        $delivery_id = $task === 'update_delivery' ? $data['delivery_id'] : '';
+                        $error_url = $task === 'create_delivery' 
+                            ? admin_url('admin.php?page=kit-deliveries&error=1')
+                            : admin_url('admin.php?page=view-deliveries&delivery_id=' . $delivery_id . '&edit_delivery=1&error=1');
+                        wp_redirect($error_url);
+                        exit;
+                    }
+                    break;
+                default:
+                    wp_die('Invalid task');
+            }
         }
 
+        // Handle AJAX requests (for backward compatibility)
+        check_ajax_referer('get_waybills_nonce', 'nonce');
+
+        if (! current_user_can('kit_view_waybills') && ! current_user_can('edit_pages')) {
+            wp_send_json_error('Unauthorized');
+        }
 
         $task = $_POST['task'] ?? 'create_delivery';
         $data = $_POST;
@@ -2191,6 +2349,10 @@ class KIT_Deliveries
                 break;
 
             case 'get_delivery':
+                if (empty($data['id'])) {
+                    wp_send_json_error('Delivery ID required');
+                    return;
+                }
                 $result = self::get_delivery($data['id']);
                 break;
 
@@ -2212,32 +2374,176 @@ class KIT_Deliveries
 
         // Handle both AJAX and POST requests
         if (defined('DOING_AJAX') && DOING_AJAX) {
-            if ($result === false) {
-                wp_send_json_error('Operation failed');
+            if ($result === false || $result === 0) {
+                $error_message = 'Operation failed';
+                if ($task === 'update_delivery') {
+                    $error_message = 'Failed to update delivery. Please check the error log.';
+                } elseif ($task === 'create_delivery') {
+                    $error_message = 'Failed to create delivery. Please check the error log.';
+                }
+                wp_send_json_error($error_message);
             } else {
                 wp_send_json_success($result);
             }
         } else {
             // For POST (admin-post.php) requests
-            if ($result === false) {
-                wp_redirect(wp_get_referer() ?: admin_url());
+            if ($result === false || $result === 0) {
+                $error_message = 'Operation failed';
+                if ($task === 'update_delivery') {
+                    $error_message = 'Failed to update delivery. Please check the error log.';
+                } elseif ($task === 'create_delivery') {
+                    $error_message = 'Failed to create delivery. Please check the error log.';
+                }
+                wp_redirect(add_query_arg(['delivery_error' => urlencode($error_message)], wp_get_referer() ?: admin_url()));
                 exit;
             } else {
-                // Optionally, you can add a success notice or redirect to a specific page
-                wp_redirect(wp_get_referer() ?: admin_url());
+                // Success - redirect with success message
+                $success_message = 'Delivery updated successfully!';
+                if ($task === 'create_delivery') {
+                    $success_message = 'Delivery created successfully!';
+                }
+                wp_redirect(add_query_arg(['delivery_success' => '1', 'message' => urlencode($success_message)], wp_get_referer() ?: admin_url()));
                 exit;
             }
         }
     }
 
+    public static function handle_ajax()
+    {
 
+        // Check if this is a regular form submission (not AJAX)
+        if (! wp_doing_ajax()) {
+            // Handle regular form submission
+            if (! wp_verify_nonce($_POST['nonce'], 'get_waybills_nonce')) {
+                wp_die('Security check failed');
+            }
+
+            if (! current_user_can('kit_view_waybills') && ! current_user_can('edit_pages')) {
+                wp_die('Unauthorized');
+            }
+
+            $task = $_POST['task'] ?? 'create_delivery';
+            $data = $_POST;
+
+            if (empty($task)) {
+                wp_die('Task parameter missing');
+            }
+
+            // Process the form submission
+            switch ($task) {
+                case 'create_delivery':
+                case 'update_delivery':
+                    $result = self::save_delivery($data);
+                    if ($result) {
+                        // For create, redirect to view page (not edit mode). For update, redirect to edit mode.
+                        $delivery_id = $task === 'update_delivery' ? $data['delivery_id'] : $result;
+                        if ($task === 'create_delivery') {
+                            wp_redirect(admin_url('admin.php?page=view-deliveries&delivery_id=' . $delivery_id . '&updated=1'));
+                        } else {
+                            wp_redirect(admin_url('admin.php?page=view-deliveries&delivery_id=' . $delivery_id . '&edit_delivery=1&updated=1'));
+                        }
+                        exit;
+                    } else {
+                        // Redirect back with error message
+                        $delivery_id = $task === 'update_delivery' ? $data['delivery_id'] : '';
+                        $error_url = $task === 'create_delivery' 
+                            ? admin_url('admin.php?page=kit-deliveries&error=1')
+                            : admin_url('admin.php?page=view-deliveries&delivery_id=' . $delivery_id . '&edit_delivery=1&error=1');
+                        wp_redirect($error_url);
+                        exit;
+                    }
+                    break;
+                default:
+                    wp_die('Invalid task');
+            }
+        }
+
+        // Handle AJAX requests (for backward compatibility)
+        check_ajax_referer('get_waybills_nonce', 'nonce');
+
+        if (! current_user_can('kit_view_waybills') && ! current_user_can('edit_pages')) {
+            wp_send_json_error('Unauthorized');
+        }
+
+        $task = $_POST['task'] ?? 'create_delivery';
+        $data = $_POST;
+
+        if (empty($task)) {
+            wp_send_json_error('Task parameter missing');
+        }
+
+        switch ($task) {
+            case 'create_delivery':
+            case 'update_delivery':
+                $result = self::save_delivery($data);
+                break;
+
+            case 'get_delivery':
+                if (empty($data['id'])) {
+                    wp_send_json_error('Delivery ID required');
+                    return;
+                }
+                $result = self::get_delivery($data['id']);
+                break;
+
+            case 'delete_delivery':
+                $result = self::delete_delivery($data['id']);
+                break;
+            case 'get_scheduled_deliveries':
+                if (empty($_POST['country'])) {
+                    wp_send_json_error('Country parameter missing');
+                }
+                $result = self::deliveries_by_CountStat(
+                    sanitize_text_field($_POST['country'])
+                );
+                break;
+
+            default:
+                wp_send_json_error('Invalid action');
+        }
+
+        // Handle both AJAX and POST requests
+        if (defined('DOING_AJAX') && DOING_AJAX) {
+            if ($result === false || $result === 0) {
+                $error_message = 'Operation failed';
+                if ($task === 'update_delivery') {
+                    $error_message = 'Failed to update delivery. Please check the error log.';
+                } elseif ($task === 'create_delivery') {
+                    $error_message = 'Failed to create delivery. Please check the error log.';
+                }
+                wp_send_json_error($error_message);
+            } else {
+                wp_send_json_success($result);
+            }
+        } else {
+            // For POST (admin-post.php) requests
+            if ($result === false || $result === 0) {
+                $error_message = 'Operation failed';
+                if ($task === 'update_delivery') {
+                    $error_message = 'Failed to update delivery. Please check the error log.';
+                } elseif ($task === 'create_delivery') {
+                    $error_message = 'Failed to create delivery. Please check the error log.';
+                }
+                wp_redirect(add_query_arg(['delivery_error' => urlencode($error_message)], wp_get_referer() ?: admin_url()));
+                exit;
+            } else {
+                // Success - redirect with success message
+                $success_message = 'Delivery updated successfully!';
+                if ($task === 'create_delivery') {
+                    $success_message = 'Delivery created successfully!';
+                }
+                wp_redirect(add_query_arg(['delivery_success' => '1', 'message' => urlencode($success_message)], wp_get_referer() ?: admin_url()));
+                exit;
+            }
+        }
+    }
 
     //Change delivery status from schediled to intransit
     public static function delivery_changeTo_Intransit()
     {
         global $wpdb;
-        $table = $wpdb->prefix . 'kit_deliveries';
-        $id = intval($_POST['id']);
+        $table   = $wpdb->prefix . 'kit_deliveries';
+        $id      = intval($_POST['id']);
         $updated = $wpdb->update(
             $table,
             ['status' => 'in_transit'],
@@ -2251,7 +2557,7 @@ class KIT_Deliveries
     {
         global $wpdb;
         $table = $wpdb->prefix . 'kit_deliveries';
-        $id = intval($_POST['id']);
+        $id    = intval($_POST['id']);
 
         $updated = $wpdb->update(
             $table,
@@ -2259,15 +2565,15 @@ class KIT_Deliveries
             ['id' => intval($id)]
         );
 
-        exit(var_dump($wpdb->last_query));
+        // Debug statement removed - was causing JSON parsing errors
         return $updated !== false ? true : false;
     }
     //Change delivery status scheduled
     public static function delivery_changeTo_Scheduled()
     {
         global $wpdb;
-        $table = $wpdb->prefix . 'kit_deliveries';
-        $id = intval($_POST['id']);
+        $table   = $wpdb->prefix . 'kit_deliveries';
+        $id      = intval($_POST['id']);
         $updated = $wpdb->update(
             $table,
             ['status' => 'scheduled'],
@@ -2302,29 +2608,63 @@ class KIT_Deliveries
     {
         //get all deliveries and fk link with operating countries where the delivery.origin_country
         global $wpdb;
-        $table = $wpdb->prefix . 'kit_deliveries';
+        $table          = $wpdb->prefix . 'kit_deliveries';
+        $waybills_table = $wpdb->prefix . 'kit_waybills';
 
         // Fetch all deliveries ordered by created_at in descending order
         // Join with kit_shipping_directions on direction_id
         // Also join kit_operating_countries twice to get origin and destination country names
 
-        $countries_table = $wpdb->prefix . 'kit_operating_countries';
+        $countries_table  = $wpdb->prefix . 'kit_operating_countries';
         $directions_table = $wpdb->prefix . 'kit_shipping_directions';
 
-        // Join: deliveries -> directions -> countries (origin & destination)
+        // Check if drivers table exists
+        $drivers_table = $wpdb->prefix . 'kit_drivers';
+        $drivers_table_exists = $wpdb->get_var("SHOW TABLES LIKE '$drivers_table'");
+        
+        // Check if driver_id column exists
+        $driver_id_exists = false;
+        if ($drivers_table_exists) {
+            $driver_id_exists = $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
+                WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'driver_id'",
+                DB_NAME,
+                $table
+            ));
+        }
+        
+        // Build driver join and select if available
+        $driver_join = "";
+        $driver_select = "";
+        if ($drivers_table_exists && $driver_id_exists) {
+            $driver_join = "LEFT JOIN {$drivers_table} dr ON d.driver_id = dr.id";
+            $driver_select = ",
+                dr.name AS driver_name,
+                dr.phone AS driver_phone";
+        }
+        
+        // Join: deliveries -> directions -> countries (origin & destination) -> drivers
         $query = "
             SELECT 
-            d.*, 
-            sd.origin_country_id, 
-            sd.destination_country_id, 
-            sd.description AS direction_description,
-            oc1.country_name AS origin_country_name,
-            oc2.country_name AS destination_country_name
+                d.*, 
+                sd.origin_country_id, 
+                sd.destination_country_id, 
+                sd.description AS direction_description,
+                oc1.country_name AS origin_country_name,
+                oc2.country_name AS destination_country_name,
+                COALESCE(wb.waybill_count, 0) AS waybill_count
+                $driver_select
             FROM {$table} d
             LEFT JOIN {$directions_table} sd ON d.direction_id = sd.id
             LEFT JOIN {$countries_table} oc1 ON sd.origin_country_id = oc1.id
             LEFT JOIN {$countries_table} oc2 ON sd.destination_country_id = oc2.id
-            WHERE d.delivery_reference != 'warehoused'
+            LEFT JOIN (
+                SELECT delivery_id, COUNT(*) AS waybill_count
+                FROM {$waybills_table}
+                GROUP BY delivery_id
+            ) wb ON wb.delivery_id = d.id
+            $driver_join
+            WHERE d.delivery_reference != 'pending'
             ORDER BY d.created_at DESC
         ";
         return $wpdb->get_results($query);
@@ -2333,10 +2673,48 @@ class KIT_Deliveries
     {
         global $wpdb;
 
-        $deliveryTable       = $wpdb->prefix . 'kit_deliveries';
-        $shipDirectionTable  = $wpdb->prefix . 'kit_shipping_directions';
-        $countryTable        = $wpdb->prefix . 'kit_operating_countries';
+        $deliveryTable      = $wpdb->prefix . 'kit_deliveries';
+        $shipDirectionTable = $wpdb->prefix . 'kit_shipping_directions';
+        $countryTable       = $wpdb->prefix . 'kit_operating_countries';
+        $driversTable       = $wpdb->prefix . 'kit_drivers';
 
+        // Check if drivers table exists, if not create it
+        $drivers_table_exists = $wpdb->get_var("SHOW TABLES LIKE '$driversTable'");
+        
+        // Create drivers table if it doesn't exist
+        if (!$drivers_table_exists) {
+            require_once COURIER_FINANCE_PLUGIN_PATH . 'includes/class-database.php';
+            Database::create_drivers_table();
+            $drivers_table_exists = true;
+        }
+        
+        // Check if driver_id column exists in deliveries table
+        $driver_id_exists = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'driver_id'",
+            DB_NAME,
+            $deliveryTable
+        ));
+        
+        // Add driver_id column if it doesn't exist
+        if (!$driver_id_exists && $drivers_table_exists) {
+            require_once COURIER_FINANCE_PLUGIN_PATH . 'includes/class-database.php';
+            Database::update_deliveries_table_for_drivers();
+            $driver_id_exists = true;
+        }
+        
+        // Build query with conditional driver join (only if both table and column exist)
+        $driver_join = "";
+        $driver_select = "";
+        if ($drivers_table_exists && $driver_id_exists) {
+            $driver_join = "LEFT JOIN $driversTable dr ON d.driver_id = dr.id";
+            $driver_select = ",
+            -- Driver
+            dr.name AS driver_name,
+            dr.phone AS driver_phone,
+            dr.email AS driver_email";
+        }
+        
         $query = "
         SELECT 
             d.*, 
@@ -2345,16 +2723,20 @@ class KIT_Deliveries
             -- Origin
             oc1.country_name AS origin_country, 
             oc1.country_code AS origin_code,
+            oc1.id AS origin_country_id,
 
             -- Destination
             oc2.country_name AS destination_country, 
-            oc2.country_code AS destination_code
+            oc2.country_code AS destination_code,
+            oc2.id AS destination_country_id
+            $driver_select
 
         FROM $deliveryTable d
 
         LEFT JOIN $shipDirectionTable sd ON d.direction_id = sd.id 
         LEFT JOIN $countryTable oc1 ON sd.origin_country_id = oc1.id 
         LEFT JOIN $countryTable oc2 ON sd.destination_country_id = oc2.id 
+        $driver_join
 
         WHERE d.id = %d
     ";
@@ -2369,21 +2751,115 @@ class KIT_Deliveries
         return $wpdb->get_var($wpdb->prepare("SELECT id FROM $table WHERE origin_country_id = %d AND destination_country_id = %d", $origin_country_id, $destination_country_id));
     }
 
+    /**
+     * Get or create direction_id based on origin and destination country IDs
+     * This is the main function to use when you have country IDs and need a direction_id
+     * 
+     * @param int $origin_country_id
+     * @param int $destination_country_id
+     * @return int|false The direction_id or false if failed
+     */
+    public static function get_or_create_direction_id($origin_country_id, $destination_country_id)
+    {
+        // First try to find existing direction
+        $direction_id = self::get_direction_id($origin_country_id, $destination_country_id);
+
+        // If found, return it
+        if ($direction_id) {
+            return intval($direction_id);
+        }
+
+        // If not found, create a new one
+        $direction_id = self::create_direction($origin_country_id, $destination_country_id);
+
+        return $direction_id ? intval($direction_id) : false;
+    }
+
+    /**
+     * Verify delivery based on destination and origin countries
+     * @param int $destination_country_id
+     * @param int $origin_country_id
+     * @return array|false Delivery verification result or false on error
+     */
+    public static function get_delivery_verify($destination_country_id, $origin_country_id)
+    {
+        global $wpdb;
+
+        // Validate input parameters
+        if (!$destination_country_id || !$origin_country_id) {
+            return false;
+        }
+
+        // Get direction_id for the route
+        $direction_id = self::get_direction_id($origin_country_id, $destination_country_id);
+
+        if (!$direction_id) {
+            return false;
+        }
+
+        // Get delivery information for this route
+        $delivery_table = $wpdb->prefix . 'kit_deliveries';
+        $directions_table = $wpdb->prefix . 'kit_shipping_directions';
+        $countries_table = $wpdb->prefix . 'kit_operating_countries';
+
+        $query = "
+            SELECT 
+                d.*,
+                sd.description,
+                oc1.country_name AS origin_country,
+                oc2.country_name AS destination_country
+            FROM $delivery_table d
+            LEFT JOIN $directions_table sd ON d.direction_id = sd.id
+            LEFT JOIN $countries_table oc1 ON sd.origin_country_id = oc1.id
+            LEFT JOIN $countries_table oc2 ON sd.destination_country_id = oc2.id
+            WHERE d.direction_id = %d
+            AND d.status = 'scheduled'
+            ORDER BY d.dispatch_date ASC
+            LIMIT 1
+        ";
+
+        $delivery = $wpdb->get_row($wpdb->prepare($query, $direction_id));
+
+        if ($delivery) {
+            return [
+                'delivery_id' => $delivery->id,
+                'delivery_reference' => $delivery->delivery_reference,
+                'direction_id' => $direction_id,
+                'origin_country' => $delivery->origin_country,
+                'destination_country' => $delivery->destination_country,
+                'dispatch_date' => $delivery->dispatch_date,
+                'truck_number' => $delivery->truck_number,
+                'status' => $delivery->status,
+                'description' => $delivery->description,
+                'verified' => true
+            ];
+        }
+
+        return [
+            'delivery_id' => null,
+            'direction_id' => $direction_id,
+            'origin_country' => $origin_country_id,
+            'destination_country' => $destination_country_id,
+            'verified' => false,
+            'message' => 'No scheduled delivery found for this route'
+        ];
+    }
+
     public static function create_direction($origin_country_id, $destination_country_id)
     {
         global $wpdb;
 
-        $table = $wpdb->prefix . 'kit_shipping_directions';
+        $table           = $wpdb->prefix . 'kit_shipping_directions';
         $countries_table = $wpdb->prefix . 'kit_operating_countries';
 
         // If this direction already exists, return it immediately (idempotent)
         $existing_id = self::get_direction_id($origin_country_id, $destination_country_id);
-        if (!empty($existing_id)) {
+        if (! empty($existing_id)) {
             return intval($existing_id);
         }
 
         // Fetch country names
-        $origin_country_name = KIT_Routes::get_country_name_by_id($origin_country_id);
+        $origin_country_name      = KIT_Routes::get_country_name_by_id($origin_country_id);
         $destination_country_name = KIT_Routes::get_country_name_by_id($destination_country_id);
 
         // 🔁 Activate origin country if inactive
@@ -2420,9 +2896,9 @@ class KIT_Deliveries
 
         // Insert route/direction with duplicate handling
         $inserted = $wpdb->insert($table, [
-            'origin_country_id' => $origin_country_id,
+            'origin_country_id'      => $origin_country_id,
             'destination_country_id' => $destination_country_id,
-            'description' => $origin_country_name . ' to ' . $destination_country_name
+            'description'            => $origin_country_name . ' to ' . $destination_country_name,
         ]);
 
         if ($inserted === false) {
@@ -2430,13 +2906,13 @@ class KIT_Deliveries
             $last_error = isset($wpdb->last_error) ? strtolower($wpdb->last_error) : '';
             if (strpos($last_error, 'duplicate') !== false) {
                 $existing_id = self::get_direction_id($origin_country_id, $destination_country_id);
-                if (!empty($existing_id)) {
+                if (! empty($existing_id)) {
                     return intval($existing_id);
                 }
             }
             // As a safe fallback, try once more to read existing row
             $existing_id = self::get_direction_id($origin_country_id, $destination_country_id);
-            if (!empty($existing_id)) {
+            if (! empty($existing_id)) {
                 return intval($existing_id);
             }
             // Could not create or find; surface a failure (return 0 to let caller handle WP_Error)
@@ -2446,57 +2922,380 @@ class KIT_Deliveries
         return intval($wpdb->insert_id);
     }
 
+    /**
+     * Get all active drivers
+     * Creates table if it doesn't exist (for backward compatibility)
+     */
+    public static function get_all_drivers()
+    {
+        global $wpdb;
+        $table = $wpdb->prefix . 'kit_drivers';
+        
+        // Check if table exists, if not create it
+        $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$table'");
+        if (!$table_exists) {
+            require_once COURIER_FINANCE_PLUGIN_PATH . 'includes/class-database.php';
+            Database::create_drivers_table();
+        }
+        
+        return $wpdb->get_results("SELECT * FROM $table WHERE is_active = 1 ORDER BY name ASC");
+    }
+
+    /**
+     * Get driver by ID
+     */
+    public static function get_driver($driver_id)
+    {
+        global $wpdb;
+        $table = $wpdb->prefix . 'kit_drivers';
+        return $wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE id = %d", $driver_id));
+    }
+
     public static function save_delivery($data)
     {
         global $wpdb;
-        $table = $wpdb->prefix . 'kit_deliveries';
+        $table              = $wpdb->prefix . 'kit_deliveries';
+        $directions_table   = $wpdb->prefix . 'kit_shipping_directions';
         $chargeGroups_table = $wpdb->prefix . 'kit_charge_groups';
+        $countries_table    = $wpdb->prefix . 'kit_operating_countries';
 
-        // Get or create shipping direction
-        $direction_id = self::get_direction_id($data['origin_country'], $data['destination_country']);
-        if (!$direction_id) {
-            $direction_id = self::create_direction($data['origin_country'], $data['destination_country']);
+        // Validate required fields
+        if (empty($data['origin_country']) || empty($data['destination_country'])) {
+            error_log('Save delivery failed: Missing origin or destination country. Origin: ' . ($data['origin_country'] ?? 'empty') . ', Destination: ' . ($data['destination_country'] ?? 'empty'));
+            return false;
         }
 
+        // Get origin and destination country IDs from form
+        $origin_country_id      = intval($data['origin_country']);
+        $destination_country_id = intval($data['destination_country']);
+
+        // Get or create direction_id based on the country IDs
+        $direction_id = self::get_or_create_direction_id($origin_country_id, $destination_country_id);
+
+        // Validate direction was created/found
+        if (! $direction_id) {
+            error_log('Save delivery failed: Could not create/find direction for countries ' . $data['origin_country'] . ' to ' . $data['destination_country']);
+            return false;
+        }
+
+        // Get destination city ID - ensure it's valid (not 0)
+        $destination_city_id = 1; // Default to first city
+        if (isset($data['destination_city']) && !empty($data['destination_city']) && intval($data['destination_city']) > 0) {
+            $destination_city_id = intval($data['destination_city']);
+        }
+        
         $delivery_data = [
-            'delivery_reference' => sanitize_text_field($data['delivery_reference']),
-            'direction_id' => (int) $direction_id,
-            'destination_city_id' => isset($data['destination_city']) ? sanitize_text_field($data['destination_city']) : 1, // Default to first city if not provided
-            'dispatch_date' => sanitize_text_field($data['dispatch_date']),
-            'truck_number' => sanitize_text_field($data['truck_number']),
-            'status' => in_array($data['status'], ['scheduled', 'in_transit', 'delivered'])
+            'delivery_reference'  => sanitize_text_field($data['delivery_reference']),
+            'direction_id'        => (int) $direction_id,
+            'destination_city_id' => $destination_city_id,
+            'dispatch_date'       => sanitize_text_field($data['dispatch_date']),
+            'driver_id'           => isset($data['driver_id']) && !empty($data['driver_id']) ? intval($data['driver_id']) : null,
+            'status'              => in_array($data['status'], ['scheduled', 'in_transit', 'delivered'])
                 ? $data['status']
                 : 'scheduled',
-            'created_by' => get_current_user_id()
+            'created_by'          => get_current_user_id(),
         ];
 
         if (isset($data['delivery_id']) && $data['delivery_id'] > 0) {
             // Update existing delivery
 
-            $wpdb->update(
+            $result = $wpdb->update(
                 $table,
                 $delivery_data,
                 ['id' => intval($data['delivery_id'])]
             );
+
+            if ($result === false) {
+                error_log('Delivery update failed for ID ' . $data['delivery_id'] . ': ' . $wpdb->last_error);
+                error_log('Delivery update debug - SQL: ' . $wpdb->last_query);
+                return false;
+            }
+
+            error_log('Delivery updated successfully: ID ' . $data['delivery_id'] . ', Rows affected: ' . $result);
             return $data['delivery_id'];
         } else {
+            // Create new delivery
+            $result = $wpdb->insert($table, $delivery_data);
 
-            $wpdb->insert($table, $delivery_data);
+            if ($result === false) {
+                error_log('Delivery insert failed: ' . $wpdb->last_error);
+                return false;
+            }
 
             // The delivery has been created successfully, return the id of the new delivery
+            error_log('Delivery created successfully: ID ' . $wpdb->insert_id);
             return $wpdb->insert_id;
         }
     }
+    /**
+     * Delete delivery with cascade delete and JSON backup
+     * @param int $id Delivery ID to delete
+     * @return array Result with success status and backup info
+     */
     public static function delete_delivery($id)
     {
         global $wpdb;
-        $table = $wpdb->prefix . 'kit_deliveries';
-        return $wpdb->delete($table, ['id' => intval($id)]);
+
+        $delivery_id = intval($id);
+        if ($delivery_id <= 0) {
+            return [
+                'success' => false,
+                'message' => 'Invalid delivery ID'
+            ];
+        }
+
+        // Start transaction
+        $wpdb->query('START TRANSACTION');
+
+        try {
+            // 1. Get delivery data for backup
+            $delivery = self::get_delivery($delivery_id);
+            if (!$delivery) {
+                $wpdb->query('ROLLBACK');
+                return [
+                    'success' => false,
+                    'message' => 'Delivery not found'
+                ];
+            }
+
+            // 2. Get all waybills associated with this delivery
+            $waybills_table = $wpdb->prefix . 'kit_waybills';
+            $waybill_items_table = $wpdb->prefix . 'kit_waybill_items';
+
+            $waybills = $wpdb->get_results($wpdb->prepare(
+                "SELECT * FROM {$waybills_table} WHERE delivery_id = %d",
+                $delivery_id
+            ));
+
+            // 3. Get waybill items for each waybill
+            $waybill_data = [];
+            foreach ($waybills as $waybill) {
+                $items = $wpdb->get_results($wpdb->prepare(
+                    "SELECT * FROM {$waybill_items_table} WHERE waybillno = %d",
+                    $waybill->waybill_no
+                ));
+
+                $waybill_data[] = [
+                    'waybill' => $waybill,
+                    'items' => $items
+                ];
+            }
+
+            // 4. Create JSON backup
+            $backup_data = [
+                'delivery' => $delivery,
+                'waybills' => $waybill_data,
+                'backup_date' => current_time('mysql'),
+                'backup_timestamp' => time()
+            ];
+
+            $backup_json = json_encode($backup_data, JSON_PRETTY_PRINT);
+
+            // 5. Save backup to file
+            $backup_dir = WP_CONTENT_DIR . '/courier-finance-backups/';
+            if (!file_exists($backup_dir)) {
+                wp_mkdir_p($backup_dir);
+            }
+
+            $backup_filename = 'delivery_backup_' . $delivery_id . '_' . date('Y-m-d_H-i-s') . '.json';
+            $backup_filepath = $backup_dir . $backup_filename;
+
+            $backup_saved = file_put_contents($backup_filepath, $backup_json);
+
+            // 6. Delete waybill items first (foreign key constraint)
+            foreach ($waybills as $waybill) {
+                $wpdb->delete($waybill_items_table, ['waybillno' => $waybill->waybill_no]);
+            }
+
+            // 7. Delete waybills
+            $waybills_deleted = $wpdb->delete($waybills_table, ['delivery_id' => $delivery_id]);
+
+            // 8. Delete delivery
+            $delivery_table = $wpdb->prefix . 'kit_deliveries';
+            $delivery_deleted = $wpdb->delete($delivery_table, ['id' => $delivery_id]);
+
+            // 9. Commit transaction
+            $wpdb->query('COMMIT');
+
+            return [
+                'success' => true,
+                'message' => 'Delivery and associated waybills deleted successfully',
+                'backup' => [
+                    'file' => $backup_filename,
+                    'path' => $backup_filepath,
+                    'saved' => $backup_saved !== false,
+                    'waybills_count' => count($waybills),
+                    'items_count' => array_sum(array_map(function ($w) {
+                        return count($w['items']);
+                    }, $waybill_data))
+                ]
+            ];
+        } catch (Exception $e) {
+            // Rollback on error
+            $wpdb->query('ROLLBACK');
+            error_log('Delivery delete error: ' . $e->getMessage());
+
+            return [
+                'success' => false,
+                'message' => 'Failed to delete delivery: ' . $e->getMessage()
+            ];
+        }
     }
 
-    public static function selectAllCountries($name, $id, $country_id, $required = true, $type = 'origin')
+    /**
+     * Restore delivery from JSON backup
+     * @param string $backup_filepath Path to the backup JSON file
+     * @return array Result with success status
+     */
+    public static function restore_delivery_from_backup($backup_filepath)
     {
-        $countries = self::getCountriesObject(); // Use active countries only
+        global $wpdb;
+
+        if (!file_exists($backup_filepath)) {
+            return [
+                'success' => false,
+                'message' => 'Backup file not found'
+            ];
+        }
+
+        $backup_content = file_get_contents($backup_filepath);
+        $backup_data = json_decode($backup_content, true);
+
+        if (!$backup_data) {
+            return [
+                'success' => false,
+                'message' => 'Invalid backup file format'
+            ];
+        }
+
+        // Start transaction
+        $wpdb->query('START TRANSACTION');
+
+        try {
+            // 1. Restore delivery
+            $delivery_table = $wpdb->prefix . 'kit_deliveries';
+            $delivery_data = $backup_data['delivery'];
+
+            // Remove id to create new delivery
+            unset($delivery_data['id']);
+
+            $delivery_inserted = $wpdb->insert($delivery_table, $delivery_data);
+            if (!$delivery_inserted) {
+                throw new Exception('Failed to restore delivery: ' . $wpdb->last_error);
+            }
+
+            $new_delivery_id = $wpdb->insert_id;
+
+            // 2. Restore waybills
+            $waybills_table = $wpdb->prefix . 'kit_waybills';
+            $waybill_items_table = $wpdb->prefix . 'kit_waybill_items';
+            $restored_waybills = 0;
+            $restored_items = 0;
+
+            foreach ($backup_data['waybills'] as $waybill_data) {
+                $waybill = $waybill_data['waybill'];
+                $items = $waybill_data['items'];
+
+                // Update delivery_id to new delivery
+                $waybill['delivery_id'] = $new_delivery_id;
+
+                // Remove id to create new waybill
+                unset($waybill['id']);
+
+                $waybill_inserted = $wpdb->insert($waybills_table, $waybill);
+                if (!$waybill_inserted) {
+                    throw new Exception('Failed to restore waybill: ' . $wpdb->last_error);
+                }
+
+                $new_waybill_id = $wpdb->insert_id;
+                $restored_waybills++;
+
+                // 3. Restore waybill items
+                foreach ($items as $item) {
+                    $item['waybillno'] = $waybill['waybill_no']; // Use waybill_no instead of waybill_id
+                    unset($item['id']); // Remove id to create new item
+
+                    $item_inserted = $wpdb->insert($waybill_items_table, $item);
+                    if ($item_inserted) {
+                        $restored_items++;
+                    }
+                }
+            }
+
+            // Commit transaction
+            $wpdb->query('COMMIT');
+
+            return [
+                'success' => true,
+                'message' => 'Delivery restored successfully from backup',
+                'restored' => [
+                    'delivery_id' => $new_delivery_id,
+                    'waybills_count' => $restored_waybills,
+                    'items_count' => $restored_items,
+                    'backup_date' => $backup_data['backup_date'] ?? 'Unknown'
+                ]
+            ];
+        } catch (Exception $e) {
+            // Rollback on error
+            $wpdb->query('ROLLBACK');
+            error_log('Delivery restore error: ' . $e->getMessage());
+
+            return [
+                'success' => false,
+                'message' => 'Failed to restore delivery: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * List all available backup files
+     * @return array List of backup files with metadata
+     */
+    public static function list_backup_files()
+    {
+        $backup_dir = WP_CONTENT_DIR . '/courier-finance-backups/';
+
+        if (!file_exists($backup_dir)) {
+            return [];
+        }
+
+        $files = glob($backup_dir . 'delivery_backup_*.json');
+        $backups = [];
+
+        foreach ($files as $file) {
+            $filename = basename($file);
+            $file_content = file_get_contents($file);
+            $backup_data = json_decode($file_content, true);
+
+            $backups[] = [
+                'filename' => $filename,
+                'filepath' => $file,
+                'size' => filesize($file),
+                'modified' => filemtime($file),
+                'delivery_id' => $backup_data['delivery']['id'] ?? 'Unknown',
+                'waybills_count' => count($backup_data['waybills'] ?? []),
+                'backup_date' => $backup_data['backup_date'] ?? 'Unknown',
+                'delivery_reference' => $backup_data['delivery']['delivery_reference'] ?? 'Unknown'
+            ];
+        }
+
+        // Sort by modification time (newest first)
+        usort($backups, function ($a, $b) {
+            return $b['modified'] - $a['modified'];
+        });
+
+        return $backups;
+    }
+
+    public static function selectAllCountries($name, $id, $country_id, $required = true, $type = 'origin', $options = [])
+    {
+        // Support new rules system with backwards compatibility
+        if (! empty($options) && is_array($options)) {
+            $countries = self::getCountriesWithRules($options);
+        } else {
+            $countries = self::getCountriesObject(); // Default: active countries only
+        }
+
         ob_start();
     ?>
         <select class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -2506,8 +3305,16 @@ class KIT_Deliveries
             onchange="handleCountryChange(this.value, '<?php echo $type; ?>')">
             <option value="">Select Country</option>
             <?php foreach ($countries as $country): ?>
-                <option value="<?php echo esc_attr($country->id); ?>" <?php echo ($country_id == $country->id) ? 'selected' : ''; ?>>
+                <option value="<?php echo esc_attr($country->id); ?>" <?php echo (intval($country_id) == intval($country->id)) ? 'selected' : ''; ?>
+                    <?php if (! empty($options['show_inactive_indicators']) && (! isset($country->is_active) || $country->is_active == 0)) {
+                        echo ' style="color: #9ca3af;"';
+                    }
+                    ?>>
                     <?php echo esc_html($country->country_name); ?>
+                    <?php if (! empty($options['show_inactive_indicators']) && (! isset($country->is_active) || $country->is_active == 0)) {
+                        echo ' (Inactive)';
+                    }
+                    ?>
                 </option>
             <?php endforeach; ?>
         </select>
@@ -2520,11 +3327,13 @@ class KIT_Deliveries
         ob_start();
 
         // If no country is selected, show empty dropdown
-        if (!$country_id) {
+        if (! $country_id) {
             $cities = [];
         } else {
             $cities = KIT_Deliveries::get_Cities_forCountry($country_id);
         }
+
+        // Remove debug output to avoid breaking markup/selection
     ?>
         <select class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             name="<?php echo esc_attr($name); ?>"
@@ -2533,7 +3342,8 @@ class KIT_Deliveries
             <option value="">Select City</option>
             <?php if ($cities && is_array($cities)): ?>
                 <?php foreach ($cities as $city): ?>
-                    <option value="<?php echo esc_attr($city->id); ?>" <?php echo ($city_id == $city->id) ? 'selected' : ''; ?>>
+                    <?php $isSelected = (intval($city_id) == intval($city->id)) ? ' selected="selected"' : ''; ?>
+                    <option value="<?php echo esc_attr($city->id); ?>" <?php echo $isSelected; ?>>
                         <?php echo esc_html($city->city_name); ?>
                     </option>
                 <?php endforeach; ?>
@@ -2546,24 +3356,24 @@ class KIT_Deliveries
     public static function handle_get_cities_for_country_callback()
     {
         // Verify nonce
-        if (!isset($_POST['nonce'])) {
+        if (! isset($_POST['nonce'])) {
             wp_send_json_error(['message' => 'Nonce not found']);
             return;
         }
 
-        if (!wp_verify_nonce($_POST['nonce'], 'get_waybills_nonce')) {
+        if (! wp_verify_nonce($_POST['nonce'], 'get_waybills_nonce')) {
             wp_send_json_error(['message' => 'Invalid security token']);
             return;
         }
 
-        if (!isset($_POST['country_id'])) {
+        if (! isset($_POST['country_id'])) {
             wp_send_json_error(['message' => 'Country ID is required']);
             return;
         }
 
         $country_id = intval($_POST['country_id']);
 
-        if (!$country_id) {
+        if (! $country_id) {
             wp_send_json_error(['message' => 'Invalid country ID']);
             return;
         }
@@ -2575,6 +3385,47 @@ class KIT_Deliveries
             wp_send_json_success($cities);
         } else {
             wp_send_json_error(['message' => 'No cities found for this country']);
+        }
+    }
+
+    /**
+     * AJAX handler for listing delivery backups
+     */
+    public static function handle_list_delivery_backups()
+    {
+        check_ajax_referer('get_waybills_nonce', 'nonce');
+
+        if (!current_user_can('edit_pages')) {
+            wp_send_json_error('Unauthorized');
+        }
+
+        $backups = self::list_backup_files();
+        wp_send_json_success($backups);
+    }
+
+    /**
+     * AJAX handler for restoring delivery from backup
+     */
+    public static function handle_restore_delivery_backup()
+    {
+        check_ajax_referer('get_waybills_nonce', 'nonce');
+
+        if (!current_user_can('edit_pages')) {
+            wp_send_json_error('Unauthorized');
+        }
+
+        $backup_filepath = sanitize_text_field($_POST['backup_filepath'] ?? '');
+
+        if (empty($backup_filepath)) {
+            wp_send_json_error('Backup file path is required');
+        }
+
+        $result = self::restore_delivery_from_backup($backup_filepath);
+
+        if ($result['success']) {
+            wp_send_json_success($result);
+        } else {
+            wp_send_json_error($result);
         }
     }
 }
@@ -2590,13 +3441,13 @@ function render_waybills_with_items($waybillsandItems)
     // Table header
     echo '<thead><tr>';
     foreach ($columns as $col) {
-        echo '<th>' . ucfirst(str_replace('_', ' ', (string)($col ?? ''))) . '</th>';
+        echo '<th>' . ucfirst(str_replace('_', ' ', (string) ($col ?? ''))) . '</th>';
     }
     echo '</tr></thead>';
     echo '<tbody>';
 
     foreach ($waybillsandItems as $row) {
-        $waybill = (object)$row['waybill'];
+        $waybill = (object) $row['waybill'];
         render_waybill_row($waybill, $columns);
         // Optionally, render items as sub-rows or in a details row
         // foreach ($row['items'] as $item) { ... }

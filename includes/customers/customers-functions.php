@@ -293,10 +293,6 @@ class KIT_Customers
         global $wpdb;
         $customer_id = intval($id);
 
-        echo '<pre>';
-        print_r($customer_id);
-        echo '</pre>';
-        exit();
         // First, delete all waybills for this customer
         $waybills_table = $wpdb->prefix . 'kit_waybills';
         $wpdb->delete($waybills_table, ['customer_id' => $customer_id]);
@@ -608,15 +604,6 @@ class KIT_Customers
             : 0;
         $inactive_customers = max(0, $total_customers - $active_customers_count);
 
-        // UI Shell
-        echo '<div class="wrap" style="max-width: 100%; margin-bottom: 80px;">';
-        echo KIT_Commons::showingHeader([
-            'title' => 'Customer Dashboard',
-            'desc'  => KIT_Commons::renderButton('Add Customer', 'primary', 'md', ['href' => admin_url('admin.php?page=08600-add-customer'), 'gradient' => true]),
-            'icon' => KIT_Commons::icon('user-group'),
-        ]);
-        echo '<hr class="wp-header-end">';
-
         // Toast after delete success
         if (isset($_GET['deleted']) && $_GET['deleted'] == '1') {
             $deleted_waybills = isset($_GET['waybills_deleted']) ? intval($_GET['waybills_deleted']) : 0;
@@ -633,23 +620,10 @@ class KIT_Customers
             echo '<div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">Customer added successfully! 🎉</div>';
         }
 
-        // Tabs
-        echo '<div class="customer-tabs mb-6">';
-        echo '  <div class="flex bg-gray-100 p-1 rounded-md w-fit">';
-        echo '    ' . KIT_Commons::renderButton('Overview', 'ghost', 'sm', ['id' => 'overview-tab', 'classes' => 'tab-btn']) . '';
-        echo '    ' . KIT_Commons::renderButton('Manage Customers', 'ghost', 'sm', ['id' => 'manage-customers-tab', 'classes' => 'tab-btn active']) . '';
-        echo '  </div>';
-        echo '</div>';
-
         // Overview
         require_once plugin_dir_path(__FILE__) . '../components/quickStats.php';
         require_once plugin_dir_path(__FILE__) . '../components/dashboardQuickies.php';
-
-        $columns = [
-            'company_name'  => ['label' => 'Company', 'align' => 'text-left'],
-            'customer_name'          => ['label' => 'Name',    'align' => 'text-left'],
-            'country_name'  => ['label' => 'Country', 'align' => 'text-left'],
-        ];
+        require_once plugin_dir_path(__FILE__) . '../components/iconButton.php';
 
         // Get customer statistics
         $total_customers = count($customers);
@@ -657,9 +631,12 @@ class KIT_Customers
             return !empty($c->company_name);
         });
         $active_customers_count = count($active_customers);
-        $inactive_customers = $total_customers - $active_customers_count;
+
+        // UI Shell
+
+
 ?>
-        <div class="wrap" style="max-width: 100%; margin-bottom: 80px;">
+        <div class="wrap" style="max-width: 100vw; overflow-x: hidden;">
             <?php if (isset($_GET['deleted']) && $_GET['deleted'] == '1'): ?>
                 <div class="notice notice-success is-dismissible">
                     <p>
@@ -670,32 +647,93 @@ class KIT_Customers
                     </p>
                 </div>
             <?php endif; ?>
-            <?= KIT_Commons::showingHeader([
-                'title' => 'Customer Dashboard',
-                'desc' => 'Manage customers and their waybills',
-            ]);
-            ?>
-            <hr class="wp-header-end">
             <?php
+            echo KIT_Commons::showingHeader([
+                'title' => 'Customers Dashboard',
+                'desc'  => KIT_Commons::renderButton('Add Customer', 'primary', 'md', ['href' => admin_url('admin.php?page=08600-add-customer'), 'gradient' => true]),
+                'icon' => KIT_Commons::icon('user-group'),
+            ]);
+            
+            // Sort customers by name A-Z by default (only if no sort parameter is set)
+            if (!isset($_GET['orderby']) || empty($_GET['orderby'])) {
+                usort($customers, function($a, $b) {
+                    // Handle both customer_name/customer_surname and name/surname formats
+                    $name_a = trim(($a->customer_name ?? $a->name ?? '') . ' ' . ($a->customer_surname ?? $a->surname ?? ''));
+                    $name_b = trim(($b->customer_name ?? $b->name ?? '') . ' ' . ($b->customer_surname ?? $b->surname ?? ''));
+                    return strcasecmp($name_a, $name_b);
+                });
+            }
+            
             // Get current page and items per page for pagination
             $current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
             $items_per_page = isset($_GET['items_per_page']) ? max(5, min(100, intval($_GET['items_per_page']))) : 10;
 
+            // Define columns - Name first, then Company, then Country (styled like waybills table)
+            $columns = [
+                'customer_name' => [
+                    'label' => 'Name',
+                    'sortable' => true,
+                    'searchable' => true,
+                    'header_class' => 'w-48 text-left max-w-48',
+                    'cell_class' => 'text-left w-48 max-w-48 text-xs',
+                    'callback' => function ($value, $row, $rowIndex) {
+                        // Handle both object and array formats, and both property naming conventions
+                        $name = '';
+                        $surname = '';
+                        if (is_object($row)) {
+                            $name = $row->customer_name ?? $row->name ?? '';
+                            $surname = $row->customer_surname ?? $row->surname ?? '';
+                        } elseif (is_array($row)) {
+                            $name = $row['customer_name'] ?? $row['name'] ?? '';
+                            $surname = $row['customer_surname'] ?? $row['surname'] ?? '';
+                        }
+                        $full_name = trim($name . ' ' . $surname);
+                        return esc_html($full_name ?: '—');
+                    }
+                ],
+                'company_name' => [
+                    'label' => 'Company',
+                    'sortable' => true,
+                    'searchable' => true,
+                    'header_class' => 'w-52 text-left max-w-52',
+                    'cell_class' => 'text-left w-52 max-w-52 text-xs truncate',
+                ],
+                'country_name' => [
+                    'label' => 'Country',
+                    'sortable' => true,
+                    'searchable' => true,
+                    'header_class' => 'w-32 text-left max-w-32',
+                    'cell_class' => 'text-left w-32 max-w-32 text-xs',
+                ],
+            ];
+
             // Render table with fallback if unified table class is not available
             if (class_exists('KIT_Unified_Table')) {
 
-                echo KIT_Unified_Table::advanced($customers, $columns, [
+                echo KIT_Unified_Table::infinite($customers, $columns, [
                     'title' => 'Customers',
                     'actions' => [
                         [
-                            'label' => 'Edit',
+                            'label' => '<span class="sr-only">Edit</span>' . KIT_Icon::svg('edit', 16),
+                            'is_html' => true,
+                            'title' => 'Edit customer',
                             'href' => '?page=edit-customer&edit_customer={cust_id}',
-                            'class' => 'text-blue-600 hover:text-blue-800'
+                            'class' => KIT_Icon::buttonClasses('blue', 'sm')
+                        ],
+                        'view' => [
+                            'label' => '<span class="sr-only">View</span>' . KIT_Icon::svg('eye', 16),
+                            'is_html' => true,
+                            'title' => 'View customer',
+                            'href' => '?page=08600-customers&view_customer={cust_id}',
+                            'class' => KIT_Icon::buttonClasses('green', 'sm')
                         ],
                         [
-                            'label' => 'Delete',
-                            'href' => '?page=delete-customer&delete_customer={cust_id}',
-                            'class' => 'text-red-600 hover:text-red-800'
+                            'label' => '<span class="sr-only">Delete</span>' . KIT_Icon::svg('trash', 16),
+                            'is_html' => true,
+                            'title' => 'Delete customer',
+                            'href' => '?page=08600-customers&delete_customer={cust_id}',
+                            'class' => KIT_Icon::buttonClasses('red', 'sm'),
+                            'onclick' => 'return confirm("Are you sure you want to delete this customer? This will also delete all associated waybills.")'
                         ]
                     ],
                     'searchable' => true,
@@ -711,7 +749,7 @@ class KIT_Customers
                 ]);
             } else {
                 echo '<div class="overflow-x-auto">';
-                echo KIT_Unified_Table::simple($customers, $columns, [
+                echo KIT_Unified_Table::infinite($customers, $columns, [
                     'title' => 'Customers',
                     'actions' => $actions,
                 ]);
@@ -1101,7 +1139,6 @@ function customer_detail_view($customer_id)
                     <h2 class="text-xl font-semibold text-gray-900">Customer Information</h2>
                     <div class="flex gap-2">
                         <?php echo KIT_Commons::renderButton('Edit Customer', 'primary', 'md', ['href' => '?page=08600-customers&edit_customer=' . $customer_id, 'gradient' => true]); ?>
-                        <?php echo KIT_Commons::renderButton('Test Toast', 'secondary', 'md', ['onclick' => 'testCustomerToast()', 'gradient' => false]); ?>
                     </div>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1145,85 +1182,81 @@ function customer_detail_view($customer_id)
                     </div>
                 </div>
             </div>
-
-            <!-- Waybills Section -->
-
-        </div>
-        <div class="col-span-3 bg-white shadow rounded-lg p-6">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-semibold text-gray-900">Waybills (<?php echo count($waybills); ?>)</h2>
-                <?php echo KIT_Commons::renderButton('View All Waybills', 'primary', 'md', ['href' => '?page=08600-waybills&customer_id=' . $customer_id, 'gradient' => true]); ?>
-            </div>
-
-            <?php if (!empty($waybills)): ?>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Waybill #</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
-                            <?php foreach (array_slice($waybills, 0, 5) as $waybill): ?>
-                                <tr>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm font-medium text-gray-900">#<?php echo esc_html($waybill->waybill_no); ?></div>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                                            <?php echo $waybill->status === 'completed' ? 'bg-green-100 text-green-800' : ($waybill->status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-800'); ?>">
-                                            <?php echo ucfirst(esc_html($waybill->status)); ?>
-                                        </span>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                        R<?php echo number_format($waybill->product_invoice_amount, 2); ?>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                        <?php echo date('M j, Y', strtotime($waybill->created_at)); ?>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                        <a href="?page=08600-Waybill-view&waybill_id=<?php echo $waybill->id; ?>" class="text-blue-600 hover:text-blue-900">View</a>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
+            <div class="col-span-3 bg-white shadow rounded-lg p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold text-gray-900">Waybills (<?php echo count($waybills); ?>)</h2>
+                    <?php echo KIT_Commons::renderButton('View All Waybills', 'primary', 'md', ['href' => '?page=08600-waybill-manage&customer_id=' . $customer_id, 'gradient' => true]); ?>
                 </div>
-                <?php if (count($waybills) > 5): ?>
-                    <div class="mt-4 text-center">
-                        <p class="text-sm text-gray-500">Showing 5 of <?php echo count($waybills); ?> waybills</p>
+
+                <?php if (!empty($waybills)): ?>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Waybill #</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                <?php foreach (array_slice($waybills, 0, 5) as $waybill): ?>
+                                    <tr>
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <div class="text-sm font-medium text-gray-900">#<?php echo esc_html($waybill->waybill_no); ?></div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                                            <?php echo $waybill->status === 'completed' ? 'bg-green-100 text-green-800' : ($waybill->status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-800'); ?>">
+                                                <?php echo ucfirst(esc_html($waybill->status)); ?>
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                            R<?php echo number_format($waybill->product_invoice_amount, 2); ?>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <?php echo date('M j, Y', strtotime($waybill->created_at)); ?>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                            <a href="?page=08600-Waybill-view&waybill_id=<?php echo $waybill->id; ?>" class="text-blue-600 hover:text-blue-900">View</a>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    <?php if (count($waybills) > 5): ?>
+                        <div class="mt-4 text-center">
+                            <p class="text-sm text-gray-500">Showing 5 of <?php echo count($waybills); ?> waybills</p>
+                        </div>
+                    <?php endif; ?>
+                <?php else: ?>
+                    <div class="text-center py-8">
+                        <p class="text-gray-500">No waybills found for this customer.</p>
+                        <?php echo KIT_Commons::renderButton('Create First Waybill', 'primary', 'md', ['href' => '?page=08600-waybill-create&customer_id=' . $customer_id, 'classes' => 'mt-2', 'gradient' => true]); ?>
                     </div>
                 <?php endif; ?>
-            <?php else: ?>
-                <div class="text-center py-8">
-                    <p class="text-gray-500">No waybills found for this customer.</p>
-                    <?php echo KIT_Commons::renderButton('Create First Waybill', 'primary', 'md', ['href' => '?page=08600-waybill-create&customer_id=' . $customer_id, 'classes' => 'mt-2', 'gradient' => true]); ?>
-                </div>
-            <?php endif; ?>
+            </div>
         </div>
-    </div>
 
-    <script>
-        function testCustomerToast() {
-            if (window.KITToast) {
-                // Test different toast types
-                window.KITToast.show('Customer data loaded successfully!', 'success', 'Customer Details');
-                setTimeout(() => {
-                    window.KITToast.show('This is a test error message', 'error', 'Test Error');
-                }, 1000);
-                setTimeout(() => {
-                    window.KITToast.show('Customer information updated', 'info', 'Information');
-                }, 2000);
-            } else {
-                alert('Toast system not loaded. Please refresh the page.');
+        <script>
+            function testCustomerToast() {
+                if (window.KITToast) {
+                    // Test different toast types
+                    window.KITToast.show('Customer data loaded successfully!', 'success', 'Customer Details');
+                    setTimeout(() => {
+                        window.KITToast.show('This is a test error message', 'error', 'Test Error');
+                    }, 1000);
+                    setTimeout(() => {
+                        window.KITToast.show('Customer information updated', 'info', 'Information');
+                    }, 2000);
+                } else {
+                    alert('Toast system not loaded. Please refresh the page.');
+                }
             }
-        }
-    </script>
-<?php
+        </script>
+    <?php
 }
 
 function delete_customer($id, $redirect = false)
@@ -1250,8 +1283,12 @@ function delete_customer($id, $redirect = false)
     }
 
     // Also remove warehouse tracking linked to this customer (FK lacks ON DELETE CASCADE)
-    $warehouse_tracking_table = $wpdb->prefix . 'kit_warehouse_tracking';
-    $wpdb->delete($warehouse_tracking_table, ['customer_id' => $customer_id]);
+    $waybills_table = $wpdb->prefix . 'kit_waybills';
+    // Delete warehouse waybills for this customer
+    $wpdb->delete($waybills_table, [
+        'customer_id' => $customer_id,
+        'status' => ['pending', 'assigned', 'shipped', 'delivered']
+    ]);
 
     // Now delete the customer
     $customers_table = $wpdb->prefix . 'kit_customers';
@@ -1369,12 +1406,12 @@ function edit_customer_form($customer_id)
     // Enqueue CSS for the edit customer page
     wp_enqueue_style('autsincss', plugin_dir_url(__FILE__) . '../assets/css/austin.css', array(), '1.0');
     wp_enqueue_style('kit-tailwindcss', plugin_dir_url(__FILE__) . '../assets/css/frontend.css', array(), '1.0');
-    
+
     // Add CSS class wrapper to admin body for scoping
-    add_filter('admin_body_class', function($classes) {
+    add_filter('admin_body_class', function ($classes) {
         return $classes . ' courier-finance-plugin';
     });
-    
+
     // Enqueue JavaScript for country/city selection
     wp_enqueue_script('kitscript', plugin_dir_url(__FILE__) . '../js/kitscript.js', ['jquery'], null, true);
 
@@ -1389,53 +1426,54 @@ function edit_customer_form($customer_id)
         wp_die('Customer not found');
     }
 
-?>
-    <div class="wrap">
-        <?php
-        echo KIT_Commons::showingHeader([
-            'title' => 'Edit Customer',
-            'desc'  => KIT_Commons::kitButton([
-                'color' => 'green',
-                'href'  => admin_url('admin.php?page=08600-customers&view_customer=' . $customer_id)
-            ], 'Back'),
-        ]);
-        ?>
-        <div class="max-w-7xl mx-auto bg-white rounded-xl shadow-lg overflow-hidden p-6 mt-7">
-            <h1 class="text-xl font-bold mb-4">Edit Customer</h1>
-            <form method="POST" action="<?php echo admin_url('admin-post.php'); ?>" class="space-y-4">
-                <?php wp_nonce_field('update_customer_nonce', 'cust_update_nonce'); ?>
-                <input type="hidden" name="action" value="update_customer" />
-                <input type="hidden" name="customer_id" value="<?php echo $customer_id; ?>" />
-                <?php theForm($customer); ?>
-                <div class="flex justify-end gap-2">
-                    <?php echo KIT_Commons::renderButton('Cancel', 'secondary', 'md', ['href' => admin_url('admin.php?page=08600-customers&view_customer=' . $customer_id)]); ?>
-                    <?php echo KIT_Commons::renderButton('Update Customer', 'primary', 'md', ['type' => 'submit', 'name' => 'customer_submit', 'gradient' => true]); ?>
-                </div>
-            </form>
+    ?>
+        <div class="wrap">
+            <?php
+            echo KIT_Commons::showingHeader([
+                'title' => 'Edit Cusqewrtomer',
+                'desc'  => KIT_Commons::kitButton([
+                    'color' => 'green',
+                    'href'  => admin_url('admin.php?page=08600-customers&view_customer=' . $customer_id)
+                ], 'Back'),
+            ]);
+            ?>
+            <div class="max-w-7xl mx-auto bg-white rounded-xl shadow-lg overflow-hidden p-6 mt-7">
+                <h1 class="text-xl font-bold mb-4">Edit Customer</h1>
+                <form method="POST" action="<?php echo admin_url('admin-post.php'); ?>" class="space-y-4">
+                    <?php wp_nonce_field('update_customer_nonce', 'cust_update_nonce'); ?>
+                    <input type="hidden" name="action" value="update_customer" />
+                    <input type="hidden" name="customer_id" value="<?php echo $customer_id; ?>" />
+                    <?php
+                    theForm($customer); ?>
+                    <div class="flex justify-end gap-2">
+                        <?php echo KIT_Commons::renderButton('Cancel', 'secondary', 'md', ['href' => admin_url('admin.php?page=08600-customers&view_customer=' . $customer_id)]); ?>
+                        <?php echo KIT_Commons::renderButton('Update Customer', 'primary', 'md', ['type' => 'submit', 'name' => 'customer_submit', 'gradient' => true]); ?>
+                    </div>
+                </form>
+            </div>
         </div>
-    </div>
-    <?php
-}
+        <?php
+    }
 
-function customer_waybills($customer_id)
-{
-    global $wpdb;
+    function customer_waybills($customer_id)
+    {
+        global $wpdb;
 
-    // Sanitize and validate the customer ID
-    $customer_id = intval($customer_id);  // Use intval to ensure it's a valid integer
+        // Sanitize and validate the customer ID
+        $customer_id = intval($customer_id);  // Use intval to ensure it's a valid integer
 
-    // Query to get all waybills for the given customer ID
-    $table_name = $wpdb->prefix . 'kit_waybills';
-    // TABLE NAMES
-    $waybills_table   = $wpdb->prefix . 'kit_waybills';
-    $customers_table  = $wpdb->prefix . 'kit_customers';
-    $deliveries_table = $wpdb->prefix . 'kit_deliveries';
-    $directions_table = $wpdb->prefix . 'kit_shipping_directions';
-    $countries_table  = $wpdb->prefix . 'kit_operating_countries';
-    $items_table      = $wpdb->prefix . 'kit_waybill_items';
+        // Query to get all waybills for the given customer ID
+        $table_name = $wpdb->prefix . 'kit_waybills';
+        // TABLE NAMES
+        $waybills_table   = $wpdb->prefix . 'kit_waybills';
+        $customers_table  = $wpdb->prefix . 'kit_customers';
+        $deliveries_table = $wpdb->prefix . 'kit_deliveries';
+        $directions_table = $wpdb->prefix . 'kit_shipping_directions';
+        $countries_table  = $wpdb->prefix . 'kit_operating_countries';
+        $items_table      = $wpdb->prefix . 'kit_waybill_items';
 
-    // PHASE 1: Waybill + related joins
-    $waybill_sql = $wpdb->prepare(" SELECT 
+        // PHASE 1: Waybill + related joins
+        $waybill_sql = $wpdb->prepare(" SELECT 
         b.id AS waybill_id,
         c.id AS customer_id,
         d.id AS delivery_id,
@@ -1479,245 +1517,245 @@ function customer_waybills($customer_id)
         WHERE b.customer_id = %d", $customer_id);
 
 
-    $waybill = $wpdb->get_results($waybill_sql);
+        $waybill = $wpdb->get_results($waybill_sql);
 
-    return $waybill;
-}
+        return $waybill;
+    }
 
 
 
-function view_customer_waybills()
-{
-    if (isset($_GET['cust_id'])) {
+    function view_customer_waybills()
+    {
+        if (isset($_GET['cust_id'])) {
 
-        $customer_id = intval($_GET['cust_id']);
-        $customer = get_customer_details($customer_id); // You'll need to implement this
-        $waybills = customer_waybills($customer_id);
+            $customer_id = intval($_GET['cust_id']);
+            $customer = get_customer_details($customer_id); // You'll need to implement this
+            $waybills = customer_waybills($customer_id);
 
-        echo KIT_Commons::showingHeader([
-            'title' => 'Customers Waybills',
-            'desc' => "342234",
-        ]);
+            echo KIT_Commons::showingHeader([
+                'title' => 'Customers Waybills',
+                'desc' => "342234",
+            ]);
 
-        $customers   = KIT_Customers::tholaMaCustomer();
-        $form_action = admin_url('admin-post.php?action=add_waybill_action');
+            $customers   = KIT_Customers::tholaMaCustomer();
+            $form_action = admin_url('admin-post.php?action=add_waybill_action');
 
-        $modal_path = realpath(plugin_dir_path(__FILE__) . '../components/modal.php');
+            $modal_path = realpath(plugin_dir_path(__FILE__) . '../components/modal.php');
 
-        if (file_exists($modal_path)) {
-            require_once $modal_path;
-        } else {
-            error_log("Modal.php not found at: " . $modal_path);
-            // Optional: Show a safe error or fallback content
-        }
-
-        if (isset($_GET['selected_ids'])) {
-
-            $selected_ids_string = $_GET['selected_ids']; // "4000,4003,4004"
-            $selected_ids_array = explode(',', $selected_ids_string);
-
-            if (!empty($selected_ids_array)) {
-                // Generate PDF and return it as download
-                include plugin_dir_path(__FILE__) . 'pdf-bulkinvoicing.php';
-                exit;
+            if (file_exists($modal_path)) {
+                require_once $modal_path;
+            } else {
+                error_log("Modal.php not found at: " . $modal_path);
+                // Optional: Show a safe error or fallback content
             }
-        }
-    ?>
-        <div class="<?= KIT_Commons::container() ?> flex gap-4 min-h-screen bg-gray-100">
-            <!-- Left Sidebar - Customer Details -->
-            <div class="w-1/3">
-                <div class="bg-white shadow-md rounded-lg p-6 mb-6">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-4">Custome23r Details</h2>
 
-                    <?php if ($customer) :
+            if (isset($_GET['selected_ids'])) {
 
-                        /* We will add a edit button here to edit the customer details.
+                $selected_ids_string = $_GET['selected_ids']; // "4000,4003,4004"
+                $selected_ids_array = explode(',', $selected_ids_string);
+
+                if (!empty($selected_ids_array)) {
+                    // Generate PDF and return it as download
+                    include plugin_dir_path(__FILE__) . 'pdf-bulkinvoicing.php';
+                    exit;
+                }
+            }
+        ?>
+            <div class="<?= KIT_Commons::container() ?> flex gap-4 min-h-screen bg-gray-100">
+                <!-- Left Sidebar - Customer Details -->
+                <div class="w-1/3">
+                    <div class="bg-white shadow-md rounded-lg p-6 mb-6">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-4">Custome23r Details</h2>
+
+                        <?php if ($customer) :
+
+                            /* We will add a edit button here to edit the customer details.
                         if $edit_customer is set, we will show the edit form.
                         if $edit_customer is not set, we will show the customer details. */
-                        if (!isset($_GET['edit_customer'])) {
+                            if (!isset($_GET['edit_customer'])) {
 
-                            /* We must display theForm but not as a form, do not use theForm function, but cusrtomer details */
-                            echo '<div class="divide-y divide-gray-200">';
-                            // Only add Company if it's not empty
-                            $fields = array_filter([
-                                'Company'  => $customer['company_name'] ?? '',
-                                'Name'     => $customer['customer_name'] ?? '',
-                                'Surname'  => $customer['customer_surname'] ?? '',
-                                'Cell'     => $customer['cell'] ?? '',
-                                'Address'  => $customer['address'] ?? '',
-                                'Email'  => $customer['email_address'] ?? '',
-                                'Country'  => $customer['country_name'] ?? '',
-                                'City'     => $customer['city_name'] ?? '',
-                            ], function ($value) {
-                                return $value !== null && $value !== '';
-                            });
+                                /* We must display theForm but not as a form, do not use theForm function, but cusrtomer details */
+                                echo '<div class="divide-y divide-gray-200">';
+                                // Only add Company if it's not empty
+                                $fields = array_filter([
+                                    'Company'  => $customer['company_name'] ?? '',
+                                    'Name'     => $customer['customer_name'] ?? '',
+                                    'Surname'  => $customer['customer_surname'] ?? '',
+                                    'Cell'     => $customer['cell'] ?? '',
+                                    'Address'  => $customer['address'] ?? '',
+                                    'Email'  => $customer['email_address'] ?? '',
+                                    'Country'  => $customer['country_name'] ?? '',
+                                    'City'     => $customer['city_name'] ?? '',
+                                ], function ($value) {
+                                    return $value !== null && $value !== '';
+                                });
 
-                            foreach ($fields as $key => $value) {
-                                echo '<div class="flex items-center py-2">';
-                                echo '<span class="w-[70px] font-semibold text-gray-700">' . esc_html($key) . ':</span>';
-                                echo '<span class="flex-1 text-gray-900">' . esc_html($value) . '</span>';
-                                echo '</div>';
-                            }
-                            echo '</div>';
-                            //We will add a delete button here to delete the customer.
-                            echo KIT_Commons::kitButton([
-                                'color' => 'red',
-                                'href' => admin_url('admin.php?page=customers-dashboard&delete_customer=' . $customer['cust_id'])
-                            ], 'Delete Customer');
-
-                            //We will add a edit button here to edit the customer details.
-                            echo KIT_Commons::kitButton([
-                                'color' => 'blue',
-                                'href' => admin_url('admin.php?page=08600-customers&edit_customer=' . $customer['cust_id'])
-                            ], 'Edit Customer');
-                        } else {
-                            /* We will display the edit form here */
-                            $formHtml = '';
-                            $formHtml .= '<form method="POST" action="' . esc_url(admin_url('admin-post.php')) . '" class="space-y-4">';
-                            ob_start();
-                            wp_nonce_field('update_customer_nonce', 'cust_update_nonce');
-                            $formHtml .= ob_get_clean();
-                            $formHtml .= '<input type="hidden" name="action" value="update_customer" />';
-                            ob_start();
-                            theForm($customer);
-                            $formHtml .= ob_get_clean();
-                            $formHtml .= '<div class="flex justify-end">';
-                            $formHtml .= KIT_Commons::kitButton([
-                                'color' => 'blue',
-                                'type' => 'submit',
-                                'name' => 'customer_update_btn',
-                            ], 'Update Customer');
-                            $formHtml .= '</div>';
-                            $formHtml .= '</form>';
-                            echo $formHtml;
-                        }
-
-                    ?>
-
-                    <?php else : ?>
-                        <p class="text-red-500">Customer not found</p>
-                    <?php endif; ?>
-                </div>
-            </div>
-
-            <!-- Right Content - Waybills Table -->
-            <div class="w-2/3">
-                <div class="bg-white rounded-lg shadow-md p-6">
-                    <div class="flex justify-between items-center mb-6">
-                        <h2 class="text-2xl font-bold text-gray-800">Waybill History</h2>
-                        <?php
-                        echo KIT_Modal::render(
-                            'create-waybill-modal',
-                            'Create New Waybill',
-                            kit_render_waybill_multiform([
-                                'form_action'          => $form_action,
-                                'waybill_id'           => '',
-                                'is_edit_mode'         => '0',
-                                'waybill'              => '{}',
-                                'customer_id'          => $customer_id,
-                                'is_existing_customer' => '',
-                                'customer'             => $customers
-                            ]),
-                            '3xl'
-                        );
-                        ?>
-
-                    </div>
-
-                    <?php if (!empty($waybills)) :
-
-                        $options = [
-                            'itemsPerPage' => 20,
-                            'currentPage' => $_GET['paged'] ?? 1,
-                            'tableClass' => 'min-w-full text-left text-sm text-gray-700',
-                            'emptyMessage' => 'No customers records found',
-                            'id' => 'customerTable',
-                            'role' => 'waybills'
-                        ];
-
-                        $columns = [
-                            'waybill_no' => ['label' => 'Waybill #', 'align' => 'text-left'],
-                            'customer_name' => ['label' => 'Name', 'align' => 'text-left'],
-                            'approval' => ['label' => 'Approval', 'align' => 'text-left'],
-                            'total' => ['label' => 'Total', 'align' => 'text-right'],
-                            'actions' => ['label' => 'Actions', 'align' => 'text-center'],
-                        ];
-                        $cell_callback = function ($key, $row) {
-                            if ($key === 'waybill_no') {
-                                //Return a link to the waybill view page example href="?page=08600-Waybill-view&waybill_id=7&waybill_atts=view_waybill"
-                                return '<a target="_blank" href="?page=08600-Waybill-view&waybill_id=' . $row->waybill_id . '&waybill_atts=view_waybill" class="text-blue-600 hover:underline">' . $row->waybill_no . '</a>';
-                            }
-                            if ($key === 'total') {
-                                //total is the sum of the product_invoice_amount and the miscellaneous
-                                if (KIT_User_Roles::can_see_prices()) {
-                                    return KIT_Commons::currency() . ' ' . ((int)$row->product_invoice_amount + ((int)$row->miscellaneous ?? 0));
-                                } else {
-                                    return '***';
+                                foreach ($fields as $key => $value) {
+                                    echo '<div class="flex items-center py-2">';
+                                    echo '<span class="w-[70px] font-semibold text-gray-700">' . esc_html($key) . ':</span>';
+                                    echo '<span class="flex-1 text-gray-900">' . esc_html($value) . '</span>';
+                                    echo '</div>';
                                 }
-                            }
-                            if ($key === 'approval') {
-                                return $row->approval;
-                            }
-                            if ($key === 'actions') {
+                                echo '</div>';
+                                //We will add a delete button here to delete the customer.
+                                echo KIT_Commons::kitButton([
+                                    'color' => 'red',
+                                    'href' => admin_url('admin.php?page=customers-dashboard&delete_customer=' . $customer['cust_id'])
+                                ], 'Delete Customer');
 
-                                return '<a href="?page=08600-Waybill-view=' . $row->waybill_id . '&waybill_atts=view_waybill" class="text-red-600 hover:underline" onclick="return confirm(\'Are you sure you want to delete this customer?\');">Delete</a>';
-                                return $html;
-                            }
-                            return htmlspecialchars(($row->$key ?? '') ?: '');
-                        };
-
-                        echo KIT_Unified_Table::simple($waybills, $columns, [
-                            'title' => 'Customer Waybills',
-                            'actions' => [
-                                [
-                                    'label' => 'View',
-                                    'href' => '?page=08600-Waybill-view&waybill_id={waybill_id}',
-                                    'class' => 'text-blue-600 hover:text-blue-800'
-                                ]
-                            ]
-                        ]);
-                    ?>
-                    <?php else : ?>
-                        <div class="text-center py-12">
-                            <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
-                                </path>
-                            </svg>
-                            <h3 class="mt-2 text-sm font-medium text-gray-900">No waybills found</h3>
-                            <p class="mt-1 text-sm text-gray-500">This customer doesn't have any waybills yet.</p>
-                            <div class="mt-6">
-                                <?php
+                                //We will add a edit button here to edit the customer details.
                                 echo KIT_Commons::kitButton([
                                     'color' => 'blue',
-                                    'modal' => 'create-waybill-modal',
-                                    'icon' => 'plus',
-                                ], 'Create New Waybill'); ?>
-                            </div>
+                                    'href' => admin_url('admin.php?page=08600-customers&edit_customer=' . $customer['cust_id'])
+                                ], 'Edit Customer');
+                            } else {
+                                /* We will display the edit form here */
+                                $formHtml = '';
+                                $formHtml .= '<form method="POST" action="' . esc_url(admin_url('admin-post.php')) . '" class="space-y-4">';
+                                ob_start();
+                                wp_nonce_field('update_customer_nonce', 'cust_update_nonce');
+                                $formHtml .= ob_get_clean();
+                                $formHtml .= '<input type="hidden" name="action" value="update_customer" />';
+                                ob_start();
+                                theForm($customer);
+                                $formHtml .= ob_get_clean();
+                                $formHtml .= '<div class="flex justify-end">';
+                                $formHtml .= KIT_Commons::kitButton([
+                                    'color' => 'blue',
+                                    'type' => 'submit',
+                                    'name' => 'customer_update_btn',
+                                ], 'Update Customer');
+                                $formHtml .= '</div>';
+                                $formHtml .= '</form>';
+                                echo $formHtml;
+                            }
+
+                        ?>
+
+                        <?php else : ?>
+                            <p class="text-red-500">Customer not found</p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <!-- Right Content - Waybills Table -->
+                <div class="w-2/3">
+                    <div class="bg-white rounded-lg shadow-md p-6">
+                        <div class="flex justify-between items-center mb-6">
+                            <h2 class="text-2xl font-bold text-gray-800">Waybill History</h2>
+                            <?php
+                            echo KIT_Modal::render(
+                                'create-waybill-modal',
+                                'Create New Waybill',
+                                kit_render_waybill_multiform([
+                                    'form_action'          => $form_action,
+                                    'waybill_id'           => '',
+                                    'is_edit_mode'         => '0',
+                                    'waybill'              => '{}',
+                                    'customer_id'          => $customer_id,
+                                    'is_existing_customer' => '',
+                                    'customer'             => $customers
+                                ]),
+                                '3xl'
+                            );
+                            ?>
+
                         </div>
-                    <?php endif; ?>
+
+                        <?php if (!empty($waybills)) :
+
+                            $options = [
+                                'itemsPerPage' => 20,
+                                'currentPage' => $_GET['paged'] ?? 1,
+                                'tableClass' => 'min-w-full text-left text-sm text-gray-700',
+                                'emptyMessage' => 'No customers records found',
+                                'id' => 'customerTable',
+                                'role' => 'waybills'
+                            ];
+
+                            $columns = [
+                                'waybill_no' => ['label' => 'Waybill #', 'align' => 'text-left'],
+                                'customer_name' => ['label' => 'Name', 'align' => 'text-left'],
+                                'approval' => ['label' => 'Approval', 'align' => 'text-left'],
+                                'total' => ['label' => 'Total', 'align' => 'text-right'],
+                                'actions' => ['label' => 'Actions', 'align' => 'text-center'],
+                            ];
+                            $cell_callback = function ($key, $row) {
+                                if ($key === 'waybill_no') {
+                                    //Return a link to the waybill view page example href="?page=08600-Waybill-view&waybill_id=7&waybill_atts=view_waybill"
+                                    return '<a target="_blank" href="?page=08600-Waybill-view&waybill_id=' . $row->waybill_id . '&waybill_atts=view_waybill" class="text-blue-600 hover:underline">' . $row->waybill_no . '</a>';
+                                }
+                                if ($key === 'total') {
+                                    //total is the sum of the product_invoice_amount and the miscellaneous
+                                    if (KIT_User_Roles::can_see_prices()) {
+                                        return KIT_Commons::currency() . ' ' . ((int)$row->product_invoice_amount + ((int)$row->miscellaneous ?? 0));
+                                    } else {
+                                        return '***';
+                                    }
+                                }
+                                if ($key === 'approval') {
+                                    return $row->approval;
+                                }
+                                if ($key === 'actions') {
+
+                                    return '<a href="?page=08600-Waybill-view=' . $row->waybill_id . '&waybill_atts=view_waybill" class="text-red-600 hover:underline" onclick="return confirm(\'Are you sure you want to delete this customer?\');">Delete</a>';
+                                    return $html;
+                                }
+                                return htmlspecialchars(($row->$key ?? '') ?: '');
+                            };
+
+                            echo KIT_Unified_Table::infinite($waybills, $columns, [
+                                'title' => 'Customer Waybills',
+                                'actions' => [
+                                    [
+                                        'label' => 'View',
+                                        'href' => '?page=08600-Waybill-view&waybill_id={waybill_id}',
+                                        'class' => 'text-blue-600 hover:text-blue-800'
+                                    ]
+                                ]
+                            ]);
+                        ?>
+                        <?php else : ?>
+                            <div class="text-center py-12">
+                                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                                    </path>
+                                </svg>
+                                <h3 class="mt-2 text-sm font-medium text-gray-900">No waybills found</h3>
+                                <p class="mt-1 text-sm text-gray-500">This customer doesn't have any waybills yet.</p>
+                                <div class="mt-6">
+                                    <?php
+                                    echo KIT_Commons::kitButton([
+                                        'color' => 'blue',
+                                        'modal' => 'create-waybill-modal',
+                                        'icon' => 'plus',
+                                    ], 'Create New Waybill'); ?>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+                    </div>
                 </div>
             </div>
-        </div>
 
-<?php
-    } else {
-        return '<div class="p-6 text-red-500">No customer selected.</div>';
+    <?php
+        } else {
+            return '<div class="p-6 text-red-500">No customer selected.</div>';
+        }
     }
-}
 
-// Fallback for sanitize_text_field if not in WordPress
-if (!function_exists('sanitize_text_field')) {
-    function sanitize_text_field($str)
-    {
-        return is_string($str) ? trim(strip_tags($str)) : $str;
+    // Fallback for sanitize_text_field if not in WordPress
+    if (!function_exists('sanitize_text_field')) {
+        function sanitize_text_field($str)
+        {
+            return is_string($str) ? trim(strip_tags($str)) : $str;
+        }
     }
-}
 
-// Fallback for is_wp_error if not in WordPress
-if (!function_exists('is_wp_error')) {
-    function is_wp_error($thing)
-    {
-        return false;
+    // Fallback for is_wp_error if not in WordPress
+    if (!function_exists('is_wp_error')) {
+        function is_wp_error($thing)
+        {
+            return false;
+        }
     }
-}

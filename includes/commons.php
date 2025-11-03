@@ -10,6 +10,7 @@ class KIT_Commons
         add_action('wp_ajax_update_delivery_status', [self::class, 'ajax_update_delivery_status']);
         add_action('wp_ajax_update_waybill_status', [self::class, 'ajax_update_waybill_status']);
 
+
         // Enqueue DataTables assets on relevant admin screens
         add_action('admin_enqueue_scripts', [self::class, 'enqueue_datatables_assets']);
     }
@@ -44,28 +45,8 @@ class KIT_Commons
         }
     }
 
-    /**
-     * Only allow specific admins to view financials: usernames thando, mel, patricia
-     */
-    public static function can_view_financials()
-    {
-        if (!function_exists('wp_get_current_user')) {
-            return true; // default allow if WP not fully loaded
-        }
-        $user = wp_get_current_user();
-        if (!$user || empty($user->user_login)) {
-            return false;
-        }
-        $allowed = ['thando', 'mel', 'patricia'];
-        if (in_array(strtolower($user->user_login), $allowed, true)) {
-            return true;
-        }
-        // Fallback: admins with manage_options
-        if (function_exists('current_user_can') && current_user_can('manage_options')) {
-            return true;
-        }
-        return false;
-    }
+    // NOTE: can_view_financials() method removed as it's unused and was failing
+    // Dashboard uses direct hardcoded validation instead for reliability
 
     /**
      * Safely perform string operations on potentially null values
@@ -89,19 +70,11 @@ class KIT_Commons
             case 'str_replace':
                 $search = $params[0] ?? '';
                 $replace = $params[1] ?? '';
-                // Ensure value is not null before using str_replace
-                if ($value === null) {
-                    $value = '';
-                }
                 return str_replace($search, $replace, $value);
 
             case 'strpos':
                 $needle = $params[0] ?? '';
                 $offset = $params[1] ?? 0;
-                // Ensure value is not null before using strpos
-                if ($value === null) {
-                    $value = '';
-                }
                 return strpos($value, $needle, $offset);
 
             case 'ucfirst':
@@ -175,7 +148,10 @@ class KIT_Commons
     public static function waybillGetStatus($waybillno, $waybillid)
     {
         global $wpdb;
-        $waybill = $wpdb->get_var("SELECT `status` FROM {$wpdb->prefix}kit_waybills WHERE waybill_no = '{$waybillno}'");
+        $waybill = $wpdb->get_var($wpdb->prepare(
+            "SELECT `status` FROM {$wpdb->prefix}kit_waybills WHERE waybill_no = %s",
+            $waybillno
+        ));
         $waybill = ($waybill) ?? NULL;
         return $waybill;
     }
@@ -288,10 +264,10 @@ class KIT_Commons
             <?php wp_nonce_field('update_waybill_approval_nonce'); ?>
             <div class="relative inline-block text-left">
                 <div>
-                    <button type="button" 
-                            id="quote-button-<?= esc_attr($waybillid) ?>" 
-                            onclick="toggleDropdownQuote('<?= esc_attr($waybillid) ?>')"
-                            class="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md border shadow-sm bg-white font-medium <?= esc_attr($current_colors) ?> hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    <button type="button"
+                        id="quote-button-<?= esc_attr($waybillid) ?>"
+                        onclick="toggleDropdownQuote('<?= esc_attr($waybillid) ?>')"
+                        class="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md border shadow-sm bg-white font-medium <?= esc_attr($current_colors) ?> hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                         <span><?= esc_html($current_label2) ?></span>
                         <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                             <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
@@ -303,11 +279,11 @@ class KIT_Commons
                     id="quote-dropdown-<?= esc_attr($waybillid) ?>">
                     <div class="py-1" role="menu" aria-orientation="vertical">
                         <?php foreach ($statusesStatus as $key => $label): ?>
-                            <button type="submit" 
-                                    name="status" 
-                                    value="<?= esc_attr($key) ?>"
-                                    class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900 <?= ($key === $current_status2 ? 'bg-gray-100 text-gray-900' : '') ?>"
-                                    role="menuitem">
+                            <button type="submit"
+                                name="status"
+                                value="<?= esc_attr($key) ?>"
+                                class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900 <?= ($key === $current_status2 ? 'bg-gray-100 text-gray-900' : '') ?>"
+                                role="menuitem">
                                 <?= esc_html($label) ?>
                             </button>
                         <?php endforeach; ?>
@@ -322,7 +298,11 @@ class KIT_Commons
             public static function getWaybillApprovalStatus($waybillno, $waybillid)
             {
                 global $wpdb;
-                $waybill = $wpdb->get_var("SELECT approval FROM {$wpdb->prefix}kit_waybills WHERE waybill_no = '{$waybillno}' AND id = '{$waybillid}'");
+                $waybill = $wpdb->get_var($wpdb->prepare(
+                    "SELECT approval FROM {$wpdb->prefix}kit_waybills WHERE waybill_no = %s AND id = %d",
+                    $waybillno,
+                    $waybillid
+                ));
 
                 return $waybill;
             }
@@ -393,6 +373,30 @@ class KIT_Commons
 
                 $current_label = $statuses[$current_status] ?? 'Unkno23wn';
 
+                // Check if user is a manager (not admin/superadmin)
+                // Load WordPress user functions if needed
+                if (!function_exists('wp_get_current_user')) {
+                    require_once ABSPATH . 'wp-includes/pluggable.php';
+                }
+
+                $current_user = function_exists('wp_get_current_user')
+                    ? call_user_func('wp_get_current_user')
+                    : null;
+
+                $is_manager = false;
+                if ($current_user && isset($current_user->roles)) {
+                    $is_manager = in_array('manager', $current_user->roles) && !in_array('administrator', $current_user->roles);
+                }
+
+                // If manager and waybill is already approved, rejected, or completed - lock it
+                $locked_statuses = ['approved', 'rejected', 'completed'];
+                $is_locked = $is_manager && in_array($current_status, $locked_statuses);
+
+                // If locked, just show the badge without dropdown
+                if ($is_locked) {
+                    return self::statusBadge($current_status, 'px-6 py-2 ' . $fontSize);
+                }
+
 
                 // Get color classes for current status
                 $getStatusColors = function ($status) {
@@ -421,10 +425,10 @@ class KIT_Commons
 
             <div class="relative inline-block text-left">
                 <div>
-                    <button type="button" 
-                            id="approval-button-<?= esc_attr($waybillid) ?>" 
-                            onclick="toggleDropdownApproval('<?= esc_attr($waybillid) ?>')"
-                            class="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md border shadow-sm bg-white font-medium <?= esc_attr($current_colors) ?> hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    <button type="button"
+                        id="approval-button-<?= esc_attr($waybillid) ?>"
+                        onclick="toggleDropdownApproval('<?= esc_attr($waybillid) ?>')"
+                        class="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md border shadow-sm bg-white font-medium <?= esc_attr($current_colors) ?> hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                         <span><?= esc_html($current_label) ?></span>
                         <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                             <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
@@ -436,11 +440,11 @@ class KIT_Commons
                     id="approval-dropdown-<?= esc_attr($waybillid) ?>">
                     <div class="py-1" role="menu" aria-orientation="vertical">
                         <?php foreach ($statuses as $key => $label): ?>
-                            <button type="submit" 
-                                    name="status" 
-                                    value="<?= esc_attr($key) ?>"
-                                    class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900 <?= ($key === $current_status ? 'bg-gray-100 text-gray-900' : '') ?>"
-                                    role="menuitem">
+                            <button type="submit"
+                                name="status"
+                                value="<?= esc_attr($key) ?>"
+                                class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900 <?= ($key === $current_status ? 'bg-gray-100 text-gray-900' : '') ?>"
+                                role="menuitem">
                                 <?= esc_html($label) ?>
                             </button>
                         <?php endforeach; ?>
@@ -452,13 +456,13 @@ class KIT_Commons
         <script>
             if (typeof window.waybillDropdownsInitialized === 'undefined') {
                 window.waybillDropdownsInitialized = true;
-                
+
                 function toggleDropdownQuote(waybillId) {
                     console.log('toggleDropdownQuote called with ID:', waybillId);
-                    
+
                     const dropdownQuote = document.getElementById('quote-dropdown-' + waybillId);
                     const buttonQuote = document.getElementById('quote-button-' + waybillId);
-                    
+
                     console.log('Quote dropdown element:', dropdownQuote);
                     console.log('Quote button element:', buttonQuote);
 
@@ -481,10 +485,10 @@ class KIT_Commons
 
                 function toggleDropdownApproval(waybillId) {
                     console.log('toggleDropdownApproval called with ID:', waybillId);
-                    
+
                     const dropdownApproval = document.getElementById('approval-dropdown-' + waybillId);
                     const buttonApproval = document.getElementById('approval-button-' + waybillId);
-                    
+
                     console.log('Approval dropdown element:', dropdownApproval);
                     console.log('Approval button element:', buttonApproval);
 
@@ -504,11 +508,11 @@ class KIT_Commons
                     dropdownApproval.classList.toggle('hidden');
                     console.log('Approval dropdown toggled, hidden class:', dropdownApproval.classList.contains('hidden'));
                 }
-                
+
                 // Make functions globally available
                 window.toggleDropdownQuote = toggleDropdownQuote;
                 window.toggleDropdownApproval = toggleDropdownApproval;
-                
+
                 // Close dropdowns when clicking outside
                 document.addEventListener('click', function(e) {
                     if (!e.target.closest('[id^="approval-dropdown-"]') && !e.target.closest('[id^="approval-button-"]') &&
@@ -520,7 +524,7 @@ class KIT_Commons
                 });
             }
         </script>
-    <?php
+        <?php
                 return ob_get_clean();
             }
 
@@ -528,7 +532,7 @@ class KIT_Commons
             {
                 // Check if user can assign deliveries (Admin or Manager only)
                 $can_assign = KIT_User_Roles::can_approve(); // Using same permission as approval
-                
+
                 if (!$can_assign) {
                     return self::statusBadge($current_status, 'px-6 py-2 text-sm');
                 }
@@ -538,7 +542,7 @@ class KIT_Commons
 
                 // Check if waybill has warehouse items
                 $warehouse_items = KIT_Warehouse::getWarehouseItems($waybill_id);
-                
+
                 if (empty($warehouse_items)) {
                     return self::statusBadge($current_status, 'px-6 py-2 text-sm');
                 }
@@ -551,14 +555,14 @@ class KIT_Commons
                 if (!empty($assigned_items)) {
                     $first_assigned = reset($assigned_items);
                     ob_start(); ?>
-                    <div class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800 border border-blue-300">
-                        <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+            <div class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800 border border-blue-300">
+                <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
                     <path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
                     <path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1V8a1 1 0 00-1-1h-3z" />
-                        </svg>
-                        Assigned to: <?= esc_html($first_assigned->delivery_reference) ?>
-                    </div>
-                    <?php
+                </svg>
+                Assigned to: <?= esc_html($first_assigned->delivery_reference) ?>
+            </div>
+        <?php
                     return ob_get_clean();
                 }
 
@@ -566,97 +570,97 @@ class KIT_Commons
                 $available_deliveries = KIT_Warehouse::getAvailableDeliveries($destination_country, $destination_city);
 
                 ob_start(); ?>
-                <form method="POST" action="<?= esc_url(admin_url('admin-post.php')) ?>" id="delivery-assignment-form">
-                    <input type="hidden" name="action" value="assign_waybill_to_delivery">
-                    <input type="hidden" name="waybill_id" value="<?= esc_attr($waybill_id) ?>">
-                    <input type="hidden" name="waybill_no" value="<?= esc_attr($waybill_no) ?>">
-                    <?php wp_nonce_field('assign_waybill_delivery_nonce'); ?>
-                    
-                    <div class="relative inline-block text-left">
-                        <div>
-                            <button type="button" 
-                                    id="delivery-assignment-button-<?= esc_attr($waybill_id) ?>" 
-                                    onclick="toggleDeliveryAssignment('<?= esc_attr($waybill_id) ?>')"
-                                    class="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md border shadow-sm bg-white font-medium bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500">
-                                <span>Assign to Delivery</span>
-                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
-                                </svg>
-                            </button>
-                        </div>
+        <form method="POST" action="<?= esc_url(admin_url('admin-post.php')) ?>" id="delivery-assignment-form">
+            <input type="hidden" name="action" value="assign_waybill_to_delivery">
+            <input type="hidden" name="waybill_id" value="<?= esc_attr($waybill_id) ?>">
+            <input type="hidden" name="waybill_no" value="<?= esc_attr($waybill_no) ?>">
+            <?php wp_nonce_field('assign_waybill_delivery_nonce'); ?>
 
-                        <div class="hidden origin-top-right absolute right-0 mt-2 w-80 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50"
-                            id="delivery-assignment-dropdown-<?= esc_attr($waybill_id) ?>">
-                            <div class="py-1" role="menu" aria-orientation="vertical">
-                                <?php if (empty($available_deliveries)): ?>
-                                    <div class="px-4 py-2 text-sm text-gray-500">
-                                        No deliveries available to <?= esc_html($destination_city) ?>, <?= esc_html($destination_country) ?>
-                                    </div>
-                                <?php else: ?>
-                                    <?php foreach ($available_deliveries as $delivery): ?>
-                                        <button type="submit" 
-                                                name="delivery_id" 
-                                                value="<?= esc_attr($delivery->delivery_id) ?>"
-                                                class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-                                                role="menuitem">
-                                            <div class="font-medium"><?= esc_html($delivery->delivery_name) ?></div>
-                                            <div class="text-xs text-gray-500">
-                                                <?= esc_html($delivery->destination_city) ?>, <?= esc_html($delivery->destination_country) ?>
-                                                <br>Dispatch: <?= esc_html(date('M j, Y', strtotime($delivery->dispatch_date))) ?>
-                                            </div>
-                                        </button>
-                                    <?php endforeach; ?>
-                                <?php endif; ?>
+            <div class="relative inline-block text-left">
+                <div>
+                    <button type="button"
+                        id="delivery-assignment-button-<?= esc_attr($waybill_id) ?>"
+                        onclick="toggleDeliveryAssignment('<?= esc_attr($waybill_id) ?>')"
+                        class="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md border shadow-sm font-medium bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500">
+                        <span>Assign to Delivery</span>
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="hidden origin-top-right absolute right-0 mt-2 w-80 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50"
+                    id="delivery-assignment-dropdown-<?= esc_attr($waybill_id) ?>">
+                    <div class="py-1" role="menu" aria-orientation="vertical">
+                        <?php if (empty($available_deliveries)): ?>
+                            <div class="px-4 py-2 text-sm text-gray-500">
+                                No deliveries available to <?= esc_html($destination_city) ?>, <?= esc_html($destination_country) ?>
                             </div>
-                        </div>
+                        <?php else: ?>
+                            <?php foreach ($available_deliveries as $delivery): ?>
+                                <button type="submit"
+                                    name="delivery_id"
+                                    value="<?= esc_attr($delivery->delivery_id) ?>"
+                                    class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                                    role="menuitem">
+                                    <div class="font-medium"><?= esc_html($delivery->delivery_name) ?></div>
+                                    <div class="text-xs text-gray-500">
+                                        <?= esc_html($delivery->destination_city) ?>, <?= esc_html($delivery->destination_country) ?>
+                                        <br>Dispatch: <?= esc_html(date('M j, Y', strtotime($delivery->dispatch_date))) ?>
+                                    </div>
+                                </button>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
                     </div>
-                </form>
+                </div>
+            </div>
+        </form>
 
-                <script>
-                if (typeof window.deliveryAssignmentInitialized === 'undefined') {
-                    window.deliveryAssignmentInitialized = true;
-                    
-                    function toggleDeliveryAssignment(waybillId) {
-                        console.log('toggleDeliveryAssignment called with ID:', waybillId);
-                        
-                        const dropdown = document.getElementById('delivery-assignment-dropdown-' + waybillId);
-                        const button = document.getElementById('delivery-assignment-button-' + waybillId);
-                        
-                        console.log('Delivery dropdown element:', dropdown);
-                        console.log('Delivery button element:', button);
+        <script>
+            if (typeof window.deliveryAssignmentInitialized === 'undefined') {
+                window.deliveryAssignmentInitialized = true;
 
-                        if (!dropdown || !button) {
-                            console.error('Delivery dropdown or button not found!');
-                            return;
-                        }
+                function toggleDeliveryAssignment(waybillId) {
+                    console.log('toggleDeliveryAssignment called with ID:', waybillId);
 
-                        // Close all other delivery assignment dropdowns
-                        document.querySelectorAll('[id^="delivery-assignment-dropdown-"]').forEach(d => {
-                            if (d.id !== 'delivery-assignment-dropdown-' + waybillId) {
-                                d.classList.add('hidden');
-                            }
-                        });
+                    const dropdown = document.getElementById('delivery-assignment-dropdown-' + waybillId);
+                    const button = document.getElementById('delivery-assignment-button-' + waybillId);
 
-                        // Toggle current dropdown
-                        dropdown.classList.toggle('hidden');
-                        console.log('Delivery dropdown toggled, hidden class:', dropdown.classList.contains('hidden'));
+                    console.log('Delivery dropdown element:', dropdown);
+                    console.log('Delivery button element:', button);
+
+                    if (!dropdown || !button) {
+                        console.error('Delivery dropdown or button not found!');
+                        return;
                     }
-                    
-                    // Make function globally available
-                    window.toggleDeliveryAssignment = toggleDeliveryAssignment;
-                    
-                    // Close dropdowns when clicking outside
-                    document.addEventListener('click', function(e) {
-                        if (!e.target.closest('[id^="delivery-assignment-dropdown-"]') && 
-                            !e.target.closest('[id^="delivery-assignment-button-"]')) {
-                            document.querySelectorAll('[id^="delivery-assignment-dropdown-"]').forEach(d => {
-                                d.classList.add('hidden');
-                            });
+
+                    // Close all other delivery assignment dropdowns
+                    document.querySelectorAll('[id^="delivery-assignment-dropdown-"]').forEach(d => {
+                        if (d.id !== 'delivery-assignment-dropdown-' + waybillId) {
+                            d.classList.add('hidden');
                         }
                     });
+
+                    // Toggle current dropdown
+                    dropdown.classList.toggle('hidden');
+                    console.log('Delivery dropdown toggled, hidden class:', dropdown.classList.contains('hidden'));
                 }
-                </script>
-                <?php
+
+                // Make function globally available
+                window.toggleDeliveryAssignment = toggleDeliveryAssignment;
+
+                // Close dropdowns when clicking outside
+                document.addEventListener('click', function(e) {
+                    if (!e.target.closest('[id^="delivery-assignment-dropdown-"]') &&
+                        !e.target.closest('[id^="delivery-assignment-button-"]')) {
+                        document.querySelectorAll('[id^="delivery-assignment-dropdown-"]').forEach(d => {
+                            d.classList.add('hidden');
+                        });
+                    }
+                });
+            }
+        </script>
+    <?php
                 return ob_get_clean();
             }
 
@@ -729,7 +733,7 @@ class KIT_Commons
             {
                 $type = ($highlight === 'highlight') ? 'warning' : 'secondary';
                 $classes = ($highlight === 'highlight') ? 'bg-yellow-400 text-black hover:bg-yellow-500' : '';
-                
+
                 return self::renderButton($label, $type, 'sm', [
                     'classes' => $classes
                 ]);
@@ -1082,9 +1086,9 @@ class KIT_Commons
                             // Add styling to current page
                             // Ensure link is not null before using string functions
                             $link = (string)($link ?? '');
-                            if ($link !== '' && strpos($link, 'current') !== false) {
+                            if (strpos($link, 'current') !== false) {
                                 $link = str_replace('page-numbers current', 'page-numbers current px-3 py-1 rounded border bg-blue-50 border-blue-500 text-blue-600', $link);
-                            } else if ($link !== '') {
+                            } else {
                                 $link = str_replace('page-numbers', 'page-numbers px-3 py-1 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50', $link);
                             }
                             $html .= $link;
@@ -1099,18 +1103,14 @@ class KIT_Commons
                 $html .= '<table id="' . esc_attr($options['id']) . '" class="' . esc_attr($options['table_class']) . '">';
                 $html .= '<thead class="bg-gray-50"><tr>';
 
-                                        // Headers
-                        foreach ($options['headers'] as $field) {
-                            if ($field !== 'customer_surname') {
-                                $html .= '<th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">';
-                                // Ensure field is not null before using string functions
-                                $field = (string)($field ?? '');
-                                if ($field !== '') {
-                                    $html .= esc_html(ucfirst(str_replace('_', ' ', $field)));
-                                }
-                                $html .= '</th>';
-                            }
-                        }
+                // Headers
+                foreach ($options['headers'] as $field) {
+                    if ($field !== 'customer_surname') {
+                        $html .= '<th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">';
+                        $html .= esc_html(ucfirst(str_replace('_', ' ', $field)));
+                        $html .= '</th>';
+                    }
+                }
 
 
                 if ($options['actions']) {
@@ -1136,16 +1136,14 @@ class KIT_Commons
                             $html .= '<td class="px-4 py-3 whitespace-nowrap"><div class="text-xs">';
                             if ($field === 'approval') {
                                 if (current_user_can('administrator')) {
-                                    $waybillNo = $field !== '' ? str_replace(' ', '_', $field) : '';
                                     $html .= self::waybillApprovalStatus($item->waybill_no, $item->waybill_id ?? 0, 'quoted', $item->approval ?? '', 'select');
                                 } else {
                                     $html .= self::statusBadge($item->approval ?? '');
                                 }
                             } elseif ($field === 'waybill no') {
-
-                                $waybillNo = $field !== '' ? str_replace(' ', '_', $field) : '';
+                                // Access waybill_no property directly
                                 $html .= '<a href="' . admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . ($item->waybill_id ?? '') . '&waybill_atts=view_waybill') . '" target="_blank" style="color:inherit; text-decoration:none;">';
-                                $html .= '<span class="font-medium text-blue-600" style="color:inherit;">' . esc_html($item->$waybillNo ?? '') . '</span>';
+                                $html .= '<span class="font-medium text-blue-600" style="color:inherit;">' . esc_html($item->waybill_no ?? '') . '</span>';
                                 if (!empty($item->created_at)) {
                                     $html .= '<div class="text-xs text-gray-500 mt-1">' . date('M d', strtotime($item->created_at)) . '</div>';
                                 }
@@ -1623,23 +1621,23 @@ class KIT_Commons
                     'classes' => '',
                     'tag' => 'h2'
                 ];
-                
+
                 $args = array_merge($defaults, $args);
-                
+
                 // Validate tag
                 $validTags = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
                 $tag = in_array($args['tag'], $validTags) ? $args['tag'] : 'h2';
-                
+
                 // Size classes
                 $sizeClasses = [
                     'sm' => 'text-lg',
-                    'md' => 'text-xl', 
+                    'md' => 'text-xl',
                     'lg' => 'text-2xl',
                     'xl' => 'text-3xl',
                     '2xl' => 'text-2xl'
                 ];
                 $sizeClass = isset($sizeClasses[$args['size']]) ? $sizeClasses[$args['size']] : $sizeClasses['2xl'];
-                
+
                 // Color classes
                 $colorClasses = [
                     'black' => 'text-black',
@@ -1650,7 +1648,7 @@ class KIT_Commons
                     'purple' => 'text-purple-700'
                 ];
                 $colorClass = isset($colorClasses[$args['color']]) ? $colorClasses[$args['color']] : $colorClasses['blue'];
-                
+
                 // Icon color (slightly lighter than text)
                 $iconColorClasses = [
                     'blue' => 'text-blue-500',
@@ -1660,24 +1658,24 @@ class KIT_Commons
                     'purple' => 'text-purple-500'
                 ];
                 $iconColorClass = isset($iconColorClasses[$args['color']]) ? $iconColorClasses[$args['color']] : $iconColorClasses['blue'];
-                
+
                 // Build classes
                 $allClasses = trim("font-bold {$sizeClass} {$colorClass} mb-6 flex items-center gap-2 leading-none {$args['classes']}");
-                
+
                 // Build icon HTML if provided
                 $iconHtml = '';
                 if (!empty($args['icon'])) {
                     $iconHtml = '<svg class="w-6 h-6 self-center ' . esc_attr($iconColorClass) . '" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">' .
-                               $args['icon'] . 
-                               '</svg>';
+                        $args['icon'] .
+                        '</svg>';
                 }
-                
+
                 // Build the heading
-                $heading = '<' . $tag . ' class="' . esc_attr($allClasses) . '">' . 
-                          $iconHtml . 
-                          esc_html($args['words']) . 
-                          '</' . $tag . '>';
-                
+                $heading = '<' . $tag . ' class="' . esc_attr($allClasses) . '">' .
+                    $iconHtml .
+                    esc_html($args['words']) .
+                    '</' . $tag . '>';
+
                 return $heading;
             }
             public static function bossText($args = [])
@@ -1690,23 +1688,23 @@ class KIT_Commons
                     'classes' => '',
                     'tag' => 'h2'
                 ];
-                
+
                 $args = array_merge($defaults, $args);
-                
+
                 // Validate tag
                 $validTags = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
                 $tag = in_array($args['tag'], $validTags) ? $args['tag'] : 'h2';
-                
+
                 // Size classes
                 $sizeClasses = [
                     'sm' => 'text-lg',
-                    'md' => 'text-xl', 
+                    'md' => 'text-xl',
                     'lg' => 'text-2xl',
                     'xl' => 'text-3xl',
                     '2xl' => 'text-2xl'
                 ];
                 $sizeClass = isset($sizeClasses[$args['size']]) ? $sizeClasses[$args['size']] : $sizeClasses['2xl'];
-                
+
                 // Color classes
                 $colorClasses = [
                     'black' => 'text-black',
@@ -1717,7 +1715,7 @@ class KIT_Commons
                     'purple' => 'text-purple-700'
                 ];
                 $colorClass = isset($colorClasses[$args['color']]) ? $colorClasses[$args['color']] : $colorClasses['blue'];
-                
+
                 // Icon color (slightly lighter than text)
                 $iconColorClasses = [
                     'blue' => 'text-blue-500',
@@ -1727,24 +1725,24 @@ class KIT_Commons
                     'purple' => 'text-purple-500'
                 ];
                 $iconColorClass = isset($iconColorClasses[$args['color']]) ? $iconColorClasses[$args['color']] : $iconColorClasses['blue'];
-                
+
                 // Build classes
                 $allClasses = trim("font-bold {$sizeClass} {$colorClass} flex items-center gap-2 {$args['classes']}");
-                
+
                 // Build icon HTML if provided
                 $iconHtml = '';
                 if (!empty($args['icon'])) {
-                    $iconHtml = '<svg class="w-6 h-6 ' . esc_attr($iconColorClass) . '" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">' . 
-                               $args['icon'] . 
-                               '</svg>';
+                    $iconHtml = '<svg class="w-6 h-6 ' . esc_attr($iconColorClass) . '" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">' .
+                        $args['icon'] .
+                        '</svg>';
                 }
-                
+
                 // Build the heading
-                $heading = '<' . $tag . ' class="' . esc_attr($allClasses) . '">' . 
-                          $iconHtml . 
-                          esc_html($args['words']) . 
-                          '</' . $tag . '>';
-                
+                $heading = '<' . $tag . ' class="' . esc_attr($allClasses) . '">' .
+                    $iconHtml .
+                    esc_html($args['words']) .
+                    '</' . $tag . '>';
+
                 return $heading;
             }
 
@@ -1824,7 +1822,8 @@ class KIT_Commons
              * Check if current user can see prices
              * @return bool
              */
-            public static function can_see_prices() {
+            public static function can_see_prices()
+            {
                 $current_user = wp_get_current_user();
                 $user_roles = is_array($current_user->roles) ? $current_user->roles : [];
                 $username = isset($current_user->user_login) ? strtolower($current_user->user_login) : '';
@@ -1872,13 +1871,13 @@ class KIT_Commons
             <input type="hidden" name="delivery_id" value="<?= esc_attr($waybill_delivery_id) ?>">
             <input type="hidden" name="user_id" value="<?= esc_attr($customer_id) ?>">
             <?php echo self::renderButton('Delete', 'danger', 'sm', [
-                'type' => 'submit',
-                'classes' => 'delete-waybill',
-                'gradient' => true
-            ]); ?>
+                    'type' => 'submit',
+                    'classes' => 'delete-waybill',
+                    'gradient' => true
+                ]); ?>
         </form>
     <?php
-
+                return ob_get_clean();
             }
 
 
@@ -1902,8 +1901,8 @@ class KIT_Commons
             <thead>
                 <tr class="bg-gray-100" style="font-size: 5px;">
                     <th class="<?= self::thClasses() ?> text-left">Item</th>
-                    <th class="<?= self::thClasses() ?> text-center">Quantity</th>
-                    <?php if (self::can_see_prices()): ?>
+                    <?php if (class_exists('KIT_User_Roles') && KIT_User_Roles::can_see_prices()): ?>
+                        <th class="<?= self::thClasses() ?> text-center">Quantity</th>
                         <th class="<?= self::thClasses() ?> text-right">Unit Price</th>
                         <th class="<?= self::thClasses() ?> text-right">Sub Total</th>
                     <?php endif; ?>
@@ -1917,12 +1916,11 @@ class KIT_Commons
                     $unit = isset($value['unit_price']) ? (float)$value['unit_price'] : 0;
                     $sub = $qty * $unit;
                     $grand_total += $sub;
-                    ob_start();
                 ?>
                     <tr class="border-t border-gray-100">
                         <td class="<?= self::tcolClasses() ?>"><?= $value['item_name'] ?></td>
-                        <td class="<?= self::tcolClasses() ?> text-center"><?= number_format($qty, 0) ?></td>
-                        <?php if (self::can_see_prices()): ?>
+                        <?php if (class_exists('KIT_User_Roles') && KIT_User_Roles::can_see_prices()): ?>
+                            <td class="<?= self::tcolClasses() ?> text-center"><?= number_format($qty, 0) ?></td>
                             <td class="<?= self::tcolClasses() ?> text-right"><?= number_format($unit, 2) ?></td>
                             <td class="<?= self::tcolClasses() ?> text-right"><?= number_format($sub, 2) ?></td>
                         <?php endif; ?>
@@ -1931,17 +1929,17 @@ class KIT_Commons
                 }
                 ?>
             </tbody>
+            <?php if (class_exists('KIT_User_Roles') && !KIT_User_Roles::can_see_prices()): ?>
+            
+            <?php else: ?>
             <tfoot>
                 <tr class="border-t">
-                    <?php if (self::can_see_prices()): ?>
-                        <td colspan="3" class="<?= self::tcolClasses() ?> text-right font-semibold">Total</td>
-                        <td class="<?= self::tcolClasses() ?> text-right font-bold"><?= number_format($grand_total, 2) ?></td>
-                    <?php else: ?>
-                        <td colspan="2" class="<?= self::tcolClasses() ?> text-right font-semibold">Total</td>
-                        <td class="<?= self::tcolClasses() ?> text-right font-bold">***</td>
-                    <?php endif; ?>
+                    <td colspan="3" class="<?= self::tcolClasses() ?> text-right font-semibold">Total</td>
+                    <td class="<?= self::tcolClasses() ?> text-right font-bold"><?= number_format($grand_total, 2) ?></td>
                 </tr>
             </tfoot>
+            <?php endif; ?> 
+           
         </table>
     <?php
                 return ob_get_clean();
@@ -1999,7 +1997,7 @@ class KIT_Commons
                 ob_start(); ?>
         <header class="bg-white shadow mb-6 rounded-sm">
             <div class="<?php echo self::container(); ?> mx-auto py-3 px-6 flex justify-between items-center">
-            <?= KIT_Commons::bossText([
+                <?= KIT_Commons::bossText([
                     'icon' => $atts["icon"],
                     'words' => $atts["title"],
                     'size' => '2xl',
@@ -2014,10 +2012,10 @@ class KIT_Commons
                     echo $atts['content']; // Accepts modal button etc.
                 }
                 ?>
-                
+
             </div>
         </header>
-        <?php
+    <?php
                 return ob_get_clean();
             }
 
@@ -2045,7 +2043,7 @@ class KIT_Commons
                             break;
                     }
                 }
-                
+
                 $options = [
                     'href' => $atts['href'] ?? null,
                     'onclick' => $atts['onclick'] ?? null,
@@ -2059,7 +2057,7 @@ class KIT_Commons
                     'icon' => null,
                     'iconPosition' => 'left'
                 ];
-                
+
                 // Convert icon names to SVG paths
                 if (isset($atts['icon'])) {
                     switch ($atts['icon']) {
@@ -2080,7 +2078,7 @@ class KIT_Commons
                             break;
                     }
                 }
-                
+
                 return self::renderButton($atts['text'] ?? $content, $type, 'md', $options);
             }
 
@@ -2124,14 +2122,15 @@ class KIT_Commons
                         'nonces' => [
                             'add'    => wp_create_nonce('add_waybill_nonce'),
                             'delete' => wp_create_nonce('delete_waybill_nonce'),
-                            'update' => wp_create_nonce('update_waybill_nonce'),
-                            'get_waybills_nonce' => wp_create_nonce('get_waybills_nonce'),
-                            'get_cities_nonce'   => wp_create_nonce('get_cities_nonce'),
-                            'kit_waybill_nonce'  => wp_create_nonce('kit_waybill_nonce'),
-                            'pdf_nonce'          => wp_create_nonce('pdf_nonce'),
-                        ],
-                    ];
-                    wp_localize_script('kitscript', 'myPluginAjax', $localize_data);
+                        'update' => wp_create_nonce('update_waybill_nonce'),
+                        'get_waybills_nonce' => wp_create_nonce('get_waybills_nonce'),
+                        'get_cities_nonce'   => wp_create_nonce('get_cities_nonce'),
+                        'kit_waybill_nonce'  => wp_create_nonce('kit_waybill_nonce'),
+                        'pdf_nonce'          => wp_create_nonce('pdf_nonce'),
+                        'wp_debug'           => defined('WP_DEBUG') && WP_DEBUG,
+                    ],
+                ];
+                wp_localize_script('kitscript', 'myPluginAjax', $localize_data);
                 }
             }
 
@@ -2152,9 +2151,9 @@ class KIT_Commons
                         'subtotal' => 'subtotal'
                     ]
                 ]);
-                
+
                 return self::dynamicItemsControl($dynamicOptions);
-                }
+            }
             public static function dynamicItemsControl($options = [])
             {
                 $defaults = [
@@ -2169,16 +2168,19 @@ class KIT_Commons
                     'subtotal_id' => 'items-subtotal',
                     'currency_symbol' => 'R',
                     'export_href' => '',
+                    'show_invoices' => false, // New option to show invoices column
+                    'waybill_no' => '', // Required for invoice uploads when show_invoices is true
                     'field_mapping' => [
                         'description' => 'item_name', // or 'misc_item'
                         'quantity' => 'quantity', // or 'misc_quantity'
                         'unit_price' => 'unit_price', // or 'misc_price'
-                        'subtotal' => 'subtotal'
+                        'subtotal' => 'subtotal',
+                        'invoice_file' => 'invoice_file' // New field for invoice uploads
                     ]
                 ];
-                
+
                 $options = wp_parse_args($options, $defaults);
-                
+
                 // Normalize existing_items to ensure foreach/count safety
                 if (!isset($options['existing_items']) || !is_array($options['existing_items'])) {
                     $options['existing_items'] = [];
@@ -2188,310 +2190,379 @@ class KIT_Commons
                 if ($options['item_type'] === 'misc') {
                     $options['field_mapping'] = [
                         'description' => 'misc_item',
-                        'quantity' => 'misc_quantity', 
+                        'quantity' => 'misc_quantity',
                         'unit_price' => 'misc_price',
-                        'subtotal' => 'misc_subtotal'
+                        'subtotal' => 'misc_subtotal',
+                        'invoice_file' => 'invoice_file'
                     ];
                 } elseif ($options['item_type'] === 'waybill') {
                     $options['field_mapping'] = [
                         'description' => 'item_name',
-                        'quantity' => 'quantity', 
+                        'quantity' => 'quantity',
                         'unit_price' => 'unit_price',
-                        'subtotal' => 'subtotal'
+                        'subtotal' => 'subtotal',
+                        'invoice_file' => 'invoice_file'
                     ];
                 }
 
-                ob_start();
-            ?>
-            <!-- UNIFIED TABLE VERSION -->
-            <div class="mb-6" id="step-<?php echo esc_attr($options['item_type']); ?>-items">
-                <!-- Header -->
-                    <div class="flex items-center justify-between mb-4">
-                    <?= KIT_Commons::prettyHeading([
+                ob_start(); ?>
+        <!-- UNIFIED TABLE VERSION -->
+        <div class="mb-6" id="step-<?php echo esc_attr($options['item_type']); ?>-items">
+            <!-- Header -->
+            <div class="flex items-center justify-between mb-4">
+                <?= KIT_Commons::prettyHeading([
                     'icon' => '<path d="M16 7a4 4 0 1 0-8 0v2a4 4 0 0 0 8 0V7z" /><path d="M12 19v-2m0 0a7 7 0 0 1-7-7V7a7 7 0 0 1 14 0v3a7 7 0 0 1-7 7z" />',
-                        'words' => $options['title']
+                    'words' => $options['title']
                 ]) ?>
-                        <?php echo self::renderButton('Add Item', 'primary', 'sm', [
-                            'id' => $options['button_id'],
-                            'type' => 'button',
-                            'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>',
-                            'iconPosition' => 'left',
-                            'gradient' => true
-                        ]); ?>
-                    <?php if (!empty($options['export_href'])) {
-                        echo self::renderButton('Export', 'secondary', 'sm', [
-                            'href' => $options['export_href'],
-                            'gradient' => false,
-                            'classes' => 'ml-2 px-4 py-2 rounded-md bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-100'
-                        ]);
-                    } ?>
-                    </div>
+                <?php echo self::renderButton('Add Item', 'primary', 'sm', [
+                    'id' => $options['button_id'],
+                    'type' => 'button',
+                    'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>',
+                    'iconPosition' => 'left',
+                    'gradient' => true
+                ]); ?>
+                <?php if (!empty($options['export_href'])) {
+                    echo self::renderButton('Export', 'secondary', 'sm', [
+                        'href' => $options['export_href'],
+                        'gradient' => false,
+                        'classes' => 'ml-2 px-4 py-2 rounded-md bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-100'
+                    ]);
+                } ?>
+            </div>
 
-                    <style>
-                        .dynamicItemsTable {
-                            border-collapse: collapse;
-                            border: 1px solid #e2e8f0;
-                            border-radius: 0.5rem;
-                            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-                            width: 100%;
-                            table-layout: fixed;
+            <style>
+                .dynamicItemsTable {
+                    border-collapse: collapse;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 0.5rem;
+                    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+                    width: 100%;
+                    table-layout: fixed;
+                }
+
+                .dynamicItemsTable th,
+                .dynamicItemsTable td {
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+
+                .th-1,
+                .th-2,
+                .th-3,
+                .th-4,
+                .th-5 {
+                    /* padding: 0.75rem 0.75rem; */
+                    text-align: left;
+                    font-size: 0.75rem;
+                    font-weight: 500;
+                    color: #6b7280;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                    border-bottom: 1px solid #e5e7eb;
+                    background-color: #f9fafb;
+                }
+
+                .th-1,
+                .td-1 {
+                    width: <?php echo $options['show_invoices'] ? '30%' : '40%'; ?>;
+                }
+
+                .th-2,
+                .td-2 {
+                    width: <?php echo $options['show_invoices'] ? '5%' : '20%'; ?>;
+                }
+
+                .th-3,
+                .td-3 {
+                    width: <?php echo $options['show_invoices'] ? '20%' : '20%'; ?>;
+                }
+
+                .th-4,
+                .td-4 {
+                    width: <?php echo $options['show_invoices'] ? '20%' : '20%'; ?>;
+                }
+
+                .th-5,
+                .td-5 {
+                    width: <?php echo $options['show_invoices'] ? '20%' : '15%'; ?>;
+                }
+
+                .th-6,
+                .td-6 {
+                    width: 10%;
+                }
+
+                .td-1,
+                .td-2,
+                .td-3,
+                .td-4,
+                .td-5,
+                .td-6 {
+                    padding: 0.75rem 0.3rem;
+                    text-align: left;
+                    font-size: 0.75rem;
+                    font-weight: 500;
+                    color: #6b7280;
+                    text-transform: capitalize;
+                    letter-spacing: 0.05em;
+                    border-bottom: 1px solid #e5e7eb;
+                }
+
+                .th-2,
+                .td-2,
+                .th-3,
+                .td-3,
+                .th-4,
+                .td-4 {
+                    text-align: right;
+                }
+
+                .td-2 input,
+                .td-3 input {
+                    text-align: right;
+                }
+
+                tbody tr.dynamic-item:nth-child(even) {
+                    background-color: #fafafa;
+                }
+            </style>
+
+            <!-- Slim Table -->
+            <div class="bg-white border border-gray-200 rounded-lg overflow-x-auto">
+                <table class="dynamicItemsTable w-full border-collapse table-fixed">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="th-1"><?php echo esc_html($options['title']); ?> Description</th>
+                            <th class="th-2">QTY</th>
+                            <th class="th-3">Unit Price (<?php echo esc_html($options['currency_symbol']); ?>)</th>
+                            <th class="th-4">Total</th>
+
+                            <?php if ($options['show_invoices']): ?>
+                                <th class="th-5">Invoices</th>
+                            <?php endif; ?>
+                            <th class="th-6">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="<?php echo esc_attr($options['container_id']); ?>" class="bg-white">
+
+                        <?php foreach ($options['existing_items'] as $index => $item): ?>
+                            <tr class="dynamic-item hover:bg-gray-50 border-b border-gray-100">
+                                <td class="td-1">
+                                    <input type="text"
+                                        name="<?php echo esc_attr($options['group_name']); ?>[<?php echo esc_attr($index); ?>][<?php echo esc_attr($options['field_mapping']['description']); ?>]"
+                                        value="<?php echo esc_attr($item[$options['field_mapping']['description']] ?? ''); ?>"
+                                        placeholder="Item description"
+                                        class="w-full px-1 py-0.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
+                                </td>
+                                <td class="td-2">
+                                    <input type="number"
+                                        name="<?php echo esc_attr($options['group_name']); ?>[<?php echo esc_attr($index); ?>][<?php echo esc_attr($options['field_mapping']['quantity']); ?>]"
+                                        value="<?php echo esc_attr($item[$options['field_mapping']['quantity']] ?? 1); ?>"
+                                        min="1"
+                                        class="w-full px-1 py-0.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-center" />
+                                </td>
+                                <td class="td-3">
+                                    <input type="number"
+                                        name="<?php echo esc_attr($options['group_name']); ?>[<?php echo esc_attr($index); ?>][<?php echo esc_attr($options['field_mapping']['unit_price']); ?>]"
+                                        value="<?php echo esc_attr($item[$options['field_mapping']['unit_price']] ?? 0); ?>"
+                                        step="0.01"
+                                        min="0"
+                                        class="w-full px-1 py-0.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
+                                </td>
+                                <td class="px-2 py-1 text-sm text-gray-900 text-center border-r border-gray-100">
+                                    <?php echo esc_html($options['currency_symbol']); ?> <?php echo number_format(($item[$options['field_mapping']['quantity']] ?? 1) * ($item[$options['field_mapping']['unit_price']] ?? 0), 2); ?>
+                                </td>
+                                <td class="px-2 py-1 text-center">
+                                    <?php echo self::renderButton('', 'danger', 'sm', [
+                                        'type' => 'button',
+                                        'classes' => 'remove-item inline-flex items-center justify-center w-8 h-8 rounded-md border border-red-300 text-red-600 hover:bg-red-50',
+                                        'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>',
+                                        'gradient' => false
+                                    ]); ?>
+                                </td>
+                                <?php if ($options['show_invoices']): ?>
+                                    <td class="td-6 text-center">
+                                        <input type="file"
+                                            name="invoice[]"
+                                            accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                                            class="w-full text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                                    </td>
+                                <?php endif; ?>
+                            </tr>
+                        <?php endforeach; ?>
+
+                        <!-- Empty State for Slim Version -->
+                        <?php if (empty($options['existing_items'])): ?>
+                            <tr id="empty-state-slim" class="empty-state">
+                                <td colspan="<?php echo $options['show_invoices'] ? '6' : '5'; ?>" class="text-center py-8 text-gray-500">
+                                    <p class="text-sm">No items added yet. Clickhj "Add Item" to start.</p>
+                                </td>
+                            </tr>
+                        <?php endif; ?>
+                    </tbody>
+                    <?php if ($options['show_subtotal']): ?>
+                        <tfoot>
+                            <tr class="bg-gray-50">
+                                <td class="px-2 py-2" colspan="3" style="border-top: 1px solid #e5e7eb; text-align:right; font-weight:600; color:#374151;">Subtotal</td>
+                                <td class="px-2 py-2 text-right" style="border-top: 1px solid #e5e7eb; font-weight:600; color:#111827;" id="<?php echo esc_attr($options['subtotal_id']); ?>"><?php echo esc_html($options['currency_symbol']); ?> 0.00</td>
+                                <td style="border-top: 1px solid #e5e7eb;"></td>
+                                <?php if ($options['show_invoices']): ?>
+                                    <td style="border-top: 1px solid #e5e7eb;"></td>
+                                <?php endif; ?>
+                            </tr>
+                        </tfoot>
+                    <?php endif; ?>
+                </table>
+            </div>
+        </div>
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                let itemIndex = <?php echo is_array($options['existing_items']) ? count($options['existing_items']) : 0; ?>;
+                const container = document.getElementById('<?php echo esc_js($options['container_id']); ?>');
+                const addBtn = document.getElementById('<?php echo esc_js($options['button_id']); ?>');
+                const subtotalId = '<?php echo esc_js($options['subtotal_id']); ?>';
+                const currencySymbol = '<?php echo esc_js($options['currency_symbol']); ?>';
+                const groupName = '<?php echo esc_js($options['group_name']); ?>';
+                const fieldMapping = <?php echo json_encode($options['field_mapping']); ?>;
+
+                function toNumber(value) {
+                    const num = parseFloat(String(value).replace(/,/g, '.'));
+                    return isNaN(num) ? 0 : num;
+                }
+
+                function calculateSubtotal() {
+                    let total = 0;
+                    container.querySelectorAll('.dynamic-item').forEach((row) => {
+                        const priceInput = row.querySelector(`input[name*="[${fieldMapping.unit_price}]"]`);
+                        const qtyInput = row.querySelector(`input[name*="[${fieldMapping.quantity}]"]`);
+                        const price = toNumber(priceInput ? priceInput.value : 0);
+                        const qty = parseInt(qtyInput ? qtyInput.value : 0, 10) || 0;
+                        const rowTotal = price * qty;
+                        total += rowTotal;
+
+                        // Update individual row total display
+                        const totalCell = row.querySelector('td:nth-child(4)');
+                        if (totalCell) {
+                            totalCell.textContent = currencySymbol + ' ' + rowTotal.toFixed(2);
                         }
+                    });
 
-                        .dynamicItemsTable th,
-                        .dynamicItemsTable td {
-                            white-space: nowrap;
-                            overflow: hidden;
-                            text-overflow: ellipsis;
-                        }
+                    // Update subtotal display
+                    const subtotalElement = document.getElementById(subtotalId);
+                    if (subtotalElement) {
+                        const currentText = subtotalElement.textContent;
+                        const currencySymbolMatch = currentText.match(/^[^\d]*/);
+                        const existingCurrency = currencySymbolMatch ? currencySymbolMatch[0] : currencySymbol + ' ';
+                        subtotalElement.textContent = existingCurrency + total.toFixed(2);
+                    }
+                }
 
-                        .th-1, .th-2, .th-3, .th-4, .th-5 {
-                            padding: 0.75rem 0.75rem;
-                            text-align: left;
-                            font-size: 0.75rem;
-                            font-weight: 500;
-                            color: #6b7280;
-                            text-transform: uppercase;
-                            letter-spacing: 0.05em;
-                            border-bottom: 1px solid #e5e7eb;
-                            background-color: #f9fafb;
-                        }
+                function updateEmptyState() {
+                    const emptyStateSlim = document.getElementById('empty-state-slim');
+                    const hasItems = container.querySelectorAll('.dynamic-item').length > 0;
 
-                        .th-1, .td-1 { width: 40%; }
-                        .th-2, .td-2 { width: 15%; }
-                        .th-3, .td-3 { width: 20%; }
-                        .th-4, .td-4 { width: 20%; }
-                        .th-5, .td-5 { width: 15%; }
+                    if (emptyStateSlim) {
+                        emptyStateSlim.style.display = hasItems ? 'none' : 'block';
+                    }
+                }
 
-                        .td-1, .td-2, .td-3, .td-4, .td-5 {
-                            padding-left: 0.75rem;
-                            padding-right: 0.75rem;
-                            padding-top: 0.5rem;
-                            padding-bottom: 0.5rem;
-                            text-align: left;
-                            font-size: 0.75rem;
-                            font-weight: 500;
-                            color: #6b7280;
-                            text-transform: capitalize;
-                            letter-spacing: 0.05em;
-                            border-bottom: 1px solid #e5e7eb;
-                        }
+                // Define invoice column settings (needed globally)
+                const invoiceColumn = <?php echo $options['show_invoices'] ? 'true' : 'false'; ?>;
 
-                        .th-2, .td-2, .th-3, .td-3, .th-4, .td-4 {
-                        text-align: right;
+
+                function rowTemplate(idx) {
+                    let invoiceCell = '';
+
+                    if (invoiceColumn) {
+                        invoiceCell = `
+                                        <td class="td-6 text-center">
+                                            <input type="file" 
+                                                name="invoice[]"
+                                                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                                                class="w-full text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                                        </td>`;
                     }
 
-                        .td-2 input, .td-3 input {
-                        text-align: right;
-                    }
-
-                        tbody tr.dynamic-item:nth-child(even) {
-                        background-color: #fafafa;
-                    }
-                    </style>
-
-                    <!-- Slim Table -->
-                    <div class="bg-white border border-gray-200 rounded-lg overflow-x-auto">
-                        <table class="dynamicItemsTable w-full border-collapse table-fixed">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="th-1"><?php echo esc_html($options['title']); ?> Description</th>
-                                    <th class="th-2">QTY</th>
-                                    <th class="th-3">Unit Price (<?php echo esc_html($options['currency_symbol']); ?>)</th>
-                                    <th class="th-4">Total</th>
-                                    <th class="th-5">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody id="<?php echo esc_attr($options['container_id']); ?>" class="bg-white">
-                                <?php foreach ($options['existing_items'] as $index => $item): ?>
-                                    <tr class="dynamic-item hover:bg-gray-50 border-b border-gray-100">
+                    return `
+                                    <tr class="dynamic-item hover:bg-gray-50">
                                         <td class="td-1">
-                                            <input type="text"
-                                                name="<?php echo esc_attr($options['group_name']); ?>[<?php echo esc_attr($index); ?>][<?php echo esc_attr($options['field_mapping']['description']); ?>]"
-                                                value="<?php echo esc_attr($item[$options['field_mapping']['description']] ?? ''); ?>"
-                                                placeholder="Item description"
+                                            <input type="text" 
+                                                name="${groupName}[${idx}][${fieldMapping.description}]" 
+                                                placeholder="Item description" 
                                                 class="w-full px-1 py-0.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
                                         </td>
                                         <td class="td-2">
-                                            <input type="number"
-                                                name="<?php echo esc_attr($options['group_name']); ?>[<?php echo esc_attr($index); ?>][<?php echo esc_attr($options['field_mapping']['quantity']); ?>]"
-                                                value="<?php echo esc_attr($item[$options['field_mapping']['quantity']] ?? 1); ?>"
+                                            <input type="number" 
+                                                name="${groupName}[${idx}][${fieldMapping.quantity}]" 
+                                                value="1" 
                                                 min="1"
                                                 class="w-full px-1 py-0.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-center" />
                                         </td>
                                         <td class="td-3">
-                                            <input type="number"
-                                                name="<?php echo esc_attr($options['group_name']); ?>[<?php echo esc_attr($index); ?>][<?php echo esc_attr($options['field_mapping']['unit_price']); ?>]"
-                                                value="<?php echo esc_attr($item[$options['field_mapping']['unit_price']] ?? 0); ?>"
+                                            <input type="number" 
+                                                name="${groupName}[${idx}][${fieldMapping.unit_price}]" 
+                                                value="0" 
                                                 step="0.01"
                                                 min="0"
                                                 class="w-full px-1 py-0.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
                                         </td>
-                                        <td class="px-2 py-1 text-sm text-gray-900 text-center border-r border-gray-100">
-                                            <?php echo esc_html($options['currency_symbol']); ?> <?php echo number_format(($item[$options['field_mapping']['quantity']] ?? 1) * ($item[$options['field_mapping']['unit_price']] ?? 0), 2); ?>
+                                        <td class="td-4">
+                                            ${currencySymbol} 0.00
                                         </td>
-                                        <td class="px-2 py-1 text-center">
-                                            <?php echo self::renderButton('', 'danger', 'sm', [
-                                                'type' => 'button',
-                                                'classes' => 'remove-item inline-flex items-center justify-center w-8 h-8 rounded-md border border-red-300 text-red-600 hover:bg-red-50',
-                                                'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>',
-                                                'gradient' => false
-                                            ]); ?>
+                                                    ${invoiceCell}
+                                        <td class="td-5">
+                                            <button type="button" class="remove-item inline-flex items-center justify-center w-8 h-8 rounded-md border border-red-300 text-red-600 hover:bg-red-50">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                                </svg>
+                                            </button>
                                         </td>
-                                    </tr>
-                                <?php endforeach; ?>
+                                                    
+                                    </tr>`;
+                }
 
-                                <!-- Empty State for Slim Version -->
-                                <?php if (empty($options['existing_items'])): ?>
-                                    <tr id="empty-state-slim" class="empty-state">
-                                        <td colspan="5" class="text-center py-8 text-gray-500">
-                                            <p class="text-sm">No items added yet. Click "Add Item" to start.</p>
-                                        </td>
-                                    </tr>
-                                <?php endif; ?>
-                            </tbody>
-                            <?php if ($options['show_subtotal']): ?>
-                            <tfoot>
-                                <tr class="bg-gray-50">
-                                    <td class="px-2 py-2" colspan="3" style="border-top: 1px solid #e5e7eb; text-align:right; font-weight:600; color:#374151;">Subtotal</td>
-                                    <td class="px-2 py-2 text-right" style="border-top: 1px solid #e5e7eb; font-weight:600; color:#111827;" id="<?php echo esc_attr($options['subtotal_id']); ?>"><?php echo esc_html($options['currency_symbol']); ?> 0.00</td>
-                                    <td style="border-top: 1px solid #e5e7eb;"></td>
-                                </tr>
-                            </tfoot>
-                            <?php endif; ?>
-                        </table>
-                    </div>
-                </div>
-
-
-            <script>
-                document.addEventListener('DOMContentLoaded', function() {
-                    let itemIndex = <?php echo is_array($options['existing_items']) ? count($options['existing_items']) : 0; ?>;
-                    const container = document.getElementById('<?php echo esc_js($options['container_id']); ?>');
-                    const addBtn = document.getElementById('<?php echo esc_js($options['button_id']); ?>');
-                    const subtotalId = '<?php echo esc_js($options['subtotal_id']); ?>';
-                    const currencySymbol = '<?php echo esc_js($options['currency_symbol']); ?>';
-                    const groupName = '<?php echo esc_js($options['group_name']); ?>';
-                    const fieldMapping = <?php echo json_encode($options['field_mapping']); ?>;
-
-                    function toNumber(value) {
-                        const num = parseFloat(String(value).replace(/,/g, '.'));
-                        return isNaN(num) ? 0 : num;
+                addBtn.addEventListener('click', function() {
+                    // Hide empty state immediately
+                    const emptyStateSlim = document.getElementById('empty-state-slim');
+                    if (emptyStateSlim && emptyStateSlim.parentNode) {
+                        emptyStateSlim.parentNode.removeChild(emptyStateSlim);
                     }
 
-                    function calculateSubtotal() {
-                        let total = 0;
-                        container.querySelectorAll('.dynamic-item').forEach((row) => {
-                            const priceInput = row.querySelector(`input[name*="[${fieldMapping.unit_price}]"]`);
-                            const qtyInput = row.querySelector(`input[name*="[${fieldMapping.quantity}]"]`);
-                            const price = toNumber(priceInput ? priceInput.value : 0);
-                            const qty = parseInt(qtyInput ? qtyInput.value : 0, 10) || 0;
-                            const rowTotal = price * qty;
-                            total += rowTotal;
-                            
-                            // Update individual row total display
-                            const totalCell = row.querySelector('td:nth-child(4)');
-                            if (totalCell) {
-                                totalCell.textContent = currencySymbol + ' ' + rowTotal.toFixed(2);
-                            }
-                        });
+                    const newRow = rowTemplate(itemIndex++);
+                    container.insertAdjacentHTML('beforeend', newRow);
+                    updateEmptyState();
+                    calculateSubtotal();
+                });
 
-                        // Update subtotal display
-                        const subtotalElement = document.getElementById(subtotalId);
-                        if (subtotalElement) {
-                            const currentText = subtotalElement.textContent;
-                            const currencySymbolMatch = currentText.match(/^[^\d]*/);
-                            const existingCurrency = currencySymbolMatch ? currencySymbolMatch[0] : currencySymbol + ' ';
-                            subtotalElement.textContent = existingCurrency + total.toFixed(2);
-                        }
-                    }
-
-                    function updateEmptyState() {
-                        const emptyStateSlim = document.getElementById('empty-state-slim');
-                        const hasItems = container.querySelectorAll('.dynamic-item').length > 0;
-                        
-                        if (emptyStateSlim) {
-                            emptyStateSlim.style.display = hasItems ? 'none' : 'block';
-                        }
-                    }
-
-                    function rowTemplate(idx) {
-                            return `
-                        <tr class="dynamic-item hover:bg-gray-50">
-                            <td class="td-1">
-                                <input type="text" 
-                                       name="${groupName}[${idx}][${fieldMapping.description}]" 
-                                       placeholder="Item description" 
-                                       class="w-full px-1 py-0.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
-                            </td>
-                            <td class="td-2">
-                                <input type="number" 
-                                       name="${groupName}[${idx}][${fieldMapping.quantity}]" 
-                                       value="1" 
-                                       min="1"
-                                       class="w-full px-1 py-0.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-center" />
-                            </td>
-                            <td class="td-3">
-                                <input type="number" 
-                                       name="${groupName}[${idx}][${fieldMapping.unit_price}]" 
-                                       value="0" 
-                                       step="0.01"
-                                       min="0"
-                                       class="w-full px-1 py-0.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
-                            </td>
-                            <td class="td-4">
-                                ${currencySymbol} 0.00
-                            </td>
-                            <td class="td-5">
-                                <button type="button" class="remove-item inline-flex items-center justify-center w-8 h-8 rounded-md border border-red-300 text-red-600 hover:bg-red-50">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                                    </svg>
-                                </button>
-                            </td>
-                        </tr>`;
-                    }
-
-                    addBtn.addEventListener('click', function() {
-                        // Hide empty state immediately
-                        const emptyStateSlim = document.getElementById('empty-state-slim');
-                        if (emptyStateSlim && emptyStateSlim.parentNode) {
-                            emptyStateSlim.parentNode.removeChild(emptyStateSlim);
-                        }
-
-                        const newRow = rowTemplate(itemIndex++);
-                        container.insertAdjacentHTML('beforeend', newRow);
+                // Event delegation for remove buttons
+                document.addEventListener('click', (e) => {
+                    if (e.target.closest('.remove-item')) {
+                        e.target.closest('.dynamic-item').remove();
                         updateEmptyState();
                         calculateSubtotal();
-                    });
-
-                    // Event delegation for remove buttons
-                    document.addEventListener('click', (e) => {
-                        if (e.target.closest('.remove-item')) {
-                            e.target.closest('.dynamic-item').remove();
-                            updateEmptyState();
-                            calculateSubtotal();
-                        }
-                    });
-
-                    // Recalculate when user edits price or quantity
-                    container.addEventListener('input', (e) => {
-                        if (
-                            e.target.matches(`input[name*="[${fieldMapping.unit_price}]"]`) ||
-                            e.target.matches(`input[name*="[${fieldMapping.quantity}]"]`)
-                        ) {
-                            calculateSubtotal();
-                        }
-                    });
-
-                    // Initial calculation on load
-                    calculateSubtotal();
-                    updateEmptyState();
+                    }
                 });
-            </script>
-        <?php
+
+                // Recalculate when user edits price or quantity
+                container.addEventListener('input', (e) => {
+                    if (
+                        e.target.matches(`input[name*="[${fieldMapping.unit_price}]"]`) ||
+                        e.target.matches(`input[name*="[${fieldMapping.quantity}]"]`)
+                    ) {
+                        calculateSubtotal();
+                    }
+                });
+
+                // Initial calculation on load
+                calculateSubtotal();
+                updateEmptyState();
+
+            });
+        </script>
+<?php
                 return ob_get_clean();
             }
-
             /**
              * @deprecated Use dynamicItemsControl instead
              */
@@ -2500,7 +2571,7 @@ class KIT_Commons
                 // Convert misc options to dynamic options
                 $dynamicOptions = wp_parse_args($options, [
                     'item_type' => 'misc',
-                    'title' => 'Miscellaneous Items',
+                    'title' => 'MisceDllaneous Items',
                     'field_mapping' => [
                         'description' => 'misc_item',
                         'quantity' => 'misc_quantity',
@@ -2508,8 +2579,223 @@ class KIT_Commons
                         'subtotal' => 'misc_subtotal'
                     ]
                 ]);
-                
+
                 return self::dynamicItemsControl($dynamicOptions);
             }
 
+
+            /**
+             * Create waybill directory structure for invoice uploads
+             * 
+             * @param string $waybill_no The waybill number
+             * @return string|false The path to the waybill invoices directory, or false on failure
+             */
+            public static function createWaybillInvoiceDirectory($waybill_no)
+            {
+                // CARDINAL RULE: Only create folder when WAYBILL_NO has been generated
+                // Reject any temp or invalid waybill numbers
+                if (empty($waybill_no) || $waybill_no === 'undefined' || strpos($waybill_no, 'TEMP-') === 0) {
+                    error_log('createWaybillInvoiceDirectory - REJECTED: Invalid waybill number (' . $waybill_no . ')');
+                    return false; // Don't create directory for temp waybills
+                }
+
+                error_log('createWaybillInvoiceDirectory - Creating directory for waybill: ' . $waybill_no);
+
+                // Sanitize waybill number for directory name
+                $sanitized_waybill = sanitize_file_name($waybill_no);
+                $waybill_dir_name = 'wb' . $sanitized_waybill;
+
+                // Define base upload directory
+                $upload_dir = wp_upload_dir();
+                $base_dir = $upload_dir['basedir'] . '/waybills';
+
+
+                // Create directories if they don't exist
+                if (!file_exists($base_dir)) {
+                    if (!wp_mkdir_p($base_dir)) {
+                        error_log('Failed to create base directory: ' . $base_dir);
+                        return false;
+                    }
+                    // Add .htaccess for security
+                    $htaccess_file = $base_dir . '/.htaccess';
+                    if (!file_put_contents($htaccess_file, "Options -Indexes\nDeny from all")) {
+                        error_log('Failed to create .htaccess file: ' . $htaccess_file);
+                    }
+                }
+
+                $waybill_dir = $base_dir . '/' . $waybill_dir_name;
+                if (!file_exists($waybill_dir)) {
+                    if (!wp_mkdir_p($waybill_dir)) {
+                        error_log('Failed to create waybill directory: ' . $waybill_dir);
+                        return false;
+                    }
+                }
+
+                $invoice_dir = $waybill_dir . '/waybillInvoices';
+                if (!file_exists($invoice_dir)) {
+                    if (!wp_mkdir_p($invoice_dir)) {
+                        error_log('Failed to create invoice directory: ' . $invoice_dir);
+                        return false;
+                    }
+                }
+
+                // Verify the directory is writable
+                if (!is_writable($invoice_dir)) {
+                    error_log('Invoice directory is not writable: ' . $invoice_dir);
+                    return false;
+                }
+
+                return $invoice_dir;
+            }
+
+            /**
+             * Manually create waybill invoice directory for existing waybills
+             * This function can be called to create folders for waybills that don't have them yet
+             * 
+             * @param string $waybill_no The waybill number
+             * @return array Result array with success status and message
+             */
+            public static function createMissingWaybillDirectory($waybill_no)
+            {
+                // Validate waybill number
+                if (empty($waybill_no) || $waybill_no === 'undefined' || strpos($waybill_no, 'TEMP-') === 0) {
+                    return [
+                        'success' => false,
+                        'message' => 'Invalid waybill number: ' . $waybill_no
+                    ];
+                }
+
+                error_log('createMissingWaybillDirectory - Creating directory for existing waybill: ' . $waybill_no);
+
+                // Try to create the directory
+                $invoice_dir = self::createWaybillInvoiceDirectory($waybill_no);
+
+                if ($invoice_dir) {
+                    return [
+                        'success' => true,
+                        'message' => 'Directory created successfully: ' . $invoice_dir,
+                        'directory' => $invoice_dir
+                    ];
+                } else {
+                    return [
+                        'success' => false,
+                        'message' => 'Failed to create directory for waybill: ' . $waybill_no
+                    ];
+                }
+            }
+
+            /**
+             * Handle waybill item invoice upload
+             * 
+             * @param array $file The $_FILES array element for the uploaded file
+             * @param string $waybill_no The waybill number
+             * @param int $item_index The item index
+             * @return array Result array with success status and file path or error message
+             */
+            public static function handleWaybillInvoiceUpload($file, $waybill_no, $item_index = 0, $is_temp_upload = false)
+            {
+                // Validate file
+                if (!isset($file['tmp_name']) || empty($file['tmp_name'])) {
+                    return ['success' => false, 'message' => 'No file uploaded'];
+                }
+
+                if ($file['error'] !== UPLOAD_ERR_OK) {
+                    return ['success' => false, 'message' => 'Upload error: ' . $file['error']];
+                }
+
+                // Validate file type
+                $allowed_types = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'];
+                $file_extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+
+                if (!in_array($file_extension, $allowed_types)) {
+                    return ['success' => false, 'message' => 'Invalid file type. Allowed: ' . implode(', ', $allowed_types)];
+                }
+
+                // Validate file size (max 10MB)
+                $max_size = 10 * 1024 * 1024; // 10MB
+                if ($file['size'] > $max_size) {
+                    return ['success' => false, 'message' => 'File too large. Maximum size: 10MB'];
+                }
+
+                // Handle directory structure based on upload type
+                if ($is_temp_upload) {
+                    // For temporary uploads, use temp directory without waybill-specific subfolder
+                    $upload_dir = wp_upload_dir();
+                    $base_dir = $upload_dir['basedir'] . '/waybills';
+                    $temp_dir = $base_dir . '/temp';
+
+                    // Ensure temp directory exists
+                    if (!file_exists($temp_dir)) {
+                        if (!wp_mkdir_p($temp_dir)) {
+                            return [
+                                'success' => false,
+                                'message' => 'Failed to create temp directory. Check uploads folder permissions. Base: ' . $base_dir
+                            ];
+                        }
+                    }
+
+                    $invoice_dir = $temp_dir;
+                } else {
+                    // For real waybills, create waybill-specific directory
+                    $invoice_dir = self::createWaybillInvoiceDirectory($waybill_no);
+                    if (!$invoice_dir) {
+                        $upload_dir = wp_upload_dir();
+                        $base_dir = $upload_dir['basedir'] . '/waybills';
+                        return [
+                            'success' => false,
+                            'message' => 'Failed to create directory structure. Check uploads folder permissions. Base: ' . $base_dir
+                        ];
+                    }
+                }
+
+                // Generate unique filename
+                $sanitized_name = sanitize_file_name(pathinfo($file['name'], PATHINFO_FILENAME));
+                if ($is_temp_upload) {
+                    $filename = $sanitized_name . '_temp_item' . $item_index . '_' . time() . '.' . $file_extension;
+                } else {
+                    $filename = $sanitized_name . '_item' . $item_index . '_' . time() . '.' . $file_extension;
+                }
+                $file_path = $invoice_dir . '/' . $filename;
+
+                // Move uploaded file
+                if (move_uploaded_file($file['tmp_name'], $file_path)) {
+                    return [
+                        'success' => true,
+                        'file_path' => $file_path,
+                        'filename' => $filename,
+                        'message' => 'File uploaded successfully'
+                    ];
+                } else {
+                    return ['success' => false, 'message' => 'Failed to move uploaded file'];
+                }
+            }
+
+            /**
+             * Get waybill invoice directory URL
+             * 
+             * @param string $waybill_no The waybill number
+             * @return string The URL to the waybill invoices directory
+             */
+            public static function getWaybillInvoiceDirectoryUrl($waybill_no)
+            {
+                // Only proceed if we have a valid waybill number (not temp)
+                if (empty($waybill_no) || strpos($waybill_no, 'TEMP-') === 0) {
+                    return '';
+                }
+
+                $sanitized_waybill = sanitize_file_name($waybill_no);
+                $waybill_dir_name = 'wb' . $sanitized_waybill;
+
+                $upload_dir = wp_upload_dir();
+                return $upload_dir['baseurl'] . '/waybills/' . $waybill_dir_name . '/waybillInvoices/';
+            }
+
+            public static function getNameOfUser($user_id)
+            {
+                if (!function_exists('get_userdata')) {
+                    require_once ABSPATH . 'wp-includes/pluggable.php';
+                }
+                $user = get_userdata($user_id);
+                return $user ? $user->display_name : 'Unknown User';
+            }
         }

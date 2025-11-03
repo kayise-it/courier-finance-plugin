@@ -129,6 +129,7 @@ require_once COURIER_FINANCE_PLUGIN_PATH . 'includes/user-roles.php';
                         'type'  => 'number',
                         'value' => isset($waybill) ? ($waybill['mass_charge_manipulator'] ?? 0) : 0,
                         'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500',
+                        'attributes' => 'step="0.01"',
                     ]);
                     ?>
                 </div>
@@ -165,8 +166,8 @@ require_once COURIER_FINANCE_PLUGIN_PATH . 'includes/user-roles.php';
                             const liveRate = parseNumber(massRateInput && massRateInput.value);
                             const baseRate = getBaseRate();
                             
-                            // Debug logging (remove in production)
-                            if (window.console && console.log) {
+                            // Debug logging (production-safe)
+                            if (window.console && console.log && ((typeof myPluginAjax !== 'undefined' && myPluginAjax.wp_debug) || (typeof window !== 'undefined' && window.WP_DEBUG))) {
                                 console.log('Rate calculation:', {
                                     liveRate: liveRate,
                                     baseRate: baseRate,
@@ -217,8 +218,8 @@ require_once COURIER_FINANCE_PLUGIN_PATH . 'includes/user-roles.php';
                             const rawManipulator = manipulatorInput ? manipulatorInput.value : '';
                             const addAmount = (checkbox && checkbox.checked) ? parseNumber(rawManipulator) : 0;
                             
-                            // Debug logging (remove in production)
-                            if (window.console && console.log) {
+                            // Debug logging (production-safe)
+                            if (window.console && console.log && ((typeof myPluginAjax !== 'undefined' && myPluginAjax.wp_debug) || (typeof window !== 'undefined' && window.WP_DEBUG))) {
                                 console.log('Manipulator calculation:', {
                                     checkboxChecked: checkbox && checkbox.checked,
                                     rawManipulator: rawManipulator,
@@ -227,9 +228,9 @@ require_once COURIER_FINANCE_PLUGIN_PATH . 'includes/user-roles.php';
                                 });
                             }
                             
-                            // ✅ BULLETPROOF: Validate manipulator value
-                            if (checkbox && checkbox.checked && rawManipulator !== '' && addAmount < 0) {
-                                showCalculationError('Invalid manipulator value. Please enter a positive number.');
+                            // ✅ BULLETPROOF: Validate manipulator value (allow negative numbers for discounts)
+                            if (checkbox && checkbox.checked && rawManipulator !== '' && !Number.isFinite(addAmount)) {
+                                showCalculationError('Invalid manipulator value. Please enter a valid number.');
                                 return;
                             }
 
@@ -266,8 +267,8 @@ require_once COURIER_FINANCE_PLUGIN_PATH . 'includes/user-roles.php';
                                     
                             const newRate = baseRateForManip + (checkbox && checkbox.checked ? addAmount : 0);
                             
-                            // Debug logging (remove in production)
-                            if (window.console && console.log) {
+                            // Debug logging (production-safe)
+                            if (window.console && console.log && ((typeof myPluginAjax !== 'undefined' && myPluginAjax.wp_debug) || (typeof window !== 'undefined' && window.WP_DEBUG))) {
                                 console.log('Final calculation:', {
                                     baseRateForManip: baseRateForManip,
                                     addAmount: addAmount,
@@ -284,8 +285,8 @@ require_once COURIER_FINANCE_PLUGIN_PATH . 'includes/user-roles.php';
                                 
                             const finalCharge = totalMass * newRate;
 
-                                // ✅ BULLETPROOF: Validate final charge
-                                if (!Number.isFinite(finalCharge) || finalCharge < 0) {
+                                // ✅ BULLETPROOF: Validate final charge (allow negative for credits/discounts)
+                                if (!Number.isFinite(finalCharge)) {
                                     showCalculationError('Invalid calculated charge. Please check your inputs.');
                                     return;
                                 }

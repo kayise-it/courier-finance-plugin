@@ -36,7 +36,9 @@ global $waybill_items;
         'specialClass' => '!text-[10px]',
         'item_type' => 'waybill',
         'title' => 'Waybill Items',
-        'subtotal_id' => 'waybill-subtotal'
+        'subtotal_id' => 'waybill-subtotal',
+        'show_invoices' => true,
+        'waybill_no' => '' // Will be set dynamically from form via JavaScript
     ]);
     ?>
 

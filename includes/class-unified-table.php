@@ -1,4 +1,5 @@
 <?php
+
 /**
  * KIT Unified Table Class
  * 
@@ -10,236 +11,88 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class KIT_Unified_Table {
-    
+class KIT_Unified_Table
+{
     /**
-     * Render a simple table
+     * Render a table with infinite scroll enabled.
+     * Simple implementation that shows all data.
      */
-    public static function simple($data, $columns, $options = []) {
-        $defaults = [
-            'title' => '',
-            'subtitle' => '',
-            'actions' => [],
-            'empty_message' => 'No data found',
-            'class' => 'min-w-full divide-y divide-gray-200'
-        ];
-        
-        $options = array_merge($defaults, $options);
-        
-        ob_start();
-        ?>
-        <div class="bg-white shadow rounded-lg overflow-hidden">
-            <?php if ($options['title'] || $options['subtitle']): ?>
-            <div class="px-6 py-4 border-b border-gray-200">
-                <?php if ($options['title']): ?>
-                    <h3 class="text-lg font-medium text-gray-900"><?php echo esc_html($options['title']); ?></h3>
-                <?php endif; ?>
-                <?php if ($options['subtitle']): ?>
-                    <p class="mt-1 text-sm text-gray-500"><?php echo esc_html($options['subtitle']); ?></p>
-                <?php endif; ?>
-            </div>
-            <?php endif; ?>
-            
-            <?php if (empty($data)): ?>
-                <div class="px-6 py-12 text-center">
-                    <p class="text-gray-500"><?php echo esc_html($options['empty_message']); ?></p>
-                </div>
-            <?php else: ?>
-                <div class="overflow-x-auto">
-                    <table class="<?php echo esc_attr($options['class']); ?>">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <?php foreach ($columns as $key => $column): ?>
-                                    <?php
-                                    $label = is_array($column) ? $column['label'] : $column;
-                                    ?>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        <?php echo esc_html($label); ?>
-                                    </th>
-                                <?php endforeach; ?>
-                                <?php if (!empty($options['actions'])): ?>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Actions
-                                    </th>
-                                <?php endif; ?>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
-                            <?php foreach ($data as $row): ?>
-                                <tr class="hover:bg-gray-50">
-                                    <?php foreach ($columns as $key => $column): ?>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                            <?php
-                                            // Handle both arrays and objects
-                                            $value = '';
-                                            if (is_array($row)) {
-                                                $value = $row[$key] ?? '';
-                                            } elseif (is_object($row)) {
-                                                $value = $row->$key ?? '';
-                                            }
-                                            
-                                            if (is_array($column) && isset($column['callback'])) {
-                                                echo $column['callback']($value, $row);
-                                            } else {
-                                                echo esc_html($value);
-                                            }
-                                            ?>
-                                        </td>
-                                    <?php endforeach; ?>
-                                    <?php if (!empty($options['actions'])): ?>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                            <?php foreach ($options['actions'] as $action): ?>
-                                                <?php
-                                                $href = $action['href'] ?? '#';
-                                                $class = $action['class'] ?? 'text-blue-600 hover:text-blue-800';
-                                                $onclick = isset($action['onclick']) ? 'onclick="' . esc_attr($action['onclick']) . '"' : '';
-                                                $target = isset($action['target']) ? 'target="' . esc_attr($action['target']) . '" rel="noopener"' : '';
-                                                
-                                                // Replace placeholders in href
-                                                if (is_array($row)) {
-                                                    foreach ($row as $placeholder => $value) {
-                                                        $href = str_replace('{' . $placeholder . '}', $value, $href);
-                                                    }
-                                                } elseif (is_object($row)) {
-                                                    foreach ($row as $placeholder => $value) {
-                                                        $href = str_replace('{' . $placeholder . '}', $value, $href);
-                                                    }
-                                                }
-                                                ?>
-                                                <a href="<?php echo esc_url($href); ?>" 
-                                                   class="<?php echo esc_attr($class); ?>" 
-                                                   <?php echo $onclick; ?> <?php echo $target; ?>>
-                                                    <?php echo esc_html($action['label']); ?>
-                                                </a>
-                                                <?php if ($action !== end($options['actions'])): ?>
-                                                    <span class="mx-2">|</span>
-                                                <?php endif; ?>
-                                            <?php endforeach; ?>
-                                        </td>
-                                    <?php endif; ?>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-            <?php endif; ?>
-        </div>
-        <?php
-        return ob_get_clean();
-    }
-    
-    /**
-     * Render an advanced table with all features
-     */
-    public static function advanced($data, $columns, $options = []) {
+    public static function infinite($data, $columns, $options = [])
+    {
         $defaults = [
             'title' => '',
             'subtitle' => '',
             'actions' => [],
             'searchable' => false,
-            'sortable' => false,
-            'pagination' => false,
-            'items_per_page' => 10,
-            'current_page' => 1,
-            'show_items_per_page' => false,
+            'sortable' => true,
             'exportable' => false,
             'bulk_actions' => false,
             'selectable' => false,
             'empty_message' => 'No data found',
             'class' => 'min-w-full divide-y divide-gray-200',
-            'primary_action' => null
+            'primary_action' => null,
+            'items_per_page' => 100,
+            'current_page' => 1,
+            // Optional: callback to add attributes to each <tr>. Signature: function($row, $rowIndex): array
+            'row_attrs_callback' => null
         ];
-        
+
         $options = array_merge($defaults, $options);
-        
-        // Handle pagination
+
+        // Show ALL data initially - no pagination for infinite scroll
         $total_items = count($data);
-        $total_pages = ceil($total_items / $options['items_per_page']);
-        $start_index = ($options['current_page'] - 1) * $options['items_per_page'];
-        $paginated_data = array_slice($data, $start_index, $options['items_per_page']);
-        
+        $display_data = $data; // Show all items
+
+        // Build unique IDs for infinite scroll
+        $table_id = 'kit-infinite-table-' . uniqid();
+        $container_id = 'kit-infinite-wrap-' . uniqid();
+
         ob_start();
-        ?>
-        <div class="bg-white shadow rounded-lg overflow-hidden">
-            <!-- Header -->
-            <div class="px-6 py-4 border-b border-gray-200">
-                <div class="flex justify-between items-center">
-                    <div>
-                        <?php if ($options['title']): ?>
-                            <h3 class="text-lg font-medium text-gray-900"><?php echo esc_html($options['title']); ?></h3>
-                        <?php endif; ?>
-                        <?php if ($options['subtitle']): ?>
-                            <p class="mt-1 text-sm text-gray-500"><?php echo esc_html($options['subtitle']); ?></p>
-                        <?php endif; ?>
-                    </div>
-                    <?php if ($options['primary_action']): ?>
-                        <a href="<?php echo esc_url($options['primary_action']['href']); ?>" 
-                           class="<?php echo esc_attr($options['primary_action']['class']); ?>">
-                            <?php echo esc_html($options['primary_action']['label']); ?>
-                        </a>
+?>
+        <div class="bg-white shadow rounded-lg overflow-hidden max-w-full" style="max-width: 100vw; box-sizing: border-box;" id="<?php echo esc_attr($container_id); ?>">
+            <?php if ($options['title'] || $options['subtitle']): ?>
+                <div class="px-6 py-4 border-b border-gray-200">
+                    <?php if ($options['title']): ?>
+                        <h3 class="text-lg font-medium text-gray-900"><?php echo esc_html($options['title']); ?></h3>
+                    <?php endif; ?>
+                    <?php if ($options['subtitle']): ?>
+                        <p class="mt-1 text-sm text-gray-500"><?php echo esc_html($options['subtitle']); ?></p>
                     <?php endif; ?>
                 </div>
-                
-                <!-- Search and Controls -->
-                <div class="mt-4 flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-2 sm:space-y-0">
-                    <?php if ($options['searchable']): ?>
-                        <div class="flex-1 max-w-lg">
-                            <input type="text" 
-                                   id="table-search" 
-                                   placeholder="Search..." 
-                                   class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                        </div>
-                    <?php endif; ?>
-                    
-                    <div class="flex items-center space-x-4">
-                        <?php if ($options['show_items_per_page']): ?>
-                            <div class="flex items-center">
-                                <label for="items-per-page" class="text-sm text-gray-700 mr-2">Show:</label>
-                                <select id="items-per-page" class="block w-20 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                                    <option value="5" <?php selected($options['items_per_page'], 5); ?>>5</option>
-                                    <option value="10" <?php selected($options['items_per_page'], 10); ?>>10</option>
-                                    <option value="20" <?php selected($options['items_per_page'], 20); ?>>20</option>
-                                    <option value="50" <?php selected($options['items_per_page'], 50); ?>>50</option>
-                                    <option value="100" <?php selected($options['items_per_page'], 100); ?>>100</option>
-                                </select>
-                            </div>
-                        <?php endif; ?>
-                        
-                        <?php if ($options['exportable']): ?>
-                            <button type="button" 
-                                    class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                                Export
-                            </button>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Table -->
-            <?php if (empty($paginated_data)): ?>
+            <?php endif; ?>
+
+            <?php if (empty($data)): ?>
                 <div class="px-6 py-12 text-center">
                     <p class="text-gray-500"><?php echo esc_html($options['empty_message']); ?></p>
                 </div>
             <?php else: ?>
-                <div class="overflow-x-auto">
-                    <table class="<?php echo esc_attr($options['class']); ?>">
+                <div class="overflow-x-auto max-w-full" style="max-width: 100vw; box-sizing: border-box;">
+                    <table id="<?php echo esc_attr($table_id); ?>" class="<?php echo esc_attr($options['class']); ?>" style="table-layout: fixed; width: 100%; max-width: 100%;">
                         <thead class="bg-gray-50">
-                            <tr>
-                                <?php if ($options['selectable']): ?>
-                                    <th class="px-6 py-3 text-left">
-                                        <input type="checkbox" class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
-                                    </th>
-                                <?php endif; ?>
+                            <tr class="px-6 py-3">
+                                <!-- Index column header -->
+                                <th class="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16 max-w-16">
+                                    #
+                                </th>
                                 <?php foreach ($columns as $key => $column): ?>
                                     <?php
                                     $label = is_array($column) ? $column['label'] : $column;
-                                    $sortable = is_array($column) && isset($column['sortable']) ? $column['sortable'] : $options['sortable'];
+                                    $columnSortable = is_array($column) && isset($column['sortable']) ? $column['sortable'] : $options['sortable'];
+                                    // Skip sorting for checkbox column
+                                    if ($key === 'checkbox') {
+                                        $columnSortable = false;
+                                    }
+                                    $padding = is_array($column) && isset($column['padding']) ? $column['padding'] : 'px-2 py-2';
+                                    $headerClass = $padding . ' text-left text-xs font-medium text-gray-500 uppercase tracking-wider';
+                                    if (is_array($column) && isset($column['header_class'])) {
+                                        $headerClass = trim($headerClass . ' ' . $column['header_class']);
+                                    }
                                     ?>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        <?php if ($sortable): ?>
-                                            <button class="group inline-flex items-center">
-                                                <?php echo esc_html($label); ?>
-                                                <svg class="ml-2 h-3 w-3 text-gray-400 group-hover:text-gray-500" fill="currentColor" viewBox="0 0 20 20">
+                                    <th class="<?php echo esc_attr($headerClass); ?>" <?php if ($columnSortable): ?>data-column="<?php echo esc_attr($key); ?>"<?php endif; ?>>
+                                        <?php if ($columnSortable): ?>
+                                            <button type="button" class="group inline-flex items-center sortable-header cursor-pointer hover:bg-gray-100 px-2 py-1 rounded -ml-2" style="cursor: pointer;">
+                                        <?php echo esc_html($label); ?>
+                                                <svg class="ml-2 h-3 w-3 text-gray-400 group-hover:text-gray-500 sort-icon" fill="currentColor" viewBox="0 0 20 20">
                                                     <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
                                                 </svg>
                                             </button>
@@ -249,25 +102,41 @@ class KIT_Unified_Table {
                                     </th>
                                 <?php endforeach; ?>
                                 <?php if (!empty($options['actions'])): ?>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th class="<?php echo esc_attr($padding); ?> text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24 max-w-24">
                                         Actions
                                     </th>
                                 <?php endif; ?>
                             </tr>
                         </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
-                            <?php foreach ($paginated_data as $row): ?>
-                                <tr class="hover:bg-gray-50">
-                                    <?php if ($options['selectable']): ?>
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <input type="checkbox" class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
-                                        </td>
-                                    <?php endif; ?>
+                        <tbody class="bg-white divide-y divide-gray-200 7878">
+                            <?php foreach ($data as $rowIndex => $row): ?>
+                                <?php
+                                $rowAttrStr = '';
+                                if (is_callable($options['row_attrs_callback'])) {
+                                    $attrs = (array) call_user_func($options['row_attrs_callback'], $row, $rowIndex);
+                                    foreach ($attrs as $attrKey => $attrVal) {
+                                        $rowAttrStr .= ' ' . esc_attr($attrKey) . '="' . esc_attr((string) $attrVal) . '"';
+                                    }
+                                }
+                                ?>
+                                <tr class="hover:bg-gray-50"<?php echo $rowAttrStr; ?>>
+                                    <!-- Index column cell -->
+                                    <td class="px-2 py-2 whitespace-nowrap text-sm text-gray-500 font-medium">
+                                        <?php echo esc_html($rowIndex + 1); ?>
+                                    </td>
                                     <?php foreach ($columns as $key => $column): ?>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                        <?php
+                                        $padding = is_array($column) && isset($column['padding']) ? $column['padding'] : 'px-2 py-2';
+                                        $cellClass = $padding . ' whitespace-nowrap text-sm text-gray-900';
+                                        if (is_array($column) && isset($column['cell_class'])) {
+                                            $cellClass = $column['cell_class'] . ' ' . $padding;
+                                        }
+                                        ?>
+                                        <td class="7878 <?php echo esc_attr($cellClass); ?>">
                                             <?php
-                                            // Handle both arrays and objects
+                                            // Simple, robust value extraction
                                             $value = '';
+
                                             if (is_array($row)) {
                                                 $value = $row[$key] ?? '';
                                             } elseif (is_object($row)) {
@@ -278,9 +147,9 @@ class KIT_Unified_Table {
                                             if ($key === 'total' && class_exists('KIT_User_Roles') && !KIT_User_Roles::can_see_prices()) {
                                                 $value = '***';
                                             }
-                                            
+
                                             if (is_array($column) && isset($column['callback'])) {
-                                                echo $column['callback']($value, $row);
+                                                echo $column['callback']($value, $row, $rowIndex);
                                             } else {
                                                 echo esc_html($value);
                                             }
@@ -288,13 +157,15 @@ class KIT_Unified_Table {
                                         </td>
                                     <?php endforeach; ?>
                                     <?php if (!empty($options['actions'])): ?>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                        <td class="px-2 py-2 whitespace-nowrap text-sm font-medium 7878">
                                             <?php foreach ($options['actions'] as $action): ?>
                                                 <?php
                                                 $href = $action['href'] ?? '#';
                                                 $class = $action['class'] ?? 'text-blue-600 hover:text-blue-800';
                                                 $onclick = isset($action['onclick']) ? 'onclick="' . esc_attr($action['onclick']) . '"' : '';
-                                                
+                                                $titleAttr = isset($action['title']) ? 'title="' . esc_attr($action['title']) . '" aria-label="' . esc_attr($action['title']) . '"' : '';
+                                                $target = isset($action['target']) ? 'target="' . esc_attr($action['target']) . '" rel="noopener"' : '';
+
                                                 // Replace placeholders in href
                                                 if (is_array($row)) {
                                                     foreach ($row as $placeholder => $value) {
@@ -302,14 +173,21 @@ class KIT_Unified_Table {
                                                     }
                                                 } elseif (is_object($row)) {
                                                     foreach ($row as $placeholder => $value) {
+                                                        $value = $value ?? ''; // Handle null values
                                                         $href = str_replace('{' . $placeholder . '}', $value, $href);
                                                     }
                                                 }
                                                 ?>
-                                                <a href="<?php echo esc_url($href); ?>" 
-                                                   class="<?php echo esc_attr($class); ?>" 
-                                                   <?php echo $onclick; ?>>
-                                                    <?php echo esc_html($action['label']); ?>
+                                                <a href="<?php echo esc_url($href); ?>"
+                                                    class="<?php echo esc_attr($class); ?>"
+                                                    <?php echo $onclick; ?> <?php echo $target; ?>>
+                                                    <?php 
+                                                    if (isset($action['is_html']) && $action['is_html']) {
+                                                        echo $action['label'];
+                                                    } else {
+                                                        echo esc_html($action['label']);
+                                                    }
+                                                    ?>
                                                 </a>
                                                 <?php if ($action !== end($options['actions'])): ?>
                                                     <span class="mx-2">|</span>
@@ -322,71 +200,205 @@ class KIT_Unified_Table {
                         </tbody>
                     </table>
                 </div>
-                
-                <!-- Pagination -->
-                <?php if ($options['pagination'] && $total_pages > 1): ?>
-                    <div class="px-6 py-3 border-t border-gray-200">
-                        <div class="flex items-center justify-between">
-                            <div class="text-sm text-gray-700">
-                                Showing <span class="font-medium"><?php echo $start_index + 1; ?></span> to 
-                                <span class="font-medium"><?php echo min($start_index + $options['items_per_page'], $total_items); ?></span> of 
-                                <span class="font-medium"><?php echo $total_items; ?></span> results
-                            </div>
-                            <div class="flex items-center space-x-2">
-                                <?php if ($options['current_page'] > 1): ?>
-                                    <a href="?page=<?php echo esc_attr($_GET['page'] ?? ''); ?>&paged=<?php echo $options['current_page'] - 1; ?>&per_page=<?php echo $options['items_per_page']; ?>" 
-                                       class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-                                        Previous
-                                    </a>
-                                <?php endif; ?>
-                                
-                                <?php for ($i = max(1, $options['current_page'] - 2); $i <= min($total_pages, $options['current_page'] + 2); $i++): ?>
-                                    <a href="?page=<?php echo esc_attr($_GET['page'] ?? ''); ?>&paged=<?php echo $i; ?>&per_page=<?php echo $options['items_per_page']; ?>" 
-                                       class="px-3 py-2 text-sm font-medium <?php echo $i === $options['current_page'] ? 'text-blue-600 bg-blue-50 border-blue-300' : 'text-gray-500 bg-white border-gray-300'; ?> border rounded-md hover:bg-gray-50">
-                                        <?php echo $i; ?>
-                                    </a>
-                                <?php endfor; ?>
-                                
-                                <?php if ($options['current_page'] < $total_pages): ?>
-                                    <a href="?page=<?php echo esc_attr($_GET['page'] ?? ''); ?>&paged=<?php echo $options['current_page'] + 1; ?>&per_page=<?php echo $options['items_per_page']; ?>" 
-                                       class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-                                        Next
-                                    </a>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                    </div>
-                <?php endif; ?>
             <?php endif; ?>
         </div>
-        
-        <?php if ($options['searchable']): ?>
+
+        <!-- Infinite scroll specific JavaScript -->
         <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const searchInput = document.getElementById('table-search');
-            if (searchInput) {
-                searchInput.addEventListener('input', function() {
-                    const searchTerm = this.value.toLowerCase();
-                    const rows = document.querySelectorAll('tbody tr');
-                    
-                    rows.forEach(row => {
-                        const text = row.textContent.toLowerCase();
-                        row.style.display = text.includes(searchTerm) ? '' : 'none';
+            document.addEventListener('DOMContentLoaded', function() {
+                // Search functionality - client-side search for infinite scroll
+                if (<?php echo $options['searchable'] ? 'true' : 'false'; ?>) {
+                    const searchInput = document.getElementById('infinite-table-search');
+                    if (searchInput) {
+                        searchInput.addEventListener('input', function() {
+                            const searchTerm = this.value.toLowerCase().trim();
+                            const table = document.getElementById('<?php echo esc_js($table_id); ?>');
+                            const rows = table ? table.querySelectorAll('tbody tr') : [];
+                            let visibleIndex = 1;
+
+                            rows.forEach(row => {
+                                const text = row.textContent.toLowerCase();
+                                if (searchTerm === '' || text.includes(searchTerm)) {
+                                    row.style.display = '';
+                                    // Update index for visible rows
+                                    const indexCell = row.children[0];
+                                    if (indexCell && indexCell.tagName === 'TD') {
+                                        indexCell.textContent = visibleIndex++;
+                                    }
+                                } else {
+                                    row.style.display = 'none';
+                                }
+                            });
+                        });
+
+                        const clearSearchBtn = document.getElementById('clear-infinite-search');
+                        if (clearSearchBtn) {
+                            clearSearchBtn.addEventListener('click', function() {
+                                searchInput.value = '';
+                                // Re-index all rows when clearing search
+                                const table = document.getElementById('<?php echo esc_js($table_id); ?>');
+                                const rows = table ? table.querySelectorAll('tbody tr') : [];
+                                rows.forEach((row, index) => {
+                                    row.style.display = '';
+                                    const indexCell = row.children[0];
+                                    if (indexCell && indexCell.tagName === 'TD') {
+                                        indexCell.textContent = index + 1;
+                                    }
+                                });
+                                searchInput.dispatchEvent(new Event('input'));
+                            });
+                        }
+                    }
+                }
+
+                // Select All functionality for infinite scroll
+                if (<?php echo $options['selectable'] ? 'true' : 'false'; ?>) {
+                    const selectAllCheckbox = document.getElementById('infinite-select-all-checkbox');
+                    const rowCheckboxes = document.querySelectorAll('.infinite-row-checkbox');
+
+                    if (selectAllCheckbox) {
+                        selectAllCheckbox.addEventListener('change', function() {
+                            const checked = this.checked;
+                            rowCheckboxes.forEach(checkbox => {
+                                const row = checkbox.closest('tr');
+                                if (row && row.style.display !== 'none') {
+                                    checkbox.checked = checked;
+                                }
+                            });
+                        });
+                    }
+
+                    rowCheckboxes.forEach(checkbox => {
+                        checkbox.addEventListener('change', function() {
+                            const visibleCheckboxes = Array.from(rowCheckboxes).filter(cb => {
+                                const row = cb.closest('tr');
+                                return row && row.style.display !== 'none';
+                            });
+
+                            const checkedVisibleBoxes = visibleCheckboxes.filter(cb => cb.checked);
+
+                            if (selectAllCheckbox) {
+                                if (checkedVisibleBoxes.length === visibleCheckboxes.length && visibleCheckboxes.length > 0) {
+                                    selectAllCheckbox.checked = true;
+                                    selectAllCheckbox.indeterminate = false;
+                                } else if (checkedVisibleBoxes.length === 0) {
+                                    selectAllCheckbox.checked = false;
+                                    selectAllCheckbox.indeterminate = false;
+                                } else {
+                                    selectAllCheckbox.checked = false;
+                                    selectAllCheckbox.indeterminate = true;
+                                }
+                            }
+                        });
                     });
-                });
-            }
-        });
+                }
+
+                // Sorting functionality - client-side sorting for infinite scroll
+                if (<?php echo $options['sortable'] ? 'true' : 'false'; ?>) {
+                    const table = document.getElementById('<?php echo esc_js($table_id); ?>');
+                    if (!table) return;
+                    
+                    const sortHeaders = table.querySelectorAll('.sortable-header');
+                    let currentSortColumn = '';
+                    let currentSortDirection = 'asc';
+
+                    sortHeaders.forEach(header => {
+                        header.addEventListener('click', function(e) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            
+                            const th = this.closest('th');
+                            const column = th ? th.getAttribute('data-column') : null;
+                            const icon = this.querySelector('.sort-icon');
+                            const tbody = table.querySelector('tbody');
+                            
+                            if (!tbody || !column) return;
+
+                            // Determine sort direction
+                            if (currentSortColumn === column) {
+                                currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+                            } else {
+                                currentSortDirection = 'asc';
+                            }
+                            currentSortColumn = column;
+
+                            // Reset all icons
+                            sortHeaders.forEach(h => {
+                                const i = h.querySelector('.sort-icon');
+                                if (i) i.style.transform = 'rotate(0deg)';
+                            });
+
+                            // Set current icon
+                            if (icon) {
+                                icon.style.transform = currentSortDirection === 'asc' ? 'rotate(180deg)' : 'rotate(0deg)';
+                            }
+
+                            // Get column index from the table header row
+                            const headerRow = table.querySelector('thead tr');
+                            const columnIndex = Array.from(headerRow.children).indexOf(th);
+                            
+                            // Skip sorting if it's the index column (first column)
+                            if (columnIndex === 0) {
+                                return;
+                            }
+
+                            // Sort rows
+                            const rows = Array.from(tbody.querySelectorAll('tr'));
+                            
+                            rows.sort((a, b) => {
+                                const aCell = a.children[columnIndex];
+                                const bCell = b.children[columnIndex];
+                                
+                                if (!aCell || !bCell) return 0;
+                                
+                                let aVal = aCell.textContent?.trim() || '';
+                                let bVal = bCell.textContent?.trim() || '';
+                                
+                                // Try to parse as numbers for numeric sorting
+                                const aNum = parseFloat(aVal.replace(/[^0-9.-]/g, ''));
+                                const bNum = parseFloat(bVal.replace(/[^0-9.-]/g, ''));
+                                
+                                if (!isNaN(aNum) && !isNaN(bNum)) {
+                                    // Numeric comparison
+                                    aVal = aNum;
+                                    bVal = bNum;
+                                } else {
+                                    // String comparison
+                                    aVal = aVal.toLowerCase();
+                                    bVal = bVal.toLowerCase();
+                                }
+                                
+                                if (currentSortDirection === 'asc') {
+                                    return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+                                } else {
+                                    return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
+                                }
+                            });
+
+                            // Re-append sorted rows and update index numbers
+                            rows.forEach((row, index) => {
+                                // Update the index column (first cell) with new row number
+                                const indexCell = row.children[0];
+                                if (indexCell && indexCell.tagName === 'TD') {
+                                    indexCell.textContent = index + 1;
+                                }
+                                tbody.appendChild(row);
+                            });
+                        });
+                    });
+                }
+            });
         </script>
-        <?php endif; ?>
-        
-        <?php
+
+    <?php
         return ob_get_clean();
     }
-    
+
     /**
      * Render a server-side table (DataTables)
      */
-    public static function server_side($columns, $options = []) {
+    public static function server_side($columns, $options = [])
+    {
         $defaults = [
             'title' => '',
             'subtitle' => '',
@@ -394,11 +406,11 @@ class KIT_Unified_Table {
             'ajax_action' => '',
             'actions' => []
         ];
-        
+
         $options = array_merge($defaults, $options);
-        
+
         ob_start();
-        ?>
+    ?>
         <div class="bg-white shadow rounded-lg overflow-hidden">
             <div class="px-6 py-4 border-b border-gray-200">
                 <div class="flex justify-between items-center">
@@ -412,21 +424,21 @@ class KIT_Unified_Table {
                     </div>
                 </div>
             </div>
-            
+
             <div class="overflow-x-auto">
                 <table id="server-side-table" class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
-                        <tr>
+                        <tr class="dd3s1234">
                             <?php foreach ($columns as $key => $column): ?>
                                 <?php
                                 $label = is_array($column) ? $column['label'] : $column;
                                 ?>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     <?php echo esc_html($label); ?>
                                 </th>
                             <?php endforeach; ?>
                             <?php if (!empty($options['actions'])): ?>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     Actions
                                 </th>
                             <?php endif; ?>
@@ -438,49 +450,52 @@ class KIT_Unified_Table {
                 </table>
             </div>
         </div>
-        
+
         <script>
-        jQuery(document).ready(function($) {
-            $('#server-side-table').DataTable({
-                processing: true,
-                serverSide: true,
-                ajax: {
-                    url: '<?php echo esc_url($options['ajax_url']); ?>',
-                    type: 'POST',
-                    data: {
-                        action: '<?php echo esc_attr($options['ajax_action']); ?>'
-                    }
-                },
-                columns: [
-                    <?php foreach ($columns as $key => $column): ?>
-                        { data: '<?php echo esc_js($key); ?>' },
-                    <?php endforeach; ?>
-                    <?php if (!empty($options['actions'])): ?>
-                        { 
-                            data: null,
-                            orderable: false,
-                            render: function(data, type, row) {
-                                let actions = '';
-                                <?php foreach ($options['actions'] as $action): ?>
-                                    <?php
-                                    $href = $action['href'] ?? '#';
-                                    $class = $action['class'] ?? 'text-blue-600 hover:text-blue-800';
-                                    $onclick = isset($action['onclick']) ? 'onclick="' . esc_attr($action['onclick']) . '"' : '';
-                                    ?>
-                                    actions += '<a href="<?php echo esc_url($href); ?>" class="<?php echo esc_attr($class); ?>" <?php echo $onclick; ?>><?php echo esc_html($action['label']); ?></a>';
-                                    <?php if ($action !== end($options['actions'])): ?>
-                                        actions += ' | ';
-                                    <?php endif; ?>
-                                <?php endforeach; ?>
-                                return actions;
-                            }
+            jQuery(document).ready(function($) {
+                $('#server-side-table').DataTable({
+                    processing: true,
+                    serverSide: true,
+                    ajax: {
+                        url: '<?php echo esc_url($options['ajax_url']); ?>',
+                        type: 'POST',
+                        data: {
+                            action: '<?php echo esc_attr($options['ajax_action']); ?>'
                         }
-                    <?php endif; ?>
-                ]
+                    },
+                    columns: [
+                        <?php foreach ($columns as $key => $column): ?> {
+                                data: '<?php echo esc_js($key); ?>'
+                            },
+                        <?php endforeach; ?>
+                        <?php if (!empty($options['actions'])): ?> {
+                                data: null,
+                                orderable: false,
+                                render: function(data, type, row) {
+                                    let actions = '';
+                                    <?php foreach ($options['actions'] as $action): ?>
+                                        <?php
+                                        $href = $action['href'] ?? '#';
+                                        $class = $action['class'] ?? 'text-blue-600 hover:text-blue-800';
+                                        $onclick = isset($action['onclick']) ? 'onclick="' . esc_attr($action['onclick']) . '"' : '';
+                                        ?>
+                                        <?php 
+                                        $label_output = (isset($action['is_html']) && $action['is_html']) ? $action['label'] : esc_html($action['label']);
+                                        ?>
+                                        actions += '<a href="<?php echo esc_url($href); ?>" class="<?php echo esc_attr($class); ?>" <?php echo $onclick; ?>><?php echo $label_output; ?></a>';
+                                        <?php if ($action !== end($options['actions'])): ?>
+                                            actions += ' | ';
+                                        <?php endif; ?>
+                                    <?php endforeach; ?>
+                                    return actions;
+                                }
+                            }
+                        <?php endif; ?>
+                    ]
+                });
             });
-        });
         </script>
-        <?php
+<?php
         return ob_get_clean();
     }
 }

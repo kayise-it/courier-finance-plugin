@@ -3,47 +3,45 @@
 <?php
 // Include the reusable delivery card component
 require_once __DIR__ . '/deliveryCard.php';
+
+// Check if we should hide the header (for integrated use in editWaybill)
+$hide_header = isset($atts['hide_header']) && $atts['hide_header'] === true;
 ?>
 <style>
-/* Simple selection styling for delivery cards */
+/* Simple delivery card styling */
+.delivery-card {
+    transition: all 0.2s ease;
+}
+
+.delivery-card:hover:not(.selected) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
 .delivery-card.selected {
     background-color: #dbeafe !important;
     border: 2px solid #3b82f6 !important;
 }
 
-
-
-/* Smooth transitions for all properties */
-.delivery-card {
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* Enhanced hover effect */
-.delivery-card:hover:not(.selected) {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+#scheduled-deliveries-container {
+    background: transparent;
 }
 </style>
-<div id="scheduled-deliveries-container" class="mt-4">
+<div id="scheduled-deliveries-container" class="<?= $hide_header ? '' : 'mt-4' ?>">
+    <?php if (!$hide_header): ?>
     <h4 class="text-md font-medium text-gray-600 mb-2">Scheduled Deliveries</h4>
+    <?php endif; ?>
     
     <!-- Smart Grouping Header -->
     <div class="flex items-center justify-between mb-4">
-        <div class="flex items-center space-x-3">
-            <span class="text-sm font-medium text-gray-700">Group by:</span>
-            <select id="grouping-option" class="text-sm border border-gray-200 rounded-lg px-3 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="none">No grouping</option>
-                <option value="week">Week</option>
-                <option value="month">Month</option>
-            </select>
-        </div>
+        
         <div class="text-sm text-gray-500">
             <span id="delivery-count"><?php echo count(KIT_Deliveries::getScheduledDeliveries()); ?></span> deliveries available
         </div>
     </div>
     
     <!-- Horizontal Row Layout - match the image layout -->
-    <div id="scheduled-deliveries-list" class="flex flex-wrap gap-3 min-h-32 max-h-96 overflow-y-auto">
+    <div id="scheduled-deliveries-list" class="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-6 gap-3 min-h-32 max-h-96 overflow-y-auto">
         <?php
         $delivery_going = KIT_Deliveries::getScheduledDeliveries();
 
@@ -52,6 +50,9 @@ require_once __DIR__ . '/deliveryCard.php';
             renderDeliveryCard($delivery, 'scheduled', true, 'handleDeliveryClick');
         endforeach; ?>
     </div>
+
+    <!-- otherzz -->
+     
     
     <!-- Enhanced Delivery Details -->
     <div id="deliveryDetails" class="mt-6 p-4 bg-white rounded-lg border border-gray-200 hidden">
@@ -78,6 +79,15 @@ require_once __DIR__ . '/deliveryCard.php';
 
 <!-- Simple JavaScript for Delivery Card Selection -->
 <script>
+// Handle delivery card clicks (wrapper to ensure compatibility)
+window.handleDeliveryClick = function(cardElement, directionId) {
+    if (typeof window.selectDeliveryCard === 'function') {
+        window.selectDeliveryCard(cardElement, directionId);
+    } else {
+        selectDeliveryCard(cardElement, directionId);
+    }
+};
+
 // Simple function to select delivery cards
 function selectDeliveryCard(cardElement, directionId) {
     console.log('Card clicked:', directionId);
@@ -113,18 +123,39 @@ function selectDeliveryCard(cardElement, directionId) {
         console.warn('direction_id field not found!');
     }
     
+    // Persist selected delivery id for submission
+    const selectedDeliveryHidden = document.getElementById('selected_delivery_id');
+    if (selectedDeliveryHidden) {
+        // Card data-index carries delivery id when available; fallback to directionId
+        const deliveryId = cardElement.getAttribute('data-index') || String(directionId);
+        selectedDeliveryHidden.value = deliveryId;
+        console.log('Set hidden delivery_id to:', selectedDeliveryHidden.value);
+    } else {
+        console.warn('Hidden selected_delivery_id input not found');
+    }
+
     // Show delivery details
     const deliveryDetails = document.getElementById('deliveryDetails');
     if (deliveryDetails) {
         deliveryDetails.classList.remove('hidden');
         
-        // Get delivery information from the card
+        // Get delivery information from the card (prefer data attributes)
         const dateElement = cardElement.querySelector('.text-xs.font-bold');
         const routeElements = cardElement.querySelectorAll('.font-medium');
-        
-        const date = dateElement ? dateElement.textContent : 'Unknown';
-        const origin = routeElements[0] ? routeElements[0].textContent : 'Unknown';
-        const destination = routeElements[1] ? routeElements[1].textContent : 'Unknown';
+
+        const date = cardElement.dataset.dispatchDate || (dateElement ? dateElement.textContent : 'Unknown');
+        const origin = cardElement.dataset.originCountry || (routeElements[0] ? routeElements[0].textContent : 'Unknown');
+        const destination = cardElement.dataset.destinationCountry || (routeElements[1] ? routeElements[1].textContent : 'Unknown');
+        const direction = cardElement.dataset.directionId || String(directionId);
+        const reference = cardElement.dataset.reference || '—';
+        const truck = cardElement.dataset.truckNumber || '—';
+        const driverId = cardElement.dataset.driverId || '';
+        const driverName = cardElement.dataset.driverName || '';
+        const driverPhone = cardElement.dataset.driverPhone || '';
+        const status = cardElement.dataset.status || 'Scheduled';
+        const description = cardElement.dataset.description || '';
+        const originCode = cardElement.dataset.originCode || '';
+        const destinationCode = cardElement.dataset.destinationCode || '';
         
         // Populate the details content
         const detailsContent = document.getElementById('delivery-details-content');
@@ -134,14 +165,14 @@ function selectDeliveryCard(cardElement, directionId) {
                     <h5 class="font-medium text-blue-900 mb-2">Selected Delivery</h5>
                     <div class="text-sm text-blue-800">
                         <div class="font-medium">${date}</div>
-                        <div>${origin} → ${destination}</div>
+                        <div>${origin} ${originCode ? '(' + originCode + ')' : ''} → ${destination} ${destinationCode ? '(' + destinationCode + ')' : ''}</div>
                     </div>
                 </div>
                 
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <span class="text-sm font-medium text-gray-500">Direction ID:</span>
-                        <span class="text-sm text-gray-900 ml-2">${directionId}</span>
+                        <span class="text-sm text-gray-900 ml-2">${direction}</span>
                     </div>
                     <div>
                         <span class="text-sm font-medium text-gray-500">Date:</span>
@@ -157,8 +188,26 @@ function selectDeliveryCard(cardElement, directionId) {
                     </div>
                     <div>
                         <span class="text-sm font-medium text-gray-500">Status:</span>
-                        <span class="text-sm text-gray-900 ml-2">Scheduled</span>
+                        <span class="text-sm text-gray-900 ml-2">${status[0].toUpperCase() + status.slice(1)}</span>
                     </div>
+                    <div>
+                        <span class="text-sm font-medium text-gray-500">Reference:</span>
+                        <span class="text-sm text-gray-900 ml-2">${reference}</span>
+                    </div>
+                    <div>
+                        <span class="text-sm font-medium text-gray-500">Truck:</span>
+                        <span class="text-sm text-gray-900 ml-2">${truck}</span>
+                    </div>
+                    ${driverName || driverId ? `
+                    <div>
+                        <span class="text-sm font-medium text-gray-500">Driver:</span>
+                        <span class="text-sm text-gray-900 ml-2">${driverName || driverId}${driverPhone ? ' • ' + driverPhone : ''}</span>
+                    </div>` : ''}
+                    ${description ? `
+                    <div class="col-span-2">
+                        <span class="text-sm font-medium text-gray-500">Notes:</span>
+                        <span class="text-sm text-gray-900 ml-2">${description}</span>
+                    </div>` : ''}
                 </div>
             `;
         }
@@ -176,13 +225,13 @@ function checkButtonConditions() {
     // Check if a delivery is selected
     const hasDeliverySelected = document.querySelector('.delivery-card.selected') !== null;
     
-    // Check if warehoused option is checked
-    const isWarehoused = document.getElementById('warehoused_option')?.checked || false;
+    // Check if pending option is checked
+    const isWarehoused = document.getElementById('pending_option')?.checked || false;
     
     // Check destination country (always required)
     const destinationCountry = document.getElementById('stepDestinationSelect')?.value || '';
     
-    // Check destination city (only required if not warehoused)
+    // Check destination city (only required if not pending)
     const destinationCity = document.getElementById('destination_city')?.value || '';
     
     // Determine if we can proceed based on the two valid scenarios:
@@ -228,7 +277,7 @@ function checkButtonConditions() {
     }
 }
 
-// Set default rate for warehoused items (South Africa - direction_id = 1)
+// Set default rate for pending items (South Africa - direction_id = 1)
 function setWarehouseDefaultRate() {
     console.log('🏠 Setting warehouse default rate to South Africa (direction_id = 1)');
     
@@ -293,10 +342,10 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Add event listeners for destination fields and warehoused option
+    // Add event listeners for destination fields and pending option
     const destinationCountry = document.getElementById('stepDestinationSelect');
     const destinationCity = document.getElementById('destination_city');
-    const warehousedOption = document.getElementById('warehoused_option');
+    const pendingOption = document.getElementById('pending_option');
     
     if (destinationCountry) {
         destinationCountry.addEventListener('change', checkButtonConditions);
@@ -306,14 +355,14 @@ document.addEventListener('DOMContentLoaded', function() {
         destinationCity.addEventListener('change', checkButtonConditions);
     }
     
-    if (warehousedOption) {
-        warehousedOption.addEventListener('change', function() {
+    if (pendingOption) {
+        pendingOption.addEventListener('change', function() {
             if (this.checked) {
                 // Clear delivery selection when warehouse is checked
                 console.log('📦 Warehouse checked - clearing delivery selection');
                 clearDeliverySelection();
                 
-                // Set default rate charge group to South Africa for warehoused items
+                // Set default rate charge group to South Africa for pending items
                 setWarehouseDefaultRate();
                 
                 // Add a small delay to ensure clearing is complete before validation

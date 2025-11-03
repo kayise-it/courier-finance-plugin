@@ -5,7 +5,7 @@ if (! defined('ABSPATH')) {
 
 class KIT_Modal
 {
-    public static function render($id, $title = '', $content = '', $size = 'md')
+    public static function render($id, $title = '', $content = '', $size = 'md', $show_button = true, $button_text = '')
     {
         $size_classes = [
             'sm'   => 'max-w-sm',
@@ -21,16 +21,20 @@ class KIT_Modal
 
         ob_start(); ?>
         <?php
-        echo KIT_Commons::kitButton([
-            'color' => 'blue',
-            'modal' => 'create-waybill-modal',
-            'icon' => 'plus',
-        ], $title); ?>
+        if ($show_button) {
+            $button_label = $button_text ?: $title;
+            echo KIT_Commons::kitButton([
+                'color' => 'blue',
+                'modal' => $id,
+                'icon' => 'plus',
+            ], $button_label);
+        }
+        ?>
         <div id="<?php echo esc_attr($id); ?>"
             class="hidden fixed inset-0 z-[99999] items-start pt-10 justify-center bg-black bg-opacity-50 overflow-y-auto">
             <!-- Modal panel -->
-            <div class="bg-white rounded-lg shadow-xl overflow-y-auto">
-                <div class="flex justify-between items-center px-6 py-4 border-b">
+            <div class="bg-white rounded-lg shadow-xl overflow-y-auto <?php echo esc_attr($size_class); ?> max-h-[90vh] my-8">
+                <div class="flex justify-between items-center px-6 py-4 border-b sticky top-0 bg-white z-10">
                     <?php if ($title): ?>
                         <h3 class="text-lg font-semibold text-gray-800"><?php echo esc_html($title); ?></h3>
                     <?php endif; ?>

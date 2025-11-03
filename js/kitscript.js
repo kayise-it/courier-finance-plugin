@@ -191,22 +191,15 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }, 1000); // 1 second delay to ensure all elements are loaded
     });
-    // Dispatch date validation
+    // Dispatch date validation - REMOVED: Allow editing of old deliveries
+    // Previously restricted dates to today or later, but users need to edit past deliveries
     var dispatchDateInput = document.getElementById('dispatch_date');
-    var today = new Date().toISOString().split('T')[0];
-
+    
     if (dispatchDateInput) {
-        // Set min date attribute
-        dispatchDateInput.min = today;
-
-        // Additional validation on form submission
-        document.querySelector('form').addEventListener('submit', function (e) {
-            var selectedDate = dispatchDateInput.value;
-            if (selectedDate < today) {
-                e.preventDefault();
-                dispatchDateInput.focus();
-            }
-        });
+        // Remove any min date restriction to allow editing old deliveries
+        dispatchDateInput.removeAttribute('min');
+        
+        // Removed date validation on form submission - allow past dates
     }
 
     // VAT checkbox functionality
@@ -379,7 +372,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // Warehoused checkbox
-    jQuery(document).on('change', '#warehoused_option', function () {
+    jQuery(document).on('change', '#pending_option', function () {
         var scheduledDeliveriesList = document.getElementById('scheduled-deliveries-list');
         var nextBtn = document.getElementById('step4NextBtn');
         var destinationCountry = document.getElementById('stepDestinationSelect');
@@ -388,13 +381,13 @@ document.addEventListener('DOMContentLoaded', function () {
         var destinationCityHelp = document.getElementById('destination-city-help');
         
         if (jQuery(this).is(':checked')) {
-            // Hide scheduled deliveries when warehoused is checked
+            // Hide scheduled deliveries when pending is checked
             scheduledDeliveriesList.classList.add('hidden');
             
-            // Enable the next button for warehoused items
+            // Enable the next button for pending items
             setStep4NextState(true);
             
-            // Clear destination fields for warehoused items
+            // Clear destination fields for pending items
             if (destinationCountry) destinationCountry.value = '';
             if (destinationCity) destinationCity.value = '';
             
@@ -403,7 +396,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (destinationCityHelp) destinationCityHelp.style.display = 'none';
             
         } else {
-            // Show scheduled deliveries when warehoused is unchecked
+            // Show scheduled deliveries when pending is unchecked
             scheduledDeliveriesList.classList.remove('hidden');
             
             // Show helper text for destination fields
@@ -427,15 +420,15 @@ document.addEventListener('DOMContentLoaded', function () {
     
     // Function to validate destination selection
     function validateDestinationSelection() {
-        var warehousedCheckbox = document.getElementById('warehoused_option');
+        var pendingCheckbox = document.getElementById('pending_option');
         var nextBtn = document.getElementById('step4NextBtn');
         var destinationCountry = document.getElementById('stepDestinationSelect');
         var destinationCity = document.getElementById('destination_city');
         var destinationCountryHelp = document.getElementById('destination-country-help');
         var destinationCityHelp = document.getElementById('destination-city-help');
         
-        // If warehoused is checked, no validation needed
-        if (warehousedCheckbox && warehousedCheckbox.checked) {
+        // If pending is checked, no validation needed
+        if (pendingCheckbox && pendingCheckbox.checked) {
             setStep4NextState(true);
             return;
         }
@@ -478,11 +471,11 @@ document.addEventListener('DOMContentLoaded', function () {
         validateDestinationSelection();
         
         // Set initial state for helper text visibility
-        var warehousedCheckbox = document.getElementById('warehoused_option');
+        var pendingCheckbox = document.getElementById('pending_option');
         var destinationCountryHelp = document.getElementById('destination-country-help');
         var destinationCityHelp = document.getElementById('destination-city-help');
         
-        if (warehousedCheckbox && warehousedCheckbox.checked) {
+        if (pendingCheckbox && pendingCheckbox.checked) {
             if (destinationCountryHelp) destinationCountryHelp.style.display = 'none';
             if (destinationCityHelp) destinationCityHelp.style.display = 'none';
         }

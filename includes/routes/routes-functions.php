@@ -46,6 +46,14 @@ class KIT_Routes
         return $country_name;
     }
 
+    public static function get_city_name_by_id($city_id)
+    {
+        global $wpdb;
+        $table = $wpdb->prefix . 'kit_operating_cities';
+        $city_name = $wpdb->get_var($wpdb->prepare("SELECT city_name FROM $table WHERE id = %d", $city_id));
+        return $city_name;
+    }
+
     public static function get_routes()
     {
         global $wpdb;
@@ -333,7 +341,7 @@ class KIT_Routes
                     ];
 
                     // Render unified table with advanced features
-                    echo KIT_Unified_Table::advanced($routeData, $columns, [
+                    echo KIT_Unified_Table::infinite($routeData, $columns, [
                         'title' => 'All Routes',
                         'actions' => $actions,
                         'searchable' => true,
@@ -502,7 +510,7 @@ jQuery(document).ready(function($) {
                             label.style.color = '#6b7280';
                             label.style.boxShadow = 'none';
                         });
-                        if (radio.checked) {
+                        if (radio.checked && radio.parentElement) {
                             radio.parentElement.style.borderColor = '#2563eb';
                             radio.parentElement.style.background = '#dbeafe';
                             radio.parentElement.style.color = '#1e40af';
@@ -550,7 +558,7 @@ jQuery(document).ready(function($) {
         $route_status = isset($_GET['route_status']) ? $_GET['route_status'] : '';
 
         $is_edit_mode = ($route_id && $route_atts == 'edit_route');
-        $page_title = $is_edit_mode ? 'Edit Route' : 'Create Route';
+        $page_title = $is_edit_mode ? 'Edit Route' : 'Createf Route';
         $page_description = $is_edit_mode ? 'Update route details and settings' : 'Create a new shipping route';
 
     ?>
@@ -572,9 +580,7 @@ jQuery(document).ready(function($) {
                                 <span style="color:#9ca3af;">/</span>
                                 <span style="color:#374151; font-weight:600;"><?php echo $is_edit_mode ? 'Edit' : 'Create'; ?> Route</span>
                             </div>
-                            <div>
-                                <?php echo KIT_Commons::renderButton($is_edit_mode ? 'Update Route' : 'Create Route', 'primary', 'sm', ['type' => 'submit', 'form' => 'route-create-form', 'gradient' => true]); ?>
-                            </div>
+                         
                         </div>
 
                         <form id="route-create-form" method="post" action="<?php echo admin_url('admin-ajax.php'); ?>">
@@ -638,27 +644,39 @@ jQuery(document).ready(function($) {
                     }
 
                     function updatePreview() {
-                        var origin = getSelectedText('origin_country');
+                        var origin = getSelectedText('country_id');
                         var destination = getSelectedText('destination_country');
                         var statusRadio = form.querySelector('input[name="route_status"]:checked');
                         var status = statusRadio ? (statusRadio.value === 'active' ? 'Active' : 'Inactive') : 'Active';
-                        document.getElementById('preview-origin').textContent = origin || 'Not set';
-                        document.getElementById('preview-destination').textContent = destination || 'Not set';
-                        document.getElementById('preview-status').textContent = status;
+                        
+                        var previewOrigin = document.getElementById('preview-origin');
+                        var previewDestination = document.getElementById('preview-destination');
+                        var previewStatus = document.getElementById('preview-status');
+                        
+                        if (previewOrigin) previewOrigin.textContent = origin || 'Not set';
+                        if (previewDestination) previewDestination.textContent = destination || 'Not set';
+                        if (previewStatus) previewStatus.textContent = status;
                     }
 
                     form.addEventListener('change', function(e) {
-                        if (['origin_country', 'destination_country', 'route_status'].includes(e.target.name)) {
+                        if (['country_id', 'destination_country', 'route_status'].includes(e.target.name)) {
                             updatePreview();
                         }
                     });
 
-                    updatePreview();
+                    // Initialize preview only if form elements exist
+                    if (form.querySelector('[name="country_id"]') && form.querySelector('[name="destination_country"]')) {
+                        updatePreview();
+                    }
 
                     form.addEventListener('submit', function(e) {
                         e.preventDefault();
-                        var origin = form.querySelector('[name="origin_country"]').value;
-                        var destination = form.querySelector('[name="destination_country"]').value;
+                        var originInput = form.querySelector('[name="country_id"]');
+                        var destinationInput = form.querySelector('[name="destination_country"]');
+                        
+                        var origin = originInput ? originInput.value : '';
+                        var destination = destinationInput ? destinationInput.value : '';
+                        
                         if (!origin || !destination) {
                             if (window.KITToast) {
                                 window.KITToast.show('Please select both origin and destination countries.', 'warning', 'Validation');
@@ -729,8 +747,9 @@ jQuery(document).ready(function($) {
 
         // Sanitize/validate input
         $route_name = isset($_POST['route_name']) ? sanitize_text_field($_POST['route_name']) : '';
-        $origin_country_id = isset($_POST['origin_country']) ? intval($_POST['origin_country']) : 0;
-        $origin_city_id = isset($_POST['origin_city']) ? intval($_POST['origin_city']) : 0;
+        // Map form field names correctly - the form sends 'country_id' for origin
+        $origin_country_id = isset($_POST['country_id']) ? intval($_POST['country_id']) : 0;
+        $origin_city_id = isset($_POST['city_id']) ? intval($_POST['city_id']) : 0;
         $destination_country_id = isset($_POST['destination_country']) ? intval($_POST['destination_country']) : 0;
         $destination_city_id = isset($_POST['destination_city']) ? intval($_POST['destination_city']) : 0;
 
@@ -743,7 +762,7 @@ jQuery(document).ready(function($) {
         if (!$origin_country_id || !$destination_country_id) {
             $error_msg = 'Origin and destination countries are required';
             error_log('Route creation error: ' . $error_msg);
-            if ($is_ajax) {
+            if (defined('DOING_AJAX') && DOING_AJAX) {
                 wp_send_json_error($error_msg);
             } else {
                 wp_die($error_msg);

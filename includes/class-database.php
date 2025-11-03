@@ -61,7 +61,7 @@ class Database
             destination_city_id INT UNSIGNED NOT NULL,
             dispatch_date DATE,
             truck_number VARCHAR(50),
-            status ENUM('scheduled', 'in_transit', 'delivered') DEFAULT 'scheduled',
+            status ENUM('scheduled', 'in_transit', 'delivered', 'unconfirmed') DEFAULT 'scheduled',
             created_by INT NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -71,102 +71,74 @@ class Database
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
 
-        // Create a system delivery row for warehoused items
-        $wpdb->insert($table_name, [
-            'delivery_reference' => 'warehoused',
-            'direction_id' => 1,
-            'destination_city_id' => 1,
-            'created_by' => 0,
-            'created_at' => current_time('mysql')
-        ]);
-
-        // Seed default cross-border deliveries (idempotent)
-        self::seed_default_deliveries();
+        // Seed default cross-border deliveries removed - using Excel seed data instead
     }
-    /**
-     * Seed 3 deliveries SA -> Tanzania and 5 deliveries Tanzania -> SA (Johannesburg),
-     * scheduled randomly 5–15 days from now. Safe to call multiple times.
-     */
-    public static function seed_default_deliveries()
+
+    public static function create_drivers_table()
     {
         global $wpdb;
-        $deliveries_table = $wpdb->prefix . 'kit_deliveries';
-        $directions_table = $wpdb->prefix . 'kit_shipping_directions';
-        $countries_table = $wpdb->prefix . 'kit_operating_countries';
-        $cities_table = $wpdb->prefix . 'kit_operating_cities';
+        $table_name = $wpdb->prefix . 'kit_drivers';
+        $charset_collate = $wpdb->get_charset_collate();
 
-        // Only seed if there are no scheduled deliveries yet (besides the warehoused placeholder)
-        $existing = (int)$wpdb->get_var("SELECT COUNT(*) FROM {$deliveries_table} WHERE delivery_reference <> 'warehoused'");
-        if ($existing > 0) {
-            return; // Already seeded/has data
-        }
+        $sql = "CREATE TABLE $table_name (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            name VARCHAR(255) NOT NULL,
+            phone VARCHAR(20) NULL,
+            email VARCHAR(255) NULL,
+            license_number VARCHAR(50) NULL,
+            is_active TINYINT(1) DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            INDEX idx_active (is_active)
+        ) $charset_collate;";
 
-        // Resolve country IDs
-        $sa_id = (int)$wpdb->get_var("SELECT id FROM {$countries_table} WHERE country_name = 'South Africa'");
-        $tz_id = (int)$wpdb->get_var("SELECT id FROM {$countries_table} WHERE country_name = 'Tanzania'");
-        if (!$sa_id || !$tz_id) {
-            return;
-        }
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+    }
 
-        // Resolve directions
-        $dir_sa_tz = (int)$wpdb->get_var($wpdb->prepare(
-            "SELECT id FROM {$directions_table} WHERE origin_country_id = %d AND destination_country_id = %d",
-            $sa_id, $tz_id
-        ));
-        $dir_tz_sa = (int)$wpdb->get_var($wpdb->prepare(
-            "SELECT id FROM {$directions_table} WHERE origin_country_id = %d AND destination_country_id = %d",
-            $tz_id, $sa_id
-        ));
-        if (!$dir_sa_tz || !$dir_tz_sa) {
-            return;
-        }
+    /**
+     * Add driver_id column to deliveries table and migrate truck_number data
+     */
+    public static function update_deliveries_table_for_drivers()
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'kit_deliveries';
+        $drivers_table = $wpdb->prefix . 'kit_drivers';
 
-        // Resolve destination cities
-        $dar_id = (int)$wpdb->get_var($wpdb->prepare(
-            "SELECT id FROM {$cities_table} WHERE country_id = %d AND city_name = %s",
-            $tz_id, 'Dar es Salaam'
-        ));
-        $jhb_id = (int)$wpdb->get_var($wpdb->prepare(
-            "SELECT id FROM {$cities_table} WHERE country_id = %d AND city_name = %s",
-            $sa_id, 'Johannesburg'
-        ));
-        if (!$dar_id || !$jhb_id) {
-            return;
-        }
+        // Check if driver_id column exists
+        $column_exists = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+                WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'driver_id'",
+                DB_NAME,
+                $table_name
+            )
+        );
 
-        // Helper to randomize dispatch dates 5–15 days from now
-        $randDate = function () {
-            $days = rand(5, 15);
-            return date('Y-m-d', strtotime("+{$days} days"));
-        };
+        if (empty($column_exists)) {
+            // Add driver_id column
+            $wpdb->query("ALTER TABLE $table_name ADD COLUMN driver_id INT UNSIGNED NULL AFTER truck_number");
+            
+            // Add foreign key constraint
+            $fk_exists = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT CONSTRAINT_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS 
+                    WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND CONSTRAINT_NAME = 'fk_deliveries_driver'",
+                    DB_NAME,
+                    $table_name
+                )
+            );
 
-        // Insert 3 deliveries SA -> TZ
-        for ($i = 1; $i <= 3; $i++) {
-            $wpdb->insert($deliveries_table, [
-                'delivery_reference' => 'SA-TZ-' . strtoupper(wp_generate_password(6, false, false)),
-                'direction_id' => $dir_sa_tz,
-                'destination_city_id' => $dar_id,
-                'dispatch_date' => $randDate(),
-                'status' => 'scheduled',
-                'created_by' => 0,
-                'created_at' => current_time('mysql'),
-            ]);
-        }
+            if (empty($fk_exists)) {
+                $wpdb->query("ALTER TABLE $table_name ADD CONSTRAINT fk_deliveries_driver 
+                    FOREIGN KEY (driver_id) REFERENCES $drivers_table(id) ON DELETE SET NULL");
+            }
 
-        // Insert 5 deliveries TZ -> SA (Johannesburg)
-        for ($i = 1; $i <= 5; $i++) {
-            $wpdb->insert($deliveries_table, [
-                'delivery_reference' => 'TZ-SA-' . strtoupper(wp_generate_password(6, false, false)),
-                'direction_id' => $dir_tz_sa,
-                'destination_city_id' => $jhb_id,
-                'dispatch_date' => $randDate(),
-                'status' => 'scheduled',
-                'created_by' => 0,
-                'created_at' => current_time('mysql'),
-            ]);
+            // Note: We keep truck_number for backward compatibility but it won't be used in the UI
         }
     }
-    
+
     public static function create_waybills_table()
     {
         global $wpdb;
@@ -175,6 +147,7 @@ class Database
 
         $sql = "CREATE TABLE $table_name (
         id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        description TEXT NULL,
         direction_id INT UNSIGNED NOT NULL,
         city_id INT UNSIGNED NULL,
         delivery_id INT UNSIGNED NOT NULL,
@@ -194,15 +167,16 @@ class Database
         volume_charge DECIMAL(10,2),
         charge_basis VARCHAR(20),
         vat_include VARCHAR(50),
-        warehouse VARCHAR(50),
+        warehouse BOOLEAN DEFAULT FALSE,
         miscellaneous LONGTEXT,
         include_sad500 TINYINT(1) DEFAULT 0,
         include_sadc TINYINT(1) DEFAULT 0,
         return_load TINYINT(1) DEFAULT 0,
         tracking_number VARCHAR(50),
+        qr_code_data VARCHAR(255) NULL,
         created_by BIGINT UNSIGNED NOT NULL,
         last_updated_by BIGINT UNSIGNED NOT NULL,
-        status ENUM('warehoused', 'pending', 'quoted', 'paid', 'completed', 'invoiced', 'rejected') DEFAULT 'pending',
+        status ENUM('pending', 'quoted', 'paid', 'assigned', 'shipped', 'delivered', 'completed', 'invoiced', 'rejected') DEFAULT 'pending',
         status_userid BIGINT UNSIGNED DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         last_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -213,12 +187,15 @@ class Database
         FOREIGN KEY (city_id) REFERENCES {$wpdb->prefix}kit_operating_cities(id),
         INDEX (status),
         INDEX (customer_id),
-        UNIQUE KEY waybill_no (waybill_no)
+        UNIQUE KEY waybill_no (waybill_no),
+        UNIQUE KEY product_invoice_number (product_invoice_number)
     ) $charset_collate;";
 
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
     }
+
+
     public static function create_waybill_items_table()
     {
         global $wpdb;
@@ -234,6 +211,7 @@ class Database
             unit_mass DECIMAL(10,2) DEFAULT 0,
             unit_volume DECIMAL(10,2) DEFAULT 0,
             total_price DECIMAL(10,2) DEFAULT 0,
+            client_invoice VARCHAR(50) NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             FOREIGN KEY (waybillno) REFERENCES {$wpdb->prefix}kit_waybills(waybill_no) ON DELETE CASCADE
@@ -241,7 +219,33 @@ class Database
 
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
+        
+        // Add client_invoice column if it doesn't exist (for existing installations)
+        self::add_client_invoice_column();
     }
+    
+    /**
+     * Add client_invoice column to waybill_items table if it doesn't exist
+     */
+    public static function add_client_invoice_column()
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'kit_waybill_items';
+        
+        // Check if column exists
+        $column_exists = $wpdb->get_results($wpdb->prepare(
+            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'client_invoice'",
+            DB_NAME,
+            $table_name
+        ));
+        
+        if (empty($column_exists)) {
+            $wpdb->query("ALTER TABLE $table_name ADD COLUMN client_invoice VARCHAR(50) NULL AFTER total_price");
+        }
+    }
+
+
     public static function create_invoices_table()
     {
         global $wpdb;
@@ -440,7 +444,7 @@ class Database
             id INT UNSIGNED NOT NULL AUTO_INCREMENT,
             origin_country_id INT UNSIGNED NOT NULL,
             destination_country_id INT UNSIGNED NOT NULL,
-            description VARCHAR(255) NULL,
+            description TEXT NULL,
             is_active TINYINT(1) DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -452,7 +456,7 @@ class Database
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
 
-        // Insert default active routes and a system delivery row for warehoused items
+        // Insert default active routes and a system delivery row for warehouse items
         $wpdb->insert($table_name, [
             'origin_country_id' => 1,
             'destination_country_id' => 1,
@@ -727,6 +731,18 @@ class Database
         global $wpdb;
         $table_name = $wpdb->prefix . 'kit_company_details';
         
+        // First check if table exists
+        $table_exists = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = %s AND table_name = %s",
+            DB_NAME,
+            $table_name
+        ));
+        
+        if ($table_exists == 0) {
+            // Table doesn't exist, skip adding column (it will be created with the column in create_company_details_table)
+            return;
+        }
+        
         // Check if international_price column exists
         $column_exists = $wpdb->get_results("SHOW COLUMNS FROM $table_name LIKE 'international_price'");
         
@@ -739,156 +755,17 @@ class Database
         }
     }
 
-    public static function create_warehouse_tracking_table()
-    {
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'kit_warehouse_tracking';
-        $charset_collate = $wpdb->get_charset_collate();
-
-        // Check if referenced tables exist before creating foreign keys
-        $waybills_exists = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}kit_waybills'");
-        $customers_exists = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}kit_customers'");
-
-        // Create table without foreign keys first
-        $sql = "CREATE TABLE $table_name (
-            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-            waybill_no INT UNSIGNED NOT NULL,
-            waybill_id INT UNSIGNED NOT NULL,
-            customer_id MEDIUMINT(10) UNSIGNED NOT NULL,
-            action ENUM('warehoused', 'assigned', 'removed') DEFAULT 'warehoused',
-            previous_status VARCHAR(50),
-            new_status VARCHAR(50),
-            assigned_delivery_id INT UNSIGNED NULL,
-            notes TEXT,
-            created_by BIGINT UNSIGNED NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (id),
-            KEY idx_waybill_no (waybill_no),
-            KEY idx_action (action),
-            KEY idx_created_at (created_at)
-        ) $charset_collate;";
-
-        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-        $result = dbDelta($sql);
-        
-        // Add foreign key constraints only if referenced tables exist and constraints don't already exist
-        if ($waybills_exists) {
-            $constraint_exists = $wpdb->get_var("
-                SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE 
-                WHERE TABLE_SCHEMA = '" . DB_NAME . "' 
-                AND TABLE_NAME = '$table_name' 
-                AND CONSTRAINT_NAME = 'fk_tracking_waybill_no'
-            ");
-            if (!$constraint_exists) {
-                $wpdb->query("ALTER TABLE $table_name ADD CONSTRAINT fk_tracking_waybill_no FOREIGN KEY (waybill_no) REFERENCES {$wpdb->prefix}kit_waybills(waybill_no) ON DELETE CASCADE");
-            }
-            
-            $constraint_exists = $wpdb->get_var("
-                SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE 
-                WHERE TABLE_SCHEMA = '" . DB_NAME . "' 
-                AND TABLE_NAME = '$table_name' 
-                AND CONSTRAINT_NAME = 'fk_tracking_waybill_id'
-            ");
-            if (!$constraint_exists) {
-                $wpdb->query("ALTER TABLE $table_name ADD CONSTRAINT fk_tracking_waybill_id FOREIGN KEY (waybill_id) REFERENCES {$wpdb->prefix}kit_waybills(id) ON DELETE CASCADE");
-            }
+    /**
+     * Write log message directly to file (bypasses error_reporting(0) and error_log issues)
+     */
+    private static function write_log($message) {
+        if (!defined('WP_CONTENT_DIR')) {
+            return; // WordPress not fully loaded
         }
-        
-        if ($customers_exists) {
-            $constraint_exists = $wpdb->get_var("
-                SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE 
-                WHERE TABLE_SCHEMA = '" . DB_NAME . "' 
-                AND TABLE_NAME = '$table_name' 
-                AND CONSTRAINT_NAME = 'fk_tracking_customer_id'
-            ");
-            if (!$constraint_exists) {
-                $wpdb->query("ALTER TABLE $table_name ADD CONSTRAINT fk_tracking_customer_id FOREIGN KEY (customer_id) REFERENCES {$wpdb->prefix}kit_customers(cust_id)");
-            }
-        }
-    }
-
-    public static function create_warehouse_items_table()
-    {
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'kit_warehouse_items';
-        $charset_collate = $wpdb->get_charset_collate();
-
-        // Check if referenced tables exist before creating foreign keys
-        $waybills_exists = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}kit_waybills'");
-        $customers_exists = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}kit_customers'");
-        $deliveries_exists = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}kit_deliveries'");
-        $users_exists = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->users}'");
-
-        // Create table without foreign keys first
-        $sql = "CREATE TABLE $table_name (
-            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-            waybill_id INT UNSIGNED NOT NULL,
-            customer_id MEDIUMINT(10) UNSIGNED NOT NULL,
-            item_description TEXT,
-            weight_kg DECIMAL(10,2) DEFAULT 0.00,
-            length_cm DECIMAL(10,2) DEFAULT 0.00,
-            width_cm DECIMAL(10,2) DEFAULT 0.00,
-            height_cm DECIMAL(10,2) DEFAULT 0.00,
-            volume_cm3 DECIMAL(10,2) DEFAULT 0.00,
-            status ENUM('in_warehouse', 'assigned', 'shipped', 'delivered') DEFAULT 'in_warehouse',
-            assigned_delivery_id INT UNSIGNED NULL,
-            assigned_by BIGINT UNSIGNED NULL,
-            assigned_at DATETIME NULL,
-            shipped_at DATETIME NULL,
-            delivered_at DATETIME NULL,
-            notes TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            PRIMARY KEY (id),
-            KEY idx_status (status),
-            KEY idx_waybill_id (waybill_id),
-            KEY idx_customer_id (customer_id),
-            KEY idx_assigned_delivery_id (assigned_delivery_id)
-        ) $charset_collate;";
-        
-        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-        $result = dbDelta($sql);
-        
-        // Add foreign key constraints only if referenced tables exist and constraints don't already exist
-        if ($waybills_exists) {
-            $constraint_exists = $wpdb->get_var("
-                SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE 
-                WHERE TABLE_SCHEMA = '" . DB_NAME . "' 
-                AND TABLE_NAME = '$table_name' 
-                AND CONSTRAINT_NAME = 'fk_warehouse_waybill_id'
-            ");
-            if (!$constraint_exists) {
-                $wpdb->query("ALTER TABLE $table_name ADD CONSTRAINT fk_warehouse_waybill_id FOREIGN KEY (waybill_id) REFERENCES {$wpdb->prefix}kit_waybills(id) ON DELETE CASCADE");
-            }
-        }
-        
-        if ($customers_exists) {
-            $constraint_exists = $wpdb->get_var("
-                SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE 
-                WHERE TABLE_SCHEMA = '" . DB_NAME . "' 
-                AND TABLE_NAME = '$table_name' 
-                AND CONSTRAINT_NAME = 'fk_warehouse_customer_id'
-            ");
-            if (!$constraint_exists) {
-                $wpdb->query("ALTER TABLE $table_name ADD CONSTRAINT fk_warehouse_customer_id FOREIGN KEY (customer_id) REFERENCES {$wpdb->prefix}kit_customers(cust_id) ON DELETE CASCADE");
-            }
-        }
-        
-        if ($deliveries_exists) {
-            $constraint_exists = $wpdb->get_var("
-                SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE 
-                WHERE TABLE_SCHEMA = '" . DB_NAME . "' 
-                AND TABLE_NAME = '$table_name' 
-                AND CONSTRAINT_NAME = 'fk_warehouse_delivery_id'
-            ");
-            if (!$constraint_exists) {
-                $wpdb->query("ALTER TABLE $table_name ADD CONSTRAINT fk_warehouse_delivery_id FOREIGN KEY (assigned_delivery_id) REFERENCES {$wpdb->prefix}kit_deliveries(id) ON DELETE SET NULL");
-            }
-        }
-        
-        // Note: Foreign key constraint to wp_users table is not created because
-        // the wp_users table uses MyISAM storage engine which doesn't support foreign keys
-        // The assigned_by field will still work for data integrity, just without FK constraint
+        $log_file = WP_CONTENT_DIR . '/deactivation-debug.log';
+        $timestamp = date('Y-m-d H:i:s');
+        $log_entry = "[$timestamp] $message" . PHP_EOL;
+        @file_put_contents($log_file, $log_entry, FILE_APPEND);
     }
 
     public static function delete_table($name)
@@ -897,12 +774,36 @@ class Database
         $table_name = $wpdb->prefix . $name;
         
         try {
-            $result = $wpdb->query("DROP TABLE IF EXISTS $table_name");
-            if ($result === false) {
-                error_log("Failed to drop table: $table_name - " . $wpdb->last_error);
+            self::write_log("Attempting to drop table: $table_name");
+            
+            // Check if table exists first
+            $table_exists = $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = %s AND table_name = %s",
+                DB_NAME,
+                $table_name
+            ));
+            
+            if ($table_exists == 0) {
+                self::write_log("Table $table_name does not exist, skipping");
+                return true;
             }
+            
+            $result = $wpdb->query("DROP TABLE IF EXISTS `$table_name`");
+            if ($result === false) {
+                $error_msg = "Failed to drop table: $table_name - " . $wpdb->last_error;
+                self::write_log($error_msg);
+                return false;
+            }
+            self::write_log("Successfully dropped table: $table_name");
+            return true;
         } catch (Exception $e) {
-            error_log("Error dropping table $table_name: " . $e->getMessage());
+            $error_msg = "Error dropping table $table_name: " . $e->getMessage();
+            self::write_log($error_msg);
+            return false;
+        } catch (Error $e) {
+            $error_msg = "Fatal error dropping table $table_name: " . $e->getMessage();
+            self::write_log($error_msg);
+            return false;
         }
     }
     public static function activate()
@@ -916,70 +817,218 @@ class Database
         self::create_shipping_rates_mass_table();
         self::create_shipping_rates_volume_table();
         self::create_shipping_dedicated_truck_rates_table();
+        self::create_drivers_table();
         self::create_deliveries_table();
+        self::update_deliveries_table_for_drivers();
+        
+        // Create company_details table first (before trying to add columns to it)
+        self::create_company_details_table();
         
         // Add international_price field to existing company_details table if it doesn't exist
         self::add_international_price_field();
         self::create_waybills_table();
         self::create_waybill_items_table();
+        self::add_client_invoice_column(); // Ensure column exists for existing installations
+        self::add_product_invoice_number_unique(); // Ensure unique constraint exists
         self::create_quotations_table();
         self::create_invoices_table();
         self::create_discounts_table();
-        self::create_company_details_table();
-        self::create_warehouse_tracking_table();
-        self::create_warehouse_items_table();
+    }
+    
+    /**
+     * Add unique constraint on product_invoice_number if it doesn't exist
+     */
+    public static function add_product_invoice_number_unique()
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'kit_waybills';
+        
+        // Check if unique constraint exists
+        $constraint_exists = $wpdb->get_results($wpdb->prepare(
+            "SELECT CONSTRAINT_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS 
+            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s 
+            AND CONSTRAINT_TYPE = 'UNIQUE' AND CONSTRAINT_NAME = 'product_invoice_number'",
+            DB_NAME,
+            $table_name
+        ));
+        
+        if (empty($constraint_exists)) {
+            // First, make sure there are no duplicate product_invoice_number values
+            // Set NULL or unique values for duplicates
+            $wpdb->query("
+                UPDATE $table_name w1
+                INNER JOIN (
+                    SELECT product_invoice_number, MIN(id) as min_id
+                    FROM $table_name
+                    WHERE product_invoice_number IS NOT NULL 
+                    AND product_invoice_number != ''
+                    GROUP BY product_invoice_number
+                    HAVING COUNT(*) > 1
+                ) w2 ON w1.product_invoice_number = w2.product_invoice_number
+                SET w1.product_invoice_number = CONCAT(w1.product_invoice_number, '-', w1.id)
+                WHERE w1.id != w2.min_id
+            ");
+            
+            // Add unique constraint
+            $wpdb->query("ALTER TABLE $table_name ADD UNIQUE KEY product_invoice_number (product_invoice_number)");
+        }
     }
     public static function deactivate()
     {
         global $wpdb;
         
+        self::write_log('=== DEACTIVATION STARTED ===');
+        self::write_log('Database::deactivate() method called');
+        
+        $dropped_tables = [];
+        $failed_tables = [];
+        
         try {
             // Temporarily disable FK checks to prevent constraint errors during teardown
-            $wpdb->query('SET FOREIGN_KEY_CHECKS=0');
+            $fk_disabled = $wpdb->query('SET FOREIGN_KEY_CHECKS=0');
+            if ($fk_disabled === false) {
+                self::write_log('Warning: Failed to disable FOREIGN_KEY_CHECKS: ' . $wpdb->last_error);
+            } else {
+                self::write_log('FOREIGN_KEY_CHECKS disabled');
+            }
 
             // 1) Drop deepest child tables first (those that reference parents)
-            // Warehouse tracking references waybills → drop first
-            self::delete_table('kit_warehouse_tracking');
             // Waybill items reference waybills
-            self::delete_table('kit_waybill_items');
+            if (self::delete_table('kit_waybill_items')) {
+                $dropped_tables[] = 'kit_waybill_items';
+            } else {
+                $failed_tables[] = 'kit_waybill_items';
+            }
             // Other children that may reference waybills
-            self::delete_table('kit_quotations');
-            self::delete_table('kit_invoices');
+            if (self::delete_table('kit_quotations')) {
+                $dropped_tables[] = 'kit_quotations';
+            } else {
+                $failed_tables[] = 'kit_quotations';
+            }
+            if (self::delete_table('kit_invoices')) {
+                $dropped_tables[] = 'kit_invoices';
+            } else {
+                $failed_tables[] = 'kit_invoices';
+            }
 
-            // 2) Now drop waybills (referenced by tracking/items/quotations/invoices)
-            self::delete_table('kit_waybills');
+            // 2) Now drop waybills (referenced by items/quotations/invoices)
+            if (self::delete_table('kit_waybills')) {
+                $dropped_tables[] = 'kit_waybills';
+            } else {
+                $failed_tables[] = 'kit_waybills';
+            }
 
             // 3) Drop deliveries (referenced by waybills)
-            self::delete_table('kit_deliveries');
+            if (self::delete_table('kit_deliveries')) {
+                $dropped_tables[] = 'kit_deliveries';
+            } else {
+                $failed_tables[] = 'kit_deliveries';
+            }
 
             // 4) Drop rate tables (depend on directions & rate types)
-            self::delete_table('kit_shipping_rates_mass');
-            self::delete_table('kit_shipping_rates_volume');
-            self::delete_table('kit_shipping_dedicated_truck_rates');
+            if (self::delete_table('kit_shipping_rates_mass')) {
+                $dropped_tables[] = 'kit_shipping_rates_mass';
+            } else {
+                $failed_tables[] = 'kit_shipping_rates_mass';
+            }
+            if (self::delete_table('kit_shipping_rates_volume')) {
+                $dropped_tables[] = 'kit_shipping_rates_volume';
+            } else {
+                $failed_tables[] = 'kit_shipping_rates_volume';
+            }
+            if (self::delete_table('kit_shipping_dedicated_truck_rates')) {
+                $dropped_tables[] = 'kit_shipping_dedicated_truck_rates';
+            } else {
+                $failed_tables[] = 'kit_shipping_dedicated_truck_rates';
+            }
 
             // 5) Drop direction and rate type tables (parents of above)
-            self::delete_table('kit_shipping_rate_types');
-            self::delete_table('kit_shipping_directions');
+            if (self::delete_table('kit_shipping_rate_types')) {
+                $dropped_tables[] = 'kit_shipping_rate_types';
+            } else {
+                $failed_tables[] = 'kit_shipping_rate_types';
+            }
+            if (self::delete_table('kit_shipping_directions')) {
+                $dropped_tables[] = 'kit_shipping_directions';
+            } else {
+                $failed_tables[] = 'kit_shipping_directions';
+            }
 
             // 6) Drop cities (depend on countries)
-            self::delete_table('kit_operating_cities');
+            if (self::delete_table('kit_operating_cities')) {
+                $dropped_tables[] = 'kit_operating_cities';
+            } else {
+                $failed_tables[] = 'kit_operating_cities';
+            }
 
-            // 7) Drop countries
-            self::delete_table('kit_operating_countries');
+            // 7) Drop drivers
+            if (self::delete_table('kit_drivers')) {
+                $dropped_tables[] = 'kit_drivers';
+            } else {
+                $failed_tables[] = 'kit_drivers';
+            }
 
-            // 8) Drop remaining base tables
-            self::delete_table('kit_customers');
-            self::delete_table('kit_discounts');
+            // 8) Drop countries
+            if (self::delete_table('kit_operating_countries')) {
+                $dropped_tables[] = 'kit_operating_countries';
+            } else {
+                $failed_tables[] = 'kit_operating_countries';
+            }
+
+            // 9) Drop remaining base tables
+            if (self::delete_table('kit_customers')) {
+                $dropped_tables[] = 'kit_customers';
+            } else {
+                $failed_tables[] = 'kit_customers';
+            }
+            if (self::delete_table('kit_services')) {
+                $dropped_tables[] = 'kit_services';
+            } else {
+                $failed_tables[] = 'kit_services';
+            }
+            if (self::delete_table('kit_discounts')) {
+                $dropped_tables[] = 'kit_discounts';
+            } else {
+                $failed_tables[] = 'kit_discounts';
+            }
+            if (self::delete_table('kit_company_details')) {
+                $dropped_tables[] = 'kit_company_details';
+            } else {
+                $failed_tables[] = 'kit_company_details';
+            }
 
             // Re-enable FK checks
-            $wpdb->query('SET FOREIGN_KEY_CHECKS=1');
+            $fk_enabled = $wpdb->query('SET FOREIGN_KEY_CHECKS=1');
+            if ($fk_enabled === false) {
+                self::write_log('Warning: Failed to re-enable FOREIGN_KEY_CHECKS: ' . $wpdb->last_error);
+            } else {
+                self::write_log('FOREIGN_KEY_CHECKS re-enabled');
+            }
+            
+            // Log results
+            self::write_log('Dropped ' . count($dropped_tables) . ' tables: ' . implode(', ', $dropped_tables));
+            if (!empty($failed_tables)) {
+                self::write_log('Failed to drop ' . count($failed_tables) . ' tables: ' . implode(', ', $failed_tables));
+            }
+            
+            self::write_log('=== DEACTIVATION COMPLETED ===');
             
         } catch (Exception $e) {
             // Log the error but don't crash the deactivation
-            error_log('Plugin deactivation error: ' . $e->getMessage());
+            self::write_log('Plugin deactivation error: ' . $e->getMessage());
+            self::write_log('Stack trace: ' . $e->getTraceAsString());
             
             // Ensure FK checks are re-enabled even if there was an error
             $wpdb->query('SET FOREIGN_KEY_CHECKS=1');
+            self::write_log('=== DEACTIVATION ERROR ===');
+        } catch (Error $e) {
+            // Log fatal errors too
+            self::write_log('Plugin deactivation fatal error: ' . $e->getMessage());
+            self::write_log('Stack trace: ' . $e->getTraceAsString());
+            
+            // Ensure FK checks are re-enabled even if there was a fatal error
+            $wpdb->query('SET FOREIGN_KEY_CHECKS=1');
+            self::write_log('=== DEACTIVATION FATAL ERROR ===');
         }
     }
 }

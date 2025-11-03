@@ -8,30 +8,20 @@ if (!defined('ABSPATH')) {
  */
 function plugin_add_menu()
 {
-    // Main 08600 Solution Menu
+    // Main 08600 Solution Menu (use Manage Waybills as the top-level page)
     add_menu_page(
         '08600 Solution', // Page title
         '08600 Solution', // Menu title
         'kit_view_waybills', // Capability
-        '08600-waybills', // Menu slug
-        'waybill_dashboard_page', // Callback function
+        '08600-waybill-manage', // Menu slug (top-level now points to Manage Waybills)
+        'plugin_Waybill_list_page', // Callback function
         'dashicons-admin-plugins', // Icon
         6 // Position
     );
 
-    // Dashboard
-    add_submenu_page(
-        '08600-waybills',
-        'Dashboard',
-        'Dashboard',
-        'kit_view_waybills',
-        '08600-waybills',
-        'waybill_dashboard_page'
-    );
-
     // Create Waybill
     add_submenu_page(
-        '08600-waybills',
+        '08600-waybill-manage',
         'Create Waybill',
         'Create Waybill',
         'kit_view_waybills',
@@ -41,7 +31,7 @@ function plugin_add_menu()
 
     // Manage Waybills
     add_submenu_page(
-        '08600-waybills',
+        '08600-waybill-manage',
         'Manage Waybills',
         'Manage Waybills',
         'kit_view_waybills',
@@ -51,7 +41,7 @@ function plugin_add_menu()
 
     // Warehouse
     add_submenu_page(
-        '08600-waybills',
+        '08600-waybill-manage',
         'Warehouse',
         'Warehouse',
         'kit_view_waybills',
@@ -67,7 +57,7 @@ function plugin_add_menu()
 
     // Customers
     add_submenu_page(
-        '08600-waybills',
+        '08600-waybill-manage',
         'Customers',
         'Customers',
         'kit_view_waybills',
@@ -99,7 +89,7 @@ function plugin_add_menu()
 
     // Routes & Destinations
     add_submenu_page(
-        '08600-waybills',
+        '08600-waybill-manage',
         'Routes & Destinations',
         'Routes & Destinations',
         'kit_view_waybills',
@@ -109,7 +99,7 @@ function plugin_add_menu()
 
     // Countries
     add_submenu_page(
-        '08600-waybills',
+        '08600-waybill-manage',
         'Countries',
         'Countries',
         'kit_view_waybills',
@@ -119,12 +109,22 @@ function plugin_add_menu()
 
     // Deliveries
     add_submenu_page(
-        '08600-waybills',
+        '08600-waybill-manage',
         'Deliveries',
         'Deliveries',
         'kit_view_waybills',
         'kit-deliveries',
         ['KIT_Deliveries', 'render_admin_page']
+    );
+
+    // Drivers
+    add_submenu_page(
+        '08600-waybill-manage',
+        'Manage Drivers',
+        'Drivers',
+        'kit_view_waybills',
+        'manage-drivers',
+        'drivers_management_page'
     );
     
     // Warehouse Tracking - Now integrated into main warehouse page
@@ -134,7 +134,7 @@ function plugin_add_menu()
     //     'Warehouse Tracking',
     //     'edit_pages',
     //     'warehouse-tracking',
-    //     'warehouse_tracking_page'
+    //     'warehouse_page'
     // );
 
 
@@ -179,7 +179,7 @@ function plugin_add_menu()
 
     // Settings (at bottom) - STRICTLY RESTRICTED ACCESS
     add_submenu_page(
-        '08600-waybills',
+        '08600-waybill-manage',
         'Settings',
         'Settings',
         'kit_access_settings', // Only specific administrators (Thando, Mel, Patricia) can see this menu item
@@ -189,7 +189,7 @@ function plugin_add_menu()
 
     // Help (at bottom bottom)
     add_submenu_page(
-        '08600-waybills',
+        '08600-waybill-manage',
         'Help',
         'Help',
         'kit_view_waybills',
@@ -201,10 +201,7 @@ function plugin_add_menu()
 
 add_action('admin_menu', 'plugin_add_menu');
 
-// Callback functions for new menu pages
-function waybill_dashboard_page() {
-    include plugin_dir_path(__FILE__) . 'admin-pages/dashboard.php';
-}
+// Callback functions for menu pages
 
 
 
@@ -224,6 +221,10 @@ function warehouse_waybills_page() {
 
 function add_customer_page() {
     include plugin_dir_path(__FILE__) . 'admin-pages/add-customer.php';
+}
+
+function drivers_management_page() {
+    include plugin_dir_path(__FILE__) . 'admin-pages/drivers.php';
 }
 
 // Handle add customer form submission
@@ -267,7 +268,7 @@ function handle_add_customer_form() {
 // Register the action hook
 add_action('admin_post_add_customer', 'handle_add_customer_form');
 
-// function warehouse_tracking_page() {
+// function warehouse_page() {
 //     include plugin_dir_path(__FILE__) . 'admin-pages/warehouse-tracking.php';
 // }
 

@@ -10,96 +10,64 @@ require_once plugin_dir_path(__FILE__) . '../user-roles.php';
 require_once plugin_dir_path(__FILE__) . '../components/dashboardQuickies.php';
 require_once plugin_dir_path(__FILE__) . '../components/quickStats.php';
 
-// Handle sample warehouse waybills creation
+// Include warehouse functions
+require_once plugin_dir_path(__FILE__) . '../warehouse/warehouse-functions.php';
+// Ensure unified table class is available for rendering tables
+if (!class_exists('KIT_Unified_Table')) {
+    $unified_path = plugin_dir_path(__FILE__) . '../class-unified-table.php';
+    if (file_exists($unified_path)) {
+        require_once $unified_path;
+    }
+}
+
+// Handle realistic warehouse waybills creation
 if (isset($_POST['create_sample_warehouse']) && wp_verify_nonce($_POST['sample_nonce'], 'create_sample_warehouse_waybills')) {
-    global $wpdb;
-
-    // Get existing customers
-    $customers = $wpdb->get_results("SELECT cust_id FROM {$wpdb->prefix}kit_customers LIMIT 5");
-
-    if (!empty($customers)) {
-        $created_count = 0;
-
-        // Create 10 sample waybills
-        for ($i = 1; $i <= 10; $i++) {
-            $customer = $customers[array_rand($customers)];
-
-            $waybill_data = [
-                'waybill_no' => 'WB-' . date('Ymd') . '-' . str_pad($i, 4, '0', STR_PAD_LEFT),
-                'customer_id' => $customer->cust_id,
-                'delivery_id' => 1, // Warehouse delivery
-                'product_invoice_amount' => rand(500, 5000),
-                'total_mass_kg' => rand(10, 100),
-                // Warehouse status now managed by warehouse_items table
-                'status' => 'warehoused',
-                'created_at' => current_time('mysql'),
-                'created_by' => get_current_user_id() ?: 1,
-                'last_updated_at' => current_time('mysql'),
-                'last_updated_by' => get_current_user_id() ?: 1
-            ];
-
-            $result = $wpdb->insert(
-                $wpdb->prefix . 'kit_waybills',
-                $waybill_data
-            );
-
-            if ($result) {
-                $created_count++;
-            }
-        }
-
-        if ($created_count > 0) {
-            echo '<div class="notice notice-success"><p>Successfully created ' . $created_count . ' sample warehouse waybills!</p></div>';
-        } else {
-            echo '<div class="notice notice-error"><p>Failed to create sample waybills. Please try again.</p></div>';
-        }
+    $count = isset($_POST['waybill_count']) ? intval($_POST['waybill_count']) : 10;
+    
+    $result = KIT_Warehouse::createRealisticWarehousedWaybills($count);
+    
+    if (is_wp_error($result)) {
+        echo '<div class="notice notice-error"><p>' . esc_html($result->get_error_message()) . '</p></div>';
     } else {
-        echo '<div class="notice notice-error"><p>No customers found. Please create customers first.</p></div>';
+        $message = "Successfully created {$result['created_count']} realistic warehouse waybills!";
+        if (!empty($result['errors'])) {
+            $message .= " Errors: " . implode(', ', $result['errors']);
+        }
+        echo '<div class="notice notice-success"><p>' . esc_html($message) . '</p></div>';
     }
 }
 
 // Handle form submission for assignment
-if (isset($_POST['assign_waybills']) && wp_verify_nonce($_POST['nonce'], 'assign_waybills_nonce')) {
+if (isset($_POST['assign_warehouse_items']) && wp_verify_nonce($_POST['assign_nonce'], 'assign_warehouse_items')) {
     global $wpdb;
 
     $waybill_ids = $_POST['waybill_ids'] ?? [];
-    $delivery_id = intval($_POST['delivery_id']);
+    // Accept delivery_id from hidden field or fallback select
+    $delivery_id = 0;
+    if (isset($_POST['delivery_id']) && $_POST['delivery_id'] !== '') {
+        $delivery_id = intval($_POST['delivery_id']);
+    } elseif (isset($_POST['delivery_id_select']) && $_POST['delivery_id_select'] !== '') {
+        $delivery_id = intval($_POST['delivery_id_select']);
+    }
 
     if (!empty($waybill_ids) && $delivery_id > 0) {
         $updated = 0;
+        $assigned_waybill_nos = [];
         foreach ($waybill_ids as $waybill_id) {
-            // Get waybill details before update
-            $waybill = $wpdb->get_row($wpdb->prepare(
-                "SELECT waybill_no, customer_id, status FROM {$wpdb->prefix}kit_waybills WHERE id = %d",
-                intval($waybill_id)
-            ));
-
-            $result = $wpdb->update(
-                $wpdb->prefix . 'kit_waybills',
-                [
-                    'delivery_id' => $delivery_id,
-                    'status' => 'assigned',
-                    // Warehouse status now managed by warehouse_items table
-                    'last_updated_at' => current_time('mysql'),
-                    'last_updated_by' => get_current_user_id()
-                ],
-                ['id' => intval($waybill_id)]
-            );
-            if ($result !== false) {
+            // Use the new warehouse system to assign waybills
+            $result = KIT_Warehouse::assignToDelivery(intval($waybill_id), $delivery_id, get_current_user_id());
+            
+            if (!is_wp_error($result)) {
                 $updated++;
-
-                // Track the assignment action
-                if ($waybill) {
-                    KIT_Waybills::track_warehouse_action(
-                        $waybill->waybill_no,
-                        intval($waybill_id),
-                        $waybill->customer_id,
-                        'assigned',
-                        $waybill->status,
-                        'assigned',
-                        $delivery_id,
-                        'Assigned to delivery from warehouse'
-                    );
+                
+                // Get waybill details for logging
+                $waybill = $wpdb->get_row($wpdb->prepare(
+                    "SELECT waybill_no, customer_id FROM {$wpdb->prefix}kit_waybills WHERE id = %d",
+                    intval($waybill_id)
+                ));
+                
+                if ($waybill && !empty($waybill->waybill_no)) {
+                    $assigned_waybill_nos[] = (int)$waybill->waybill_no;
                 }
             }
         }
@@ -115,29 +83,19 @@ if (isset($_POST['assign_waybills']) && wp_verify_nonce($_POST['nonce'], 'assign
 
 // Get warehouse waybills
 global $wpdb;
-$waybills_table = $wpdb->prefix . 'kit_warehouse_tracking';
+$waybills_table = $wpdb->prefix . 'kit_waybills';
 $customers_table = $wpdb->prefix . 'kit_customers';
 
-// Get waybills that have warehouse items
-$warehouse_waybills_query = "
-    SELECT *
-    FROM $waybills_table";
-$warehouse_waybills = $wpdb->get_results($warehouse_waybills_query);
-
-// Get warehouse statistics
+// Get waybills that are in warehouse
+$warehouse_waybills = KIT_Warehouse::getWarehouseItems();
 $total_warehouse_waybills = count($warehouse_waybills);
-$pending_waybills = array_filter($warehouse_waybills, function ($w) {
-    return isset($w->new_status) ? $w->new_status === 'pending' : ($w->action === 'pending');
-});
-$pending_count = count($pending_waybills);
-$created_waybills = array_filter($warehouse_waybills, function ($w) {
-    return isset($w->new_status) ? $w->new_status === 'created' : ($w->action === 'created');
-});
-$created_count = count($created_waybills);
-$warehouse_waybills_filtered = array_filter($warehouse_waybills, function ($w) {
-    return isset($w->new_status) ? $w->new_status === 'warehoused' : ($w->action === 'warehoused');
-});
-$warehouse_count = count($warehouse_waybills_filtered);
+
+// Get status counts from waybills table
+$stats = KIT_Warehouse::getWarehouseStats();
+$warehouse_count = $stats->in_warehouse ?? 0;
+$assigned_count = $stats->assigned ?? 0;
+$shipped_count = $stats->shipped ?? 0;
+$delivered_count = $stats->delivered ?? 0;
 
 // Debug information removed for clean production
 ?>
@@ -150,98 +108,44 @@ $warehouse_count = count($warehouse_waybills_filtered);
         'icon' => KIT_Commons::icon('warehouse'),
     ]);
     ?>
+    <div class="mb-4 flex items-center gap-3">
+        <form method="post">
+            <?php if (function_exists('wp_nonce_field')) { wp_nonce_field('fix_warehouse_flags_action', 'fix_warehouse_nonce'); } ?>
+            <input type="hidden" name="fix_warehouse_flags" value="1">
+            <?php echo KIT_Commons::renderButton('Sync Warehouse Status from Tracking Table', 'primary', 'sm', ['type' => 'submit']); ?>
+        </form>
+        
+        <!-- Realistic Waybill Creation Form -->
+        <form method="post" class="flex items-center gap-3">
+            <?php wp_nonce_field('create_sample_warehouse_waybills', 'sample_nonce'); ?>
+            <input type="hidden" name="create_sample_warehouse" value="1">
+            <label class="text-sm font-medium text-gray-700">Create Realistic Waybills:</label>
+            <input type="number" name="waybill_count" value="10" min="1" max="50" 
+                   class="w-20 px-3 py-1 border border-gray-300 rounded-md text-sm" 
+                   placeholder="Count">
+            <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                Create Waybills
+            </button>
+        </form>
+    </div>
     <hr class="wp-header-end">
     <?php
     // Minimal functional Warehouse page (new logic)
     // Load warehouse helpers
     require_once plugin_dir_path(__FILE__) . '../warehouse/warehouse-functions.php';
+    // Note: warehouse-status-helper.php and warehouse-migration-helper.php are included above
 
-    // Handle assignment postback (track by waybill, create warehouse_item if missing)
-    if (isset($_POST['assign_warehouse_items']) && isset($_POST['assign_nonce']) && wp_verify_nonce($_POST['assign_nonce'], 'assign_warehouse_items')) {
-        global $wpdb;
-        $delivery_id = isset($_POST['delivery_id']) ? intval($_POST['delivery_id']) : 0;
-        $waybill_ids = isset($_POST['waybill_ids']) && is_array($_POST['waybill_ids']) ? array_map('intval', $_POST['waybill_ids']) : [];
-
-        $updated = 0;
-        if ($delivery_id > 0 && !empty($waybill_ids)) {
-            foreach ($waybill_ids as $waybill_id) {
-                // Find existing warehouse item row for waybill
-                $warehouse_item_id = $wpdb->get_var($wpdb->prepare("SELECT id FROM {$wpdb->prefix}kit_warehouse_items WHERE waybill_id = %d ORDER BY id ASC LIMIT 1", $waybill_id));
-                if (!$warehouse_item_id) {
-                    $cust_id = (int)$wpdb->get_var($wpdb->prepare("SELECT customer_id FROM {$wpdb->prefix}kit_waybills WHERE id = %d", $waybill_id));
-                    $wpdb->insert($wpdb->prefix . 'kit_warehouse_items', [
-                        'waybill_id' => $waybill_id,
-                        'customer_id' => $cust_id,
-                        'item_description' => 'Auto-created from tracking',
-                        'status' => 'in_warehouse',
-                        'created_at' => current_time('mysql')
-                    ]);
-                    $warehouse_item_id = (int)$wpdb->insert_id;
-                }
-
-                if ($warehouse_item_id) {
-                    $res = KIT_Warehouse::assignToDelivery((int)$warehouse_item_id, $delivery_id);
-                    if ($res !== false && !is_wp_error($res)) {
-                        $updated++;
-                    }
-                }
-            }
-        }
-
-        if ($updated > 0) {
-            // Clean up assigned waybills from tracking display (they should no longer appear in assignment interface)
-            $wpdb->query("DELETE wt FROM $tracking_table wt 
-                INNER JOIN $waybills_table w ON wt.waybill_no = w.waybill_no 
-                WHERE w.status = 'assigned' AND wt.action = 'assigned'");
-            
-            echo '<div class="notice notice-success"><p>Assigned ' . esc_html($updated) . ' waybill(s) to delivery. Assigned waybills have been removed from the assignment interface.</p></div>';
-        } else {
-            echo '<div class="notice notice-error"><p>No waybills were assigned. Please select waybills and a delivery.</p></div>';
-        }
-    }
+    // Note: assignment is handled above via 'assign_waybills' submit; no duplicate handler here
 
     // Data for page
     $stats = KIT_Warehouse::getWarehouseStats();
     
-    // One-time cleanup: Remove already assigned waybills from tracking display
-    $wpdb->query("DELETE wt FROM $tracking_table wt 
-        INNER JOIN $waybills_table w ON wt.waybill_no = w.waybill_no 
-        WHERE w.status = 'assigned' AND wt.action = 'assigned'");
-    
-    // Verification: ensure any waybill present in tracking has warehouse flag = 1
-    $tracking_table = $wpdb->prefix . 'kit_warehouse_tracking';
+    // Tracking-based cleanup removed. Use waybills table only with new warehouse model
     $waybills_table = $wpdb->prefix . 'kit_waybills';
     $customers_table = $wpdb->prefix . 'kit_customers';
-    $wpdb->query(
-        "UPDATE $waybills_table w
-         INNER JOIN (SELECT DISTINCT waybill_no FROM $tracking_table) t
-             ON w.waybill_no = t.waybill_no
-         SET w.warehouse = 1
-         WHERE w.warehouse IS NULL"
-    );
-
-    // Also clear flags if waybill no longer appears in tracking
-    $wpdb->query(
-        "UPDATE $waybills_table w
-         LEFT JOIN (SELECT DISTINCT waybill_no FROM $tracking_table) t
-             ON w.waybill_no = t.waybill_no
-         SET w.warehouse = 0, w.status = IF(w.status='warehoused','created',w.status)
-         WHERE w.warehouse = 1 AND t.waybill_no IS NULL"
-    );
-
-    // Use tracking as canonical: show latest record per waybill present in tracking table
-    // Only show waybills that are NOT already assigned to a delivery
-    $tracking_rows = $wpdb->get_results("SELECT wt.*, w.id AS waybill_db_id, w.waybill_no, w.total_mass_kg, c.name AS customer_name, c.surname AS customer_surname
-        FROM $tracking_table wt
-        LEFT JOIN $waybills_table w ON wt.waybill_no = w.waybill_no
-        LEFT JOIN $customers_table c ON wt.customer_id = c.cust_id
-        INNER JOIN (
-            SELECT waybill_no, MAX(id) AS max_id
-            FROM $tracking_table
-            GROUP BY waybill_no
-        ) latest ON latest.waybill_no = wt.waybill_no AND latest.max_id = wt.id
-        WHERE wt.action != 'assigned' AND (w.delivery_id IS NULL OR w.delivery_id = 1 OR w.status != 'assigned')
-        ORDER BY wt.created_at DESC");
+    
+    // Fetch warehouse waybills to display/assign
+    $tracking_rows = KIT_Warehouse::getWarehouseItems();
     global $wpdb;
     
     // Optimized query: Get all countries and their scheduled deliveries in one query
@@ -254,10 +158,12 @@ $warehouse_count = count($warehouse_waybills_filtered);
             d.delivery_reference,
             d.dispatch_date,
             d.truck_number,
-            d.status as delivery_status
+            d.status as delivery_status,
+            dest.city_name AS destination_city
         FROM {$wpdb->prefix}kit_operating_countries oc
         LEFT JOIN {$wpdb->prefix}kit_shipping_directions sd ON oc.id = sd.destination_country_id
         LEFT JOIN {$wpdb->prefix}kit_deliveries d ON sd.id = d.direction_id AND d.status = 'scheduled'
+        LEFT JOIN {$wpdb->prefix}kit_operating_cities dest ON d.destination_city_id = dest.id
         WHERE oc.is_active = 1
         ORDER BY oc.country_name ASC, d.dispatch_date ASC
     ");
@@ -280,7 +186,9 @@ $warehouse_count = count($warehouse_waybills_filtered);
                 'reference' => $row->delivery_reference,
                 'dispatch_date' => $row->dispatch_date,
                 'truck_number' => $row->truck_number,
-                'status' => $row->delivery_status
+                'status' => $row->delivery_status,
+                'destination_country' => $row->country_name,
+                'destination_city' => $row->destination_city
             ];
         }
     }
@@ -291,8 +199,7 @@ $warehouse_count = count($warehouse_waybills_filtered);
             SELECT id, country_name, country_code 
             FROM {$wpdb->prefix}kit_operating_countries 
             WHERE is_active = 1 
-            ORDER BY country_name ASC
-        ");
+            ORDER BY country_name ASC");
         
         foreach ($countries_only as $country) {
             $countries_data[$country->id] = [
@@ -322,11 +229,10 @@ $warehouse_count = count($warehouse_waybills_filtered);
         <h2 class="text-lg font-semibold text-gray-900 mb-4">Assign Warehouse Items to Delivery</h2>
         <form method="post" id="assign-warehouse-form">
             <?php wp_nonce_field('assign_warehouse_items', 'assign_nonce'); ?>
-            
             <!-- Country Selection -->
             <div class="mb-6">
                 <label class="block text-sm font-medium text-gray-700 mb-3">Select Destination Country</label>
-                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+                <div class="flex gap-3">
                     <?php if (!empty($countries_data)): ?>
                         <?php foreach ($countries_data as $country): ?>
                             <label class="country-radio-label cursor-pointer">
@@ -346,16 +252,24 @@ $warehouse_count = count($warehouse_waybills_filtered);
                     <?php endif; ?>
                 </div>
             </div>
-
             <!-- Delivery Selection (Hidden initially) -->
             <div id="delivery-selection" class="hidden mb-4">
                 <label class="block text-sm font-medium text-gray-700 mb-2">Select Delivery</label>
-                <div id="delivery-options" class="space-y-2">
+                <div id="delivery-options" class="grid md:grid-cols-4 gap-4">
                     <!-- Deliveries will be populated by JavaScript -->
                 </div>
                 <input type="hidden" name="delivery_id" id="delivery_id" required>
             </div>
-
+            <!-- Fallback delivery select (in case JS-based selection is not used) -->
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Or pick a scheduled delivery</label>
+                <select name="delivery_id_select" class="min-w-[280px] px-3 py-2 border border-gray-300 rounded">
+                    <option value="">Choose delivery…</option>
+                    <?php foreach ($deliveries as $d): ?>
+                        <option value="<?php echo intval($d->id); ?>"><?php echo esc_html($d->delivery_reference . ' — ' . ($d->dispatch_date ?: 'TBD')); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
             <div>
                 <div class="flex items-center justify-between mb-2">
                     <label class="block text-sm font-medium text-gray-700">Waybills in Warehouse (from tracking)</label>
@@ -364,45 +278,56 @@ $warehouse_count = count($warehouse_waybills_filtered);
                         <button type="button" id="deselect-all" class="px-3 py-1 text-sm border rounded">Deselect All</button>
                     </div>
                 </div>
-                <div class="overflow-x-auto border rounded">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th class="px-3 py-2"><input type="checkbox" id="header-select-all"></th>
-                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Waybill</th>
-                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Weight (kg)</th>
-                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Current Action</th>
-                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Updated</th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
-                            <?php if (!empty($tracking_rows)): ?>
-                                <?php foreach ($tracking_rows as $row): ?>
-                                    <tr>
-                                        <td class="px-3 py-2"><input type="checkbox" class="wi" name="waybill_ids[]" value="<?php echo intval($row->waybill_db_id); ?>"></td>
-                                        <td class="px-3 py-2 font-medium text-gray-900">
-                                            <a href="<?php echo esc_url(admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . urlencode($row->waybill_id))); ?>" class="text-blue-600 hover:underline">
-                                                #<?php echo esc_html($row->waybill_no); ?>
-                                            </a>
-                                        </td>
-                                        <td class="px-3 py-2 text-gray-700"><?php echo esc_html(trim(($row->customer_name ?? '') . ' ' . ($row->customer_surname ?? ''))); ?></td>
-                                        <td class="px-3 py-2 text-gray-700"><?php echo esc_html(number_format((float)($row->total_mass_kg ?? 0), 2)); ?></td>
-                                        <td class="px-3 py-2 text-gray-700"><?php echo esc_html(ucfirst($row->action ?? '')); ?></td>
-                                        <td class="px-3 py-2 text-gray-500"><?php echo esc_html($row->created_at ?? ''); ?></td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            <?php else: ?>
-                                <tr><td colspan="5" class="px-3 py-6 text-center text-gray-500">No items currently in warehouse.</td></tr>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
+                <?php
+                // Convert warehouse items to data array for unified table
+                $table_data = [];
+                foreach ($tracking_rows as $row) {
+                    $table_data[] = [
+                        'waybill_id' => $row->waybill_no ?? '',
+                        'waybill_no' => $row->waybill_no ?? '',
+                        'waybill_db_id' => intval($row->id ?? 0),
+                        'customer_name' => trim(($row->customer_name ?? '') . ' ' . ($row->customer_surname ?? '')),
+                        'total_mass_kg' => number_format((float)($row->total_mass_kg ?? 0), 2),
+                        'action' => ucfirst($row->status ?? ''),
+                        'created_at' => $row->last_updated_at ?? $row->created_at ?? ''
+                    ];
+                }
+
+                // Define columns for the unified table
+                $columns = [
+                    'checkbox' => [
+                        'label' => '',
+                        'callback' => function($value, $row) {
+                            return '<input type="checkbox" class="wi" name="waybill_ids[]" value="' . intval($row['waybill_db_id']) . '">';
+                        }
+                    ],
+                    'waybill_no' => [
+                        'label' => 'Waybill',
+                        'callback' => function($value, $row) {
+                            return '<a href="' . esc_url(admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . urlencode($row['waybill_db_id'] ?? ''))) . '" class="text-blue-600 hover:underline">#' . esc_html($value) . '</a>';
+                        }
+                    ],
+                    'customer_name' => 'Customer',
+                    'total_mass_kg' => 'Weight (kg)', 
+                    'action' => 'Current Action',
+                    'created_at' => 'Updated'
+                ];
+
+                echo KIT_Unified_Table::infinite($table_data, $columns, [
+                    'title' => 'Warehouse Items',
+                    'searchable' => true,
+                    'sortable' => true,
+                    'pagination' => true,
+                    'items_per_page' => 20,
+                    'empty_message' => 'No items currently in warehouse',
+                    'class' => 'min-w-full divide-y divide-gray-200'
+                ]);
+                ?>
             </div>
 
             <div class="mt-4 flex items-center justify-between">
                 <span id="sel-count" class="text-sm text-gray-600">0 selected</span>
-                <?php echo KIT_Commons::renderButton('Assign to Delivery', 'primary', 'md', [
+                <?php echo KIT_Commons::renderButton('Assign to Dewwlivery', 'primary', 'md', [
                     'type' => 'submit',
                     'name' => 'assign_warehouse_items',
                     'id' => 'assign-btn',
@@ -414,8 +339,16 @@ $warehouse_count = count($warehouse_waybills_filtered);
     </div>
 
     <script>
+        // Fix WordPress admin menu collapse
+        jQuery(document).ready(function($) {
+            // Ensure admin menu stays open
+            if ($('#adminmenu').hasClass('folded')) {
+                $('#adminmenu').removeClass('folded');
+            }
+        });
+        
         document.addEventListener('DOMContentLoaded', function(){
-            const headerSelect = document.getElementById('header-select-all');
+            const headerSelect = document.getElementById('select-all-checkbox');
             const selectAll = document.getElementById('select-all');
             const deselectAll = document.getElementById('deselect-all');
             const boxes = Array.from(document.querySelectorAll('input.wi'));
@@ -441,10 +374,74 @@ $warehouse_count = count($warehouse_waybills_filtered);
             boxes.forEach(b => b.addEventListener('change', refresh));
             if (deliverySelect) deliverySelect.addEventListener('change', refresh);
             refresh();
+
+            // Country selection and delivery population
+            const countryRadios = document.querySelectorAll('.country-radio');
+            const deliverySelection = document.getElementById('delivery-selection');
+            const deliveryOptions = document.getElementById('delivery-options');
+            const deliveryIdInput = document.getElementById('delivery_id');
+            const deliverySelectFallback = document.querySelector('select[name="delivery_id_select"]');
+
+            // Countries data from PHP
+            const countriesData = <?php echo json_encode($countries_data); ?>;
+
+            countryRadios.forEach(radio => {
+                radio.addEventListener('change', function() {
+                    if (this.checked) {
+                        const countryId = parseInt(this.value);
+                        const country = countriesData.find(c => c.id === countryId);
+                        
+                        if (country && country.deliveries) {
+                            // Show delivery selection
+                            deliverySelection.classList.remove('hidden');
+                            
+                            // Populate delivery options
+                            deliveryOptions.innerHTML = '';
+                            country.deliveries.forEach(delivery => {
+                                const deliveryOption = document.createElement('div');
+                                deliveryOption.className = 'delivery-option';
+                                deliveryOption.innerHTML = `
+                                    <div class="font-medium text-gray-900">${delivery.delivery_reference}</div>
+                                    <div class="text-sm text-gray-500">${delivery.dispatch_date || 'TBD'}</div>
+                                    <div class="text-xs text-gray-400">${delivery.waybill_count || 0} waybills</div>
+                                `;
+                                deliveryOption.addEventListener('click', function() {
+                                    // Remove active class from all options
+                                    document.querySelectorAll('.delivery-option').forEach(opt => opt.classList.remove('bg-blue-50', 'border-blue-300'));
+                                    // Add active class to clicked option
+                                    this.classList.add('bg-blue-50', 'border-blue-300');
+                                    // Set the delivery ID
+                                    deliveryIdInput.value = delivery.id;
+                                    // Also update the fallback select
+                                    if (deliverySelectFallback) {
+                                        deliverySelectFallback.value = delivery.id;
+                                    }
+                                    refresh();
+                                });
+                                deliveryOptions.appendChild(deliveryOption);
+                            });
+                        }
+                    }
+                });
+            });
+
+            // Handle fallback select change
+            if (deliverySelectFallback) {
+                deliverySelectFallback.addEventListener('change', function() {
+                    deliveryIdInput.value = this.value;
+                    refresh();
+                });
+            }
         });
     </script>
 
     <style>
+        /* Fix WordPress admin menu collapse */
+        #adminmenu { display: block !important; }
+        #adminmenu .wp-submenu { display: block !important; }
+        #adminmenu .wp-has-submenu .wp-submenu { display: none; }
+        #adminmenu .wp-has-submenu:hover .wp-submenu { display: block; }
+        
         /* Country Radio Button Styles */
         .country-radio-label {
             display: block;
@@ -512,7 +509,13 @@ $warehouse_count = count($warehouse_waybills_filtered);
         
         .delivery-option:hover {
             border-color: #3b82f6;
+            box-shadow: 0 2px 4px rgba(59, 130, 246, 0.1);
             background: #f8fafc;
+        }
+        
+        .delivery-option.bg-blue-50 {
+            background-color: #eff6ff;
+            border-color: #3b82f6;
         }
         
         .delivery-option.selected {
@@ -569,6 +572,10 @@ $warehouse_count = count($warehouse_waybills_filtered);
                                             ${delivery.dispatch_date ? new Date(delivery.dispatch_date).toLocaleDateString() : 'TBD'} 
                                             ${delivery.truck_number ? '• Truck: ' + delivery.truck_number : ''}
                                         </div>
+                                        <div class="text-xs mt-1">
+                                            ${delivery.destination_country ? '<span class="text-gray-600">' + delivery.destination_country + '</span>' : '<span class="text-red-600 font-semibold">Missing destination country</span>'}
+                                            ${delivery.destination_city ? '<span class="text-gray-600"> • ' + delivery.destination_city + '</span>' : '<span class="text-red-600 font-semibold"> • Missing city</span>'}
+                                        </div>
                                     </div>
                                 `;
                                 
@@ -610,7 +617,7 @@ $warehouse_count = count($warehouse_waybills_filtered);
 
     <?php
     // Get statistics for the warehouse
-    $total_warehouse_waybills = $wpdb->get_var("SELECT COUNT(DISTINCT waybill_id) FROM {$wpdb->prefix}kit_warehouse_items WHERE status = 'in_warehouse'");
+    $total_warehouse_waybills = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}kit_waybills WHERE status = 'pending'");
     $total_deliveries = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}kit_deliveries");
     $scheduled_deliveries = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}kit_deliveries WHERE status = 'scheduled'");
     $in_transit_deliveries = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}kit_deliveries WHERE status = 'in_transit'");
@@ -764,6 +771,7 @@ $warehouse_count = count($warehouse_waybills_filtered);
             <form method="post" id="create-sample-form" style="display: none;">
                 <?php wp_nonce_field('create_sample_warehouse_waybills', 'sample_nonce'); ?>
                 <input type="hidden" name="create_sample_warehouse" value="1">
+                <input type="number" name="waybill_count" value="10" min="1" max="50">
             </form>
         <?php endif; ?>
 
@@ -786,7 +794,7 @@ $warehouse_count = count($warehouse_waybills_filtered);
                 </div>
                 <!-- Country-first: destination country filter + delivery squares (new feature) already added above -->
                 <form method="post" id="assign-waybills-form">
-                    <?php wp_nonce_field('assign_waybills_nonce', 'nonce'); ?>
+                    <?php wp_nonce_field('assign_waybills', 'nonce'); ?>
                     <input type="hidden" name="delivery_id" id="delivery_id" value="" />
 
                     <!-- Waybills Selection -->
@@ -845,7 +853,7 @@ $warehouse_count = count($warehouse_waybills_filtered);
                             <span id="selected-count" class="text-gray-500 text-sm">0 waybills selected</span>
                         </div>
 
-                        <?php echo KIT_Commons::renderButton('Assign to Delivery', 'primary', 'md', [
+                        <?php echo KIT_Commons::renderButton('Assi22gn to Delivery', 'primary', 'md', [
                             'type' => 'submit',
                             'name' => 'assign_waybills',
                             'id' => 'assign-btn',
@@ -1201,31 +1209,34 @@ $warehouse_count = count($warehouse_waybills_filtered);
     <!-- Warehouse Tracking Tab Content -->
     <div id="tracking-content" class="tab-content">
         <?php
-        // Get warehouse tracking data
-        $tracking_table = $wpdb->prefix . 'kit_warehouse_tracking';
+        // Build actions log from waybills (no separate tracking table)
         $waybills_table = $wpdb->prefix . 'kit_waybills';
         $customers_table = $wpdb->prefix . 'kit_customers';
         $deliveries_table = $wpdb->prefix . 'kit_deliveries';
         $users_table = $wpdb->users;
 
-        // Build query with joins
         $query = "
             SELECT 
-                wt.*,
+                w.id,
                 w.waybill_no,
                 w.product_invoice_amount,
                 w.total_mass_kg,
+                w.status,
+                w.created_at,
+                w.last_updated_at,
+                w.created_by,
+                w.last_updated_by,
                 c.name as customer_name,
                 c.surname as customer_surname,
                 c.company_name,
                 d.delivery_reference,
-                u.display_name as action_by
-            FROM $tracking_table wt
-            LEFT JOIN $waybills_table w ON wt.waybill_no = w.waybill_no
-            LEFT JOIN $customers_table c ON wt.customer_id = c.cust_id
-            LEFT JOIN $deliveries_table d ON wt.assigned_delivery_id = d.id
-            LEFT JOIN $users_table u ON wt.created_by = u.ID
-            ORDER BY wt.created_at DESC
+                ub.display_name as action_by
+            FROM $waybills_table w
+            LEFT JOIN $customers_table c ON w.customer_id = c.cust_id
+            LEFT JOIN $deliveries_table d ON w.delivery_id = d.id
+            LEFT JOIN $users_table ub ON w.last_updated_by = ub.ID
+            WHERE w.status IN ('pending','assigned','shipped','delivered')
+            ORDER BY w.created_at DESC
         ";
 
         $tracking_data = $wpdb->get_results($query);
@@ -1299,7 +1310,7 @@ $warehouse_count = count($warehouse_waybills_filtered);
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <?php
                                         $action_colors = [
-                                            'warehoused' => 'bg-blue-100 text-blue-800',
+                                            'pending' => 'bg-blue-100 text-blue-800',
                                             'assigned' => 'bg-green-100 text-green-800',
                                             'removed' => 'bg-red-100 text-red-800'
                                         ];
@@ -1359,31 +1370,34 @@ $warehouse_count = count($warehouse_waybills_filtered);
     <!-- Warehouse Tracking Tab Content -->
     <div id="tracking-content" class="tab-content">
         <?php
-        // Get warehouse tracking data
-        $tracking_table = $wpdb->prefix . 'kit_warehouse_tracking';
+        // Build actions log from waybills (no separate tracking table)
         $waybills_table = $wpdb->prefix . 'kit_waybills';
         $customers_table = $wpdb->prefix . 'kit_customers';
         $deliveries_table = $wpdb->prefix . 'kit_deliveries';
         $users_table = $wpdb->users;
 
-        // Build query with joins
         $query = "
             SELECT 
-                wt.*,
+                w.id,
                 w.waybill_no,
                 w.product_invoice_amount,
                 w.total_mass_kg,
+                w.status,
+                w.created_at,
+                w.last_updated_at,
+                w.created_by,
+                w.last_updated_by,
                 c.name as customer_name,
                 c.surname as customer_surname,
                 c.company_name,
                 d.delivery_reference,
-                u.display_name as action_by
-            FROM $tracking_table wt
-            LEFT JOIN $waybills_table w ON wt.waybill_no = w.waybill_no
-            LEFT JOIN $customers_table c ON wt.customer_id = c.cust_id
-            LEFT JOIN $deliveries_table d ON wt.assigned_delivery_id = d.id
-            LEFT JOIN $users_table u ON wt.created_by = u.ID
-            ORDER BY wt.created_at DESC
+                ub.display_name as action_by
+            FROM $waybills_table w
+            LEFT JOIN $customers_table c ON w.customer_id = c.cust_id
+            LEFT JOIN $deliveries_table d ON w.delivery_id = d.id
+            LEFT JOIN $users_table ub ON w.last_updated_by = ub.ID
+            WHERE w.status IN ('pending','assigned','shipped','delivered')
+            ORDER BY w.created_at DESC
         ";
 
         $tracking_data = $wpdb->get_results($query);
@@ -1457,7 +1471,7 @@ $warehouse_count = count($warehouse_waybills_filtered);
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <?php
                                         $action_colors = [
-                                            'warehoused' => 'bg-blue-100 text-blue-800',
+                                            'pending' => 'bg-blue-100 text-blue-800',
                                             'assigned' => 'bg-green-100 text-green-800',
                                             'removed' => 'bg-red-100 text-red-800'
                                         ];

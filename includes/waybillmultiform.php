@@ -12,6 +12,7 @@ function kit_render_waybill_multiform($atts)
         'is_existing_customer' => '0',
         'ajaxform' => 'false',
         'customer' => '{}',
+        'is_modal' => false,
     ], $atts);
 
     $form_action = esc_url($atts['form_action']);
@@ -71,12 +72,20 @@ function kit_render_waybill_multiform($atts)
 
     ob_start(); ?>
     
-    <form method="POST" action="<?php echo esc_attr($form_action); ?>" class="" id="multi-step-waybill-form" data-ajax-url="<?php echo admin_url('admin-ajax.php'); ?>">
+    <form method="POST" action="<?php echo esc_attr($form_action); ?>" class="" id="multi-step-waybill-form" data-ajax-url="<?php echo admin_url('admin-ajax.php'); ?>" enctype="multipart/form-data">
         <?php if ($is_edit_mode): ?>
             <input type="hidden" name="waybill_id" value="<?php echo esc_attr($waybill_id); ?>">
         <?php endif; ?>
         <?php if ($is_existing_customer): ?>
             <input type="hidden" name="exsitingCust" value="<?php echo esc_attr($is_existing_customer); ?>">
+        <?php endif; ?>
+        <?php if (!empty($atts['delivery_id'])): ?>
+            <input type="hidden" name="delivery_id" id="delivery_id" value="<?php echo esc_attr($atts['delivery_id']); ?>">
+            <input type="hidden" name="direction_id" id="direction_id" value="<?php echo esc_attr($direction_id); ?>">
+        <?php endif; ?>
+        <?php if (isset($atts['is_modal']) && $atts['is_modal']): ?>
+            <input type="hidden" name="is_modal" id="is_modal" value="1">
+            <input type="hidden" name="original_page_url" id="original_page_url" value="">
         <?php endif; ?>
         <?php wp_nonce_field($is_edit_mode ? 'update_waybill_nonce' : 'add_waybill_nonce'); ?>
         
@@ -134,7 +143,62 @@ function kit_render_waybill_multiform($atts)
     </form>
 
     <script>
+        // Global error handling functions
+        function showError(message, fieldId = null) {
+            const errorContainer = document.getElementById('form-errors');
+            const errorList = document.getElementById('error-list');
+            
+            if (!errorContainer || !errorList) return;
+            
+            errorContainer.classList.remove('hidden');
+            const errorItem = document.createElement('div');
+            errorItem.className = 'error-item';
+            if (fieldId) {
+                errorItem.innerHTML = `<a href="javascript:void(0)" data-field="${fieldId}" class="error-link text-red-600 hover:text-red-800 underline cursor-pointer">${message}</a>`;
+                highlightField(fieldId, true);
+            } else {
+                errorItem.textContent = message;
+            }
+            errorList.appendChild(errorItem);
+            
+            // Scroll to error container
+            errorContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        function showSuccess(message) {
+            const successContainer = document.getElementById('form-success');
+            const successMessage = document.getElementById('success-message');
+            
+            if (!successContainer || !successMessage) return;
+            
+            successContainer.classList.remove('hidden');
+            successMessage.textContent = message;
+            
+            // Auto-hide after 8 seconds
+            setTimeout(() => {
+                successContainer.classList.add('hidden');
+            }, 8000);
+        }
+
+        function highlightField(fieldId, highlight = true) {
+            const field = document.getElementById(fieldId) || document.querySelector(`[name="${fieldId}"]`);
+            if (field) {
+                if (highlight) {
+                    field.classList.add('border-red-500', 'bg-red-50');
+                } else {
+                    field.classList.remove('border-red-500', 'bg-red-50');
+                }
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
+            // Capture original page URL for modal redirects
+            const originalPageUrlField = document.getElementById('original_page_url');
+            if (originalPageUrlField && document.referrer) {
+                originalPageUrlField.value = document.referrer;
+                console.log('📍 Captured original page URL:', document.referrer);
+            }
+            
             // Error handling and validation system
             const form = document.getElementById('multi-step-waybill-form');
             const errorContainer = document.getElementById('form-errors');
@@ -213,25 +277,31 @@ function kit_render_waybill_multiform($atts)
                     required: true,
                     message: 'Email address is required'
                 },
-                'country_id': {
-                    required: true,
+                'origin_country': {
+                    required: function() {
+                        // Don't require origin fields if creating from delivery
+                        return !document.getElementById('delivery_id') || !document.getElementById('delivery_id').value;
+                    },
                     message: 'Origin country is required'
                 },
-                'city_id': {
-                    required: true,
+                'origin_city': {
+                    required: function() {
+                        // Don't require origin fields if creating from delivery
+                        return !document.getElementById('delivery_id') || !document.getElementById('delivery_id').value;
+                    },
                     message: 'Origin city is required'
                 },
                 'destination_country': {
                     required: function() {
-                        return !document.getElementById('warehoused_option')?.checked;
+                        return !document.getElementById('pending_option')?.checked;
                     },
-                    message: 'Destination country is required for non-warehoused items'
+                    message: 'Destination country is required for non-pending items'
                 },
                 'destination_city': {
                     required: function() {
-                        return !document.getElementById('warehoused_option')?.checked;
+                        return !document.getElementById('pending_option')?.checked;
                     },
-                    message: 'Destination city is required for non-warehoused items'
+                    message: 'Destination city is required for non-pending items'
                 },
                 'total_mass_kg': {
                     required: true,
@@ -241,8 +311,8 @@ function kit_render_waybill_multiform($atts)
                     required: function() {
                         // Check if a delivery is selected OR warehouse is checked
                         const hasDeliverySelected = document.querySelector('.delivery-card.selected') !== null;
-                        const isWarehoused = document.getElementById('warehoused_option')?.checked || false;
-                        return !isWarehoused; // Only required if not warehoused
+                        const isWarehoused = document.getElementById('pending_option')?.checked || false;
+                        return !isWarehoused; // Only required if not pending
                     },
                     message: 'Please select a delivery or check the warehouse option'
                 }
@@ -265,19 +335,7 @@ function kit_render_waybill_multiform($atts)
                 errorContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
 
-            // Show success message (auto-hide after 8 seconds)
-            function showSuccess(message) {
-                successContainer.classList.remove('hidden');
-                successMessage.textContent = message;
-                successContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                // Auto-hide to avoid sticky banner on subsequent steps
-                setTimeout(function() {
-                    if (!successContainer.classList.contains('hidden')) {
-                        successContainer.classList.add('hidden');
-                        successMessage.textContent = '';
-                    }
-                }, 8000);
-            }
+            // showSuccess is now defined globally above
 
             // Clear all errors
             function clearErrors() {
@@ -349,7 +407,7 @@ function kit_render_waybill_multiform($atts)
 
                 // Special validation for step 4 - delivery selection or warehouse
                 const hasDeliverySelected = document.querySelector('.delivery-card.selected') !== null;
-                const isWarehoused = document.getElementById('warehoused_option')?.checked || false;
+                const isWarehoused = document.getElementById('pending_option')?.checked || false;
                 const destinationCountry = document.getElementById('stepDestinationSelect')?.value || '';
                 
                 console.log('📋 Step 4 validation:', {
@@ -392,23 +450,24 @@ function kit_render_waybill_multiform($atts)
                     }
                 }
                 
-                // If warehouse is checked, destination country and city are still required
-                if (isWarehoused && !destinationCountry) {
-                    isValid = false;
-                    errors.push({
-                        message: 'Destination country is required even for warehoused items',
-                        fieldId: 'stepDestinationSelect'
-                    });
-                }
-                
-                // Also check destination city for warehouse items
-                const destinationCity = document.getElementById('destination_city')?.value || '';
-                if (isWarehoused && !destinationCity) {
-                    isValid = false;
-                    errors.push({
-                        message: 'Destination city is required even for warehoused items',
-                        fieldId: 'destination_city'
-                    });
+                // Only require destination fields if NOT pending
+                if (!isWarehoused) {
+                    if (!destinationCountry) {
+                        isValid = false;
+                        errors.push({
+                            message: 'Destination country is required for non-pending items',
+                            fieldId: 'stepDestinationSelect'
+                        });
+                    }
+                    
+                    const destinationCity = document.getElementById('destination_city')?.value || '';
+                    if (!destinationCity) {
+                        isValid = false;
+                        errors.push({
+                            message: 'Destination city is required for non-pending items',
+                            fieldId: 'destination_city'
+                        });
+                    }
                 }
                 
                 // Special validation for VAT - if VAT is enabled, waybill items are required
@@ -552,10 +611,10 @@ function kit_render_waybill_multiform($atts)
             }
 
             // Warehoused checkbox change handler
-            const warehousedCheckbox = document.getElementById('warehoused_option');
-            if (warehousedCheckbox) {
-                warehousedCheckbox.addEventListener('change', () => {
-                    // Re-validate destination fields when warehoused status changes
+            const pendingCheckbox = document.getElementById('pending_option');
+            if (pendingCheckbox) {
+                pendingCheckbox.addEventListener('change', () => {
+                    // Re-validate destination fields when pending status changes
                     validateField('destination_country');
                     validateField('destination_city');
                 });
@@ -811,7 +870,7 @@ function kit_render_waybill_multiform($atts)
 
         });
 
-        <?php if (!$atts['ajaxform']): ?>
+        <?php if (isset($atts['ajaxform']) && $atts['ajaxform']): ?>
             // AJAX Form Submission
             jQuery(document).ready(function($) {
                 $('#multi-step-waybill-form').on('submit', function(e) {
@@ -849,25 +908,75 @@ function kit_render_waybill_multiform($atts)
                         })
                         .done(function(response) {
                             if (response.success) {
-                                // Success handling with role-based messaging
-                                const canSeePrices = response.data.can_see_prices || false;
-                                const waybillNo = response.data.waybill_no || '';
+                                // Check if this is a modal submission (from server response or client-side)
+                                const isModal = response.data?.is_modal || document.getElementById('is_modal')?.value === '1';
+                                const referer = document.referrer;
+                                const isFromDeliveryPage = referer && referer.includes('page=view-deliveries');
                                 
-                                // Show success message with proper KIT Toast
-                                if (canSeePrices) {
-                                    // For owners who can see prices - use KIT Toast
-                                    if (window.KITToast) {
-                                        window.KITToast.show(response.data.message, 'success', 'Waybill Created');
-                                    } else {
-                                        showSuccess(response.data.message);
+                                console.log('🔍 Modal check:', { 
+                                    serverIsModal: response.data?.is_modal, 
+                                    clientIsModal: document.getElementById('is_modal')?.value === '1',
+                                    isModal, 
+                                    isFromDeliveryPage, 
+                                    referer 
+                                });
+                                
+                                if (isModal) {
+                                    // Modal submission - redirect back to where you came from
+                                    const waybillNo = response.data.waybill_no || '';
+                                    
+                                    // Try to get the original page URL from the hidden field first
+                                    const originalPageUrlField = document.getElementById('original_page_url');
+                                    let baseUrl = originalPageUrlField ? originalPageUrlField.value : referer;
+                                    
+                                    console.log('🔍 URL sources:', {
+                                        originalPageUrlField: originalPageUrlField ? originalPageUrlField.value : 'not found',
+                                        documentReferrer: referer,
+                                        usingBaseUrl: baseUrl
+                                    });
+                                    
+                                    // Enhanced referrer handling with fallbacks
+                                    if (!baseUrl || baseUrl === '' || baseUrl === window.location.origin + '/wp-admin/') {
+                                        // Fallback: construct the waybill management page URL
+                                        baseUrl = window.location.origin + '/wp-admin/admin.php?page=08600-waybill-manage';
+                                        console.log('⚠️ Using fallback URL:', baseUrl);
                                     }
+                                    
+                                    // Ensure we have a proper base URL
+                                    if (!baseUrl.includes('admin.php')) {
+                                        baseUrl = window.location.origin + '/wp-admin/admin.php?page=08600-waybill-manage';
+                                        console.log('⚠️ Corrected URL to:', baseUrl);
+                                    }
+                                    
+                                    const redirectUrl = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 
+                                        'waybill_created=1&waybill_no=' + encodeURIComponent(waybillNo) + 
+                                        '&message=' + encodeURIComponent('Waybill #' + waybillNo + ' created successfully!');
+                                    
+                                    console.log('🔍 Final redirect debug:', {
+                                        originalReferrer: referer,
+                                        capturedOriginalUrl: originalPageUrlField ? originalPageUrlField.value : 'not found',
+                                        finalBaseUrl: baseUrl,
+                                        finalRedirectUrl: redirectUrl
+                                    });
+                                    
+                                    console.log('🔄 Modal redirect to:', redirectUrl);
+                                    window.location.href = redirectUrl;
+                                } else if (isFromDeliveryPage) {
+                                    // Delivery page - redirect back with success message
+                                    const waybillNo = response.data.waybill_no || '';
+                                    const redirectUrl = referer + (referer.includes('?') ? '&' : '?') + 
+                                        'waybill_created=1&waybill_no=' + encodeURIComponent(waybillNo) + 
+                                        '&message=' + encodeURIComponent('Waybill #' + waybillNo + ' created successfully!');
+                                    console.log('🔄 Delivery page redirect to:', redirectUrl);
+                                    window.location.href = redirectUrl;
                                 } else {
-                                    // For data capturers/managers - show enhanced success toast with waybill number
-                                    const toastMessage = `Waybill #${waybillNo} created successfully! You can create another waybill.`;
-                                    if (window.KITToast) {
-                                        window.KITToast.show(toastMessage, 'success', 'Waybill Created');
+                                    // Regular waybill creation - go to viewWaybill.php
+                                    const waybillId = response.data.waybill_id || '';
+                                    if (waybillId) {
+                                        console.log('🔄 Redirecting to waybill view:', waybillId);
+                                        window.location.href = '<?php echo admin_url('admin.php?page=08600-Waybill-view&waybill_id='); ?>' + waybillId + '&waybill_atts=view_waybill';
                                     } else {
-                                        showSuccess(toastMessage);
+                                        showSuccess(response.data.message || 'Waybill created successfully!');
                                     }
                                 }
                                 

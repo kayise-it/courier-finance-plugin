@@ -1,5 +1,5 @@
 <?php
-$testing = true;
+$testing = false;
 
 /**
  * PDF Generator for Waybills/Quotations
@@ -13,24 +13,24 @@ if (! defined('ABSPATH')) {
     dirname(__FILE__, 3) . '/wp-load.php',  // Plugin -> wp-content -> root
     dirname(__FILE__, 2) . '/wp-load.php',  // Plugin -> root
   ];
-  
+
   $wp_load_found = false;
-  
+
   foreach ($possible_paths as $path) {
     if (file_exists($path)) {
       // Suppress errors during WordPress loading
       $old_error_reporting = error_reporting();
       error_reporting(E_ERROR | E_PARSE | E_CORE_ERROR | E_COMPILE_ERROR);
-      
+
       require_once $path;
-      
+
       // Restore error reporting
       error_reporting($old_error_reporting);
       $wp_load_found = true;
       break;
     }
   }
-  
+
   if (!$wp_load_found) {
     die('WordPress not found. Please ensure the plugin is installed in the correct directory.');
   }
@@ -88,14 +88,23 @@ require_once __DIR__ . '/vendor/autoload.php';
 $quotation = KIT_Waybills::getFullWaybillWithItems($waybill_no);
 
 if (!$quotation || !isset($quotation->waybill)) {
-    wp_die('Waybill not found');
+  wp_die('Waybill not found');
+}
+
+// Generate QR code for waybill
+$qr_code_data = !empty($quotation->waybill['qr_code_data']) 
+    ? $quotation->waybill['qr_code_data'] 
+    : KIT_Waybills::generate_qr_code_data($waybill_no);
+$qr_code_image = '';
+if (!empty($qr_code_data)) {
+    $qr_code_image = KIT_Waybills::generate_qr_code_image($qr_code_data, 200);
 }
 
 
 // Convert waybill to array and handle null values
 $waybill = (array) $quotation->waybill;
-$waybill = array_map(function($value) {
-    return $value === null ? '' : $value;
+$waybill = array_map(function ($value) {
+  return $value === null ? '' : $value;
 }, $waybill);
 
 // Convert back to object for compatibility
@@ -132,14 +141,14 @@ if (!empty($waybill->miscellaneous)) {
 // Priority: Manual override from waybill > Stored snapshot > Automatic selection
 $charge_basis = '';
 if (!empty($waybill->charge_basis)) {
-    // Use manual override from waybill if set
-    $charge_basis = $waybill->charge_basis;
+  // Use manual override from waybill if set
+  $charge_basis = $waybill->charge_basis;
 } elseif (!empty($stored_basis)) {
-    // Use stored snapshot if available
-    $charge_basis = $stored_basis;
+  // Use stored snapshot if available
+  $charge_basis = $stored_basis;
 } else {
-    // Automatic selection: use the higher charge
-    $charge_basis = ($mass_charge > $volume_charge) ? 'mass' : 'volume';
+  // Automatic selection: use the higher charge
+  $charge_basis = ($mass_charge > $volume_charge) ? 'mass' : 'volume';
 }
 
 if ($charge_basis == 'mass' || $charge_basis == 'weight') {
@@ -210,8 +219,8 @@ $computed_fallback_total = $transport_total + $misc_total + $sad500_total + $sad
 $final_total = $stored_invoice_amount > 0
   ? $stored_invoice_amount
   : ((isset($waybill->product_invoice_amount) && floatval($waybill->product_invoice_amount) > 0)
-      ? floatval($waybill->product_invoice_amount)
-      : $computed_fallback_total);
+    ? floatval($waybill->product_invoice_amount)
+    : $computed_fallback_total);
 
 // Get the image file content and convert it to Base64
 $imagePath = plugin_dir_path(__FILE__) . '/icons/pin.png';
@@ -254,12 +263,32 @@ if (!$quotation) {
   wp_die('Quotation not found');
 }
 
+// Terms & Conditions: load from WP options with safe fallback
+$kit_terms = function_exists('get_option') ? get_option('kit_terms_conditions', '') : '';
+if (!is_string($kit_terms)) {
+  $kit_terms = '';
+}
+$default_terms_html = '<ul class="terms-conditions">'
+  . '<li>Payment terms: <strong>50% upfront required before dispatch</strong>, the rest on delivery.</li>'
+  . '<li>Late payment: <strong>10% penalty</strong> if not paid within 7 days.</li>'
+  . '<li>All prices are in <strong>South African Rand (ZAR)</strong>.</li>'
+  . '<li>Delivery time: Approximately <strong>14 Days</strong> after dispatch and TRA release.</li>'
+  . '<li>Insurance: Basic coverage included, additional coverage available.</li>'
+  . '<li>Extra insurance available on request at additional cost.</li>'
+  . '</ul>';
+$terms_html = trim($kit_terms) !== '' ? $kit_terms : $default_terms_html;
+
 // Create PDF content
 ob_start();
 ?>
 
 <style>
-  :root { --primary: <?php echo $primary_color; ?>; --secondary: <?php echo $secondary_color; ?>; --accent: <?php echo $accent_color; ?>; }
+  :root {
+    --primary: <?php echo $primary_color; ?>;
+    --secondary: <?php echo $secondary_color; ?>;
+    --accent: <?php echo $accent_color; ?>;
+  }
+
   @page {
     margin: 8mm 8mm 15mm 8mm;
   }
@@ -326,6 +355,7 @@ ob_start();
   td.cellStyle.aligncenter {
     text-align: center;
   }
+
   td.cellStyle.alignright {
     text-align: right;
   }
@@ -352,10 +382,12 @@ ob_start();
   .pcolor {
     background-color: <?php echo $primary_color; ?>;
   }
-  .pTextColor{
+
+  .pTextColor {
     color: <?php echo $primary_color; ?>;
   }
-  .wText{
+
+  .wText {
     color: #fff;
   }
 
@@ -368,6 +400,7 @@ ob_start();
     font-weight: 700;
     font-size: 18px;
   }
+
   /* Ensure the TOTAL row is never split across pages */
   .rowTotal {
     page-break-inside: avoid;
@@ -395,11 +428,24 @@ ob_start();
     text-align: center;
   }
 
-  .terms-conditions {
+  /* Tidy Terms & Conditions list */
+  .terms-conditions,
+  .terms-conditions ul {
     font-size: 10px;
-    margin: 0 0 8px 0;
-    padding-left: 18px;
+    margin: 0 0 6px 0;
+    padding-left: 14px;
+    list-style-type: disc;
+    list-style-position: outside;
     color: #444;
+  }
+
+  .terms-conditions li {
+    margin: 2px 0 4px;
+    line-height: 1.4;
+  }
+
+  .terms-conditions li::marker {
+    color: <?php echo $primary_color; ?>;
   }
 
   /* Keep two-card section compact and on same page */
@@ -466,18 +512,25 @@ ob_start();
       <!-- HEADER: LOGO + INVOICE INFO -->
       <table width="100%" cellpadding="3" cellspacing="0" style="margin-bottom:8px; border-bottom:1px solid #e9ecef;">
         <tr>
-          <td style="width:50%;vertical-align:middle;">
+          <td style="width:40%;vertical-align:middle;">
             <img src="<?php echo plugin_dir_url(__FILE__); ?>/img/logo.jpeg" alt="Company Logo" style="display:block; width:100%; height:auto;">
           </td>
-          <td style="width:50%;vertical-align:middle;text-align:right;">
+          <td style="width:35%;vertical-align:middle;text-align:right;">
             <div style="font-size:18px;font-weight:bold;color:<?= $pTextColor ?> ;text-transform:uppercase; margin-bottom:4px;">Waybill Invoice</div>
             <div style="font-size:10px;color:#666; padding:6px;">
               <div><strong>Invoice #:</strong> <?= $waybill->product_invoice_number ?></div>
               <div><strong>Date:</strong> <?= date('F j, Y', strtotime($waybill->created_at)) ?></div>
-              <div><strong>Valid Until:</strong> <?= date('F j, Y', strtotime('+30 days')) ?></div>
               <div><strong>Tracking #:</strong> <?= $waybill->tracking_number ?></div>
             </div>
           </td>
+          <?php if (!empty($qr_code_image)): ?>
+          <td style="width:25%;vertical-align:middle;text-align:right;">
+            <div style="text-align:center;">
+              <img src="<?= $qr_code_image ?>" alt="QR Code" style="width:150px; height:150px; display:block; margin:0 auto;">
+              <div style="font-size:9px; color:#666; margin-top:4px; text-align:center;">Scan for details</div>
+            </div>
+          </td>
+          <?php endif; ?>
         </tr>
       </table>
 
@@ -677,6 +730,7 @@ ob_start();
               <!-- <?= KIT_Waybills::vatCharge($waybill->waybill_items_total) ?> -->
             </td>
           </tr>
+          <?php $show_vat_column = (!empty($waybill->vat_include) && intval($waybill->vat_include) === 1); ?>
           <?php foreach ($waybillItems as $item): ?>
             <tr style="background:#f9fafb; border-bottom:1px solid #e0e7ef;">
               <td class="CellStyle">
@@ -686,7 +740,11 @@ ob_start();
               <td class="CellStyle" style="text-align:center;"><?= intval($item['quantity']) ?></td>
               <td class="CellStyle" style="text-align:right;"><?= number_format($item['unit_price'], 2) ?></td>
               <td class="CellStyle" style="text-align:right;"><?= number_format($item['quantity'] * $item['unit_price'], 2) ?></td>
-              <td class="CellStyle" style="text-align:right; font-weight: 700;"><?= number_format(($item['quantity'] * $item['unit_price']) * (KIT_Waybills::vatRate() / 100), 2) ?></td>
+              <?php if ($show_vat_column): ?>
+                <td class="CellStyle" style="text-align:right; font-weight: 700;"><?= number_format(($item['quantity'] * $item['unit_price']) * (KIT_Waybills::vatRate() / 100), 2) ?></td>
+              <?php else: ?>
+                <td class="CellStyle" style="text-align:right; font-weight: 700;"></td>
+              <?php endif; ?>
             </tr>
           <?php endforeach; ?>
         <?php endif; ?>
@@ -766,27 +824,10 @@ ob_start();
                 </svg>
                 Terms &amp; Conditions
               </div>
-              <ul class="terms-conditions">
-                <li>Payment terms: <strong>50% upfront required before dispatch</strong>, the rest on delivery.</li>
-                <li>Late payment: <strong>10% penalty</strong> if not paid within 7 days.</li>
-                <li>All prices are in <strong>South African Rand (ZAR)</strong>.</li>
-                <li>Delivery time: Approximately <strong>14 Days</strong> after dispatch and TRA release.</li>
-                <li>Insurance: Basic coverage included, additional coverage available.</li>
-                <li>Extra insurance available on request at additional cost.</li>
-              </ul>
-              <div class="thank-you-text">
-                <span>
-                  <svg width="14" height="14" style="vertical-align:middle;margin-right:3px;" fill="#2563eb" viewBox="0 0 20 20">
-                    <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm1 11H9v-1h2v1zm0-3H9V7h2v3z" />
-                  </svg>
-                  Thank you for choosing 08600 Africa (Pty) Ltd!
-                </span><br>
-                <span style="color:#444; font-weight:400;">
-                  For any queries, contact us at
-                  <a href="mailto:info@08600.co.za" style="color:<?= $pTextColor ?>; text-decoration:none;">info@08600.co.za</a>
-                  or <a href="tel:+27813934500" style="color:<?= $pTextColor ?>; text-decoration:none;">+27813934500</a>
-                </span>
+              <div class="terms-conditions" style="padding-left:0; list-style-position:inside;">
+                <?= $terms_html ?>
               </div>
+
             </div>
           </td>
         </tr>
@@ -819,6 +860,6 @@ $dompdf->render();
 
 // Output PDF
 $dompdf->stream("waybill-{$waybill_no}.pdf", [
-  "Attachment" => true
+  "Attachment" => false
 ]);
 exit;

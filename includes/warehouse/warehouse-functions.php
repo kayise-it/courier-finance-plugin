@@ -1,7 +1,7 @@
 <?php
 /**
  * Warehouse Management Functions
- * Handles warehouse items, assignments, and status tracking
+ * Handles warehouse operations using kit_waybills table
  */
 
 if (!defined('ABSPATH')) {
@@ -11,197 +11,212 @@ if (!defined('ABSPATH')) {
 class KIT_Warehouse
 {
     /**
-     * Add waybill items to warehouse
+     * Add waybill to warehouse
      */
-    public static function addToWarehouse($waybill_id, $waybill_data)
+    public static function addToWarehouse($waybill_id, $warehouse_location = 'Johannesburg')
     {
         global $wpdb;
         
-        $warehouse_table = $wpdb->prefix . 'kit_warehouse_items';
-        $waybill_items_table = $wpdb->prefix . 'kit_waybill_items';
+        $waybills_table = $wpdb->prefix . 'kit_waybills';
         
-        // Get waybill number from waybill_data (not the database ID)
-        $waybill_no = $waybill_data['waybill_no'] ?? null;
-        if (!$waybill_no) {
-            return new WP_Error('missing_waybill_no', 'Waybill number is required');
-        }
-        
-        // Get waybill items using waybill number (not database ID)
-        $items = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM $waybill_items_table WHERE waybillno = %d",
-            $waybill_no
-        ));
-        
-        if (empty($items)) {
-            return new WP_Error('no_items', 'No items found for waybill');
-        }
-        
-        $warehouse_items = [];
-        
-        foreach ($items as $item) {
-            $warehouse_item = [
-                'waybill_id' => $waybill_id,
-                'customer_id' => $waybill_data['customer_id'],
-                'item_description' => $item->item_description,
-                'weight_kg' => $item->weight_kg ?? 0.00,
-                'length_cm' => $item->length_cm ?? 0.00,
-                'width_cm' => $item->width_cm ?? 0.00,
-                'height_cm' => $item->height_cm ?? 0.00,
-                'volume_cm3' => $item->volume_cm3 ?? 0.00,
-                'status' => 'in_warehouse',
-                'notes' => 'Added to warehouse from waybill #' . $waybill_data['waybill_no'],
-                'created_at' => current_time('mysql')
-            ];
-            
-            $result = $wpdb->insert($warehouse_table, $warehouse_item);
+        $result = $wpdb->update(
+            $waybills_table,
+            [
+                'status' => 'pending',
+                'warehouse' => $warehouse_location
+            ],
+            ['id' => $waybill_id],
+            ['%s', '%s'],
+            ['%d']
+        );
             
             if ($result === false) {
-                error_log('Failed to add item to warehouse: ' . $wpdb->last_error);
-                return new WP_Error('db_error', 'Failed to add item to warehouse');
-            }
-            
-            $warehouse_items[] = $wpdb->insert_id;
+            error_log('Failed to add waybill to warehouse: ' . $wpdb->last_error);
+            return new WP_Error('db_error', 'Failed to add waybill to warehouse');
         }
         
-        // Log warehouse action
-        self::logWarehouseAction($waybill_id, $waybill_data['waybill_no'], 'warehoused', 'pending', 'warehoused');
-        
-        return $warehouse_items;
+        return true;
     }
     
     /**
-     * Get warehouse items for a waybill
+     * Get warehouse items from waybills table
      */
-    public static function getWarehouseItems($waybill_id)
+    public static function getWarehouseItems($warehouse_location = null)
     {
         global $wpdb;
-        $warehouse_table = $wpdb->prefix . 'kit_warehouse_items';
-        
-        return $wpdb->get_results($wpdb->prepare(
-            "SELECT wi.*, d.delivery_reference, d.dispatch_date
-             FROM $warehouse_table wi
-             LEFT JOIN {$wpdb->prefix}kit_deliveries d ON wi.assigned_delivery_id = d.id
-             WHERE wi.waybill_id = %d
-             ORDER BY wi.created_at ASC",
-            $waybill_id
-        ));
-    }
-    
-    /**
-     * Get all warehouse items with status
-     */
-    public static function getAllWarehouseItems($status = null)
-    {
-        global $wpdb;
-        $warehouse_table = $wpdb->prefix . 'kit_warehouse_items';
         $waybills_table = $wpdb->prefix . 'kit_waybills';
         $customers_table = $wpdb->prefix . 'kit_customers';
         
-        $where_clause = '';
-        if ($status) {
-            $where_clause = $wpdb->prepare(" WHERE wi.status = %s", $status);
+        $where_conditions = ["w.warehouse IS NOT NULL AND w.warehouse != ''"];
+        $params = [];
+        
+        if ($warehouse_location) {
+            $where_conditions[] = "w.warehouse = %s";
+            $params[] = $warehouse_location;
         }
         
-        return $wpdb->get_results(
-            "SELECT wi.*, w.waybill_no, c.name as customer_name, c.surname as customer_surname, d.delivery_reference, d.dispatch_date
-             FROM $warehouse_table wi
-             LEFT JOIN $waybills_table w ON wi.waybill_id = w.id
-             LEFT JOIN $customers_table c ON wi.customer_id = c.cust_id
-             LEFT JOIN {$wpdb->prefix}kit_deliveries d ON wi.assigned_delivery_id = d.id
-             $where_clause
-             ORDER BY wi.created_at DESC"
-        );
+        $where_clause = " WHERE " . implode(" AND ", $where_conditions);
+        
+        $query = "
+            SELECT 
+                w.*,
+                w.id as waybill_id,
+                w.product_invoice_amount,
+                w.total_mass_kg,
+                w.status,
+                w.created_at,
+                w.last_updated_at,
+                c.name as customer_name,
+                c.surname as customer_surname,
+                c.company_name,
+                c.cell as customer_cell,
+                c.email_address as customer_email
+            FROM {$waybills_table} w
+            LEFT JOIN {$customers_table} c ON w.customer_id = c.cust_id
+            {$where_clause}
+            ORDER BY w.created_at DESC
+        ";
+        
+        if (!empty($params)) {
+            return $wpdb->get_results($wpdb->prepare($query, $params));
+        } else {
+            return $wpdb->get_results($query);
+        }
     }
     
     /**
-     * Assign warehouse item to delivery
+     * Get all warehouse items with status from waybills table
      */
-    public static function assignToDelivery($warehouse_item_id, $delivery_id, $assigned_by = null)
+    public static function getAllWarehouseItems($status = null, $warehouse_location = null)
     {
         global $wpdb;
-        $warehouse_table = $wpdb->prefix . 'kit_warehouse_items';
+        $waybills_table = $wpdb->prefix . 'kit_waybills';
+        $customers_table = $wpdb->prefix . 'kit_customers';
+        
+        $where_conditions = [];
+        
+        if ($status) {
+            $where_conditions[] = $wpdb->prepare("w.status = %s", $status);
+        } else {
+            $where_conditions[] = "w.warehouse IS NOT NULL AND w.warehouse != ''";
+        }
+        
+        if ($warehouse_location) {
+            $where_conditions[] = $wpdb->prepare("w.warehouse = %s", $warehouse_location);
+        }
+        
+        $where_clause = " WHERE " . implode(" AND ", $where_conditions);
+        
+        return $wpdb->get_results(
+            "SELECT 
+                w.*,
+                w.id,
+                w.id as waybill_id,
+                w.product_invoice_amount,
+                w.total_mass_kg,
+                w.status,
+                w.created_at,
+                w.last_updated_at,
+                c.name as customer_name, 
+                c.surname as customer_surname, 
+                c.company_name,
+                c.cell as customer_cell,
+                c.email_address as customer_email,
+                d.delivery_reference, 
+                d.dispatch_date
+             FROM {$waybills_table} w
+             LEFT JOIN {$customers_table} c ON w.customer_id = c.cust_id
+             LEFT JOIN {$wpdb->prefix}kit_deliveries d ON w.delivery_id = d.id
+             $where_clause
+             ORDER BY w.created_at DESC"
+        );
+    }
+    
+    
+    /**
+     * Assign waybill to delivery
+     */
+    public static function assignToDelivery($waybill_id, $delivery_id, $assigned_by = null)
+    {
+        global $wpdb;
+        $waybills_table = $wpdb->prefix . 'kit_waybills';
         
         if (!$assigned_by) {
             $assigned_by = get_current_user_id();
         }
         
+        // Update waybill status to assigned and clear warehouse flag
         $result = $wpdb->update(
-            $warehouse_table,
+            $waybills_table,
             [
                 'status' => 'assigned',
-                'assigned_delivery_id' => $delivery_id,
-                'assigned_by' => $assigned_by,
-                'assigned_at' => current_time('mysql')
+                'delivery_id' => $delivery_id,
+                'warehouse' => '', // Clear warehouse field since it's no longer in warehouse
+                'last_updated_by' => $assigned_by,
+                'last_updated_at' => current_time('mysql')
             ],
-            ['id' => $warehouse_item_id],
-            ['%s', '%d', '%d', '%s'],
+            ['id' => $waybill_id],
+            ['%s', '%d', '%s', '%d', '%s'],
             ['%d']
         );
         
         if ($result === false) {
-            error_log('Failed to assign warehouse item to delivery: ' . $wpdb->last_error);
-            return new WP_Error('db_error', 'Failed to assign item to delivery');
-        }
-        
-        // Log warehouse action
-        $item = $wpdb->get_row($wpdb->prepare("SELECT * FROM $warehouse_table WHERE id = %d", $warehouse_item_id));
-        if ($item) {
-            $waybill = $wpdb->get_row($wpdb->prepare("SELECT waybill_no FROM {$wpdb->prefix}kit_waybills WHERE id = %d", $item->waybill_id));
-            self::logWarehouseAction($item->waybill_id, $waybill->waybill_no, 'assigned', 'warehoused', 'assigned', $delivery_id);
+            error_log('Failed to assign waybill to delivery: ' . $wpdb->last_error);
+            return new WP_Error('db_error', 'Failed to assign waybill to delivery');
         }
         
         return true;
     }
     
     /**
-     * Mark warehouse item as shipped
+     * Mark waybill as shipped
      */
-    public static function markAsShipped($warehouse_item_id)
+    public static function markAsShipped($waybill_id)
     {
         global $wpdb;
-        $warehouse_table = $wpdb->prefix . 'kit_warehouse_items';
+        $waybills_table = $wpdb->prefix . 'kit_waybills';
         
         $result = $wpdb->update(
-            $warehouse_table,
+            $waybills_table,
             [
                 'status' => 'shipped',
-                'shipped_at' => current_time('mysql')
+                'last_updated_at' => current_time('mysql')
             ],
-            ['id' => $warehouse_item_id],
+            ['id' => $waybill_id],
             ['%s', '%s'],
             ['%d']
         );
         
         if ($result === false) {
-            error_log('Failed to mark warehouse item as shipped: ' . $wpdb->last_error);
-            return new WP_Error('db_error', 'Failed to mark item as shipped');
+            error_log('Failed to mark waybill as shipped: ' . $wpdb->last_error);
+            return new WP_Error('db_error', 'Failed to mark waybill as shipped');
         }
         
         return true;
     }
     
     /**
-     * Mark warehouse item as delivered
+     * Mark waybill as delivered
      */
-    public static function markAsDelivered($warehouse_item_id)
+    public static function markAsDelivered($waybill_id)
     {
         global $wpdb;
-        $warehouse_table = $wpdb->prefix . 'kit_warehouse_items';
+        $waybills_table = $wpdb->prefix . 'kit_waybills';
         
         $result = $wpdb->update(
-            $warehouse_table,
+            $waybills_table,
             [
                 'status' => 'delivered',
-                'delivered_at' => current_time('mysql')
+                'last_updated_at' => current_time('mysql')
             ],
-            ['id' => $warehouse_item_id],
+            ['id' => $waybill_id],
             ['%s', '%s'],
             ['%d']
         );
         
         if ($result === false) {
-            error_log('Failed to mark warehouse item as delivered: ' . $wpdb->last_error);
-            return new WP_Error('db_error', 'Failed to mark item as delivered');
+            error_log('Failed to mark waybill as delivered: ' . $wpdb->last_error);
+            return new WP_Error('db_error', 'Failed to mark waybill as delivered');
         }
         
         return true;
@@ -214,7 +229,6 @@ class KIT_Warehouse
     {
         global $wpdb;
         $deliveries_table = $wpdb->prefix . 'kit_deliveries';
-        $warehouse_table = $wpdb->prefix . 'kit_warehouse_items';
         
         if (empty($destination_city)) {
             // Match by country only
@@ -230,7 +244,7 @@ class KIT_Warehouse
                  AND oc2.is_active = 1
                  AND d.dispatch_date >= CURDATE()
                  AND d.status = 'scheduled'
-                 AND d.delivery_reference != 'warehoused'
+                 AND d.delivery_reference != 'pending'
                  ORDER BY d.dispatch_date ASC",
                 $destination_country
             ));
@@ -248,7 +262,7 @@ class KIT_Warehouse
                  AND oc2.is_active = 1
                  AND d.dispatch_date >= CURDATE()
                  AND d.status = 'scheduled'
-                 AND d.delivery_reference != 'warehoused'
+                 AND d.delivery_reference != 'pending'
                  ORDER BY d.dispatch_date ASC",
                 $destination_country
             ));
@@ -258,50 +272,224 @@ class KIT_Warehouse
     }
     
     /**
-     * Log warehouse actions
-     */
-    private static function logWarehouseAction($waybill_id, $waybill_no, $action, $previous_status, $new_status, $delivery_id = null)
-    {
-        global $wpdb;
-        $tracking_table = $wpdb->prefix . 'kit_warehouse_tracking';
-        
-        // Resolve customer id for tracking (avoid FK violations)
-        $customer_id = (int) $wpdb->get_var($wpdb->prepare(
-            "SELECT customer_id FROM {$wpdb->prefix}kit_waybills WHERE id = %d",
-            $waybill_id
-        ));
-        $wpdb->insert($tracking_table, [
-            'waybill_id' => $waybill_id,
-            'waybill_no' => $waybill_no,
-            'customer_id' => $customer_id,
-            'action' => $action,
-            'previous_status' => $previous_status,
-            'new_status' => $new_status,
-            'assigned_delivery_id' => $delivery_id,
-            'notes' => "Warehouse item $action",
-            'created_by' => get_current_user_id(),
-            'created_at' => current_time('mysql')
-        ]);
-    }
-    
-    /**
-     * Get warehouse statistics
+     * Get warehouse statistics from waybills table
      */
     public static function getWarehouseStats()
     {
         global $wpdb;
-        $warehouse_table = $wpdb->prefix . 'kit_warehouse_items';
+        $waybills_table = $wpdb->prefix . 'kit_waybills';
         
         $stats = $wpdb->get_row(
             "SELECT 
                 COUNT(*) as total_items,
-                SUM(CASE WHEN status = 'in_warehouse' THEN 1 ELSE 0 END) as in_warehouse,
+                SUM(CASE WHEN warehouse IS NOT NULL AND warehouse != '' THEN 1 ELSE 0 END) as in_warehouse,
                 SUM(CASE WHEN status = 'assigned' THEN 1 ELSE 0 END) as assigned,
                 SUM(CASE WHEN status = 'shipped' THEN 1 ELSE 0 END) as shipped,
                 SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) as delivered
-             FROM $warehouse_table"
+             FROM {$waybills_table}
+             WHERE warehouse IS NOT NULL AND warehouse != '' OR status IN ('assigned', 'shipped', 'delivered')"
         );
         
         return $stats;
+    }
+    
+    /**
+     * Get warehouse items by waybill number
+     */
+    public static function getWarehouseItemByWaybillNo($waybill_no)
+    {
+        global $wpdb;
+        $waybills_table = $wpdb->prefix . 'kit_waybills';
+        $customers_table = $wpdb->prefix . 'kit_customers';
+        
+        return $wpdb->get_row($wpdb->prepare(
+            "SELECT w.*, c.name as customer_name, c.surname as customer_surname
+             FROM $waybills_table w
+             LEFT JOIN $customers_table c ON w.customer_id = c.cust_id
+             WHERE w.waybill_no = %d
+             AND w.warehouse IS NOT NULL AND w.warehouse != ''",
+            $waybill_no
+        ));
+    }
+    
+    /**
+     * Remove waybill from warehouse
+     */
+    public static function removeFromWarehouse($waybill_id)
+    {
+        global $wpdb;
+        $waybills_table = $wpdb->prefix . 'kit_waybills';
+        
+        $result = $wpdb->update(
+            $waybills_table,
+            [
+                'status' => 'pending',
+                'warehouse' => '',
+                'last_updated_at' => current_time('mysql')
+            ],
+            ['id' => $waybill_id],
+            ['%s', '%s', '%s'],
+            ['%d']
+        );
+        
+        if ($result === false) {
+            error_log('Failed to remove waybill from warehouse: ' . $wpdb->last_error);
+            return new WP_Error('db_error', 'Failed to remove waybill from warehouse');
+        }
+        
+        return true;
+    }
+    
+    /**
+     * Create realistic warehouse waybills like a human would
+     */
+    public static function createRealisticWarehousedWaybills($count = 10)
+    {
+        global $wpdb;
+        
+        // Get real customers from database
+        $customers = $wpdb->get_results("
+            SELECT cust_id, name, surname, email 
+            FROM {$wpdb->prefix}kit_customers 
+            WHERE cust_id > 0 
+            ORDER BY RAND() 
+            LIMIT 20
+        ");
+        
+        if (empty($customers)) {
+            return new WP_Error('no_customers', 'No customers found. Please create customers first.');
+        }
+        
+        // Get delivery options (warehouse delivery)
+        $warehouse_delivery = $wpdb->get_row("
+            SELECT id FROM {$wpdb->prefix}kit_deliveries 
+            WHERE delivery_reference = 'pending' 
+            LIMIT 1
+        ");
+        
+        if (!$warehouse_delivery) {
+            return new WP_Error('no_warehouse_delivery', 'Warehouse delivery not found.');
+        }
+        
+        // Get shipping directions for realistic data
+        $directions = $wpdb->get_results("
+            SELECT id FROM {$wpdb->prefix}kit_shipping_directions 
+            ORDER BY RAND() 
+            LIMIT 5
+        ");
+        
+        $created_count = 0;
+        $errors = [];
+        
+        // Realistic product descriptions
+        $product_descriptions = [
+            'Electronics - Laptops and Accessories',
+            'Clothing - Winter Collection',
+            'Books - Educational Materials',
+            'Home Appliances - Kitchen Items',
+            'Sports Equipment - Fitness Gear',
+            'Furniture - Office Chairs',
+            'Automotive Parts - Engine Components',
+            'Medical Supplies - First Aid Kits',
+            'Tools - Construction Equipment',
+            'Toys - Educational Games'
+        ];
+        
+        // Realistic warehouse locations
+        $warehouse_locations = [
+            'Johannesburg Warehouse',
+            'Cape Town Distribution Center',
+            'Durban Storage Facility',
+            'Pretoria Logistics Hub',
+            'Port Elizabeth Warehouse'
+        ];
+        
+        for ($i = 1; $i <= $count; $i++) {
+            $customer = $customers[array_rand($customers)];
+            $direction = $directions[array_rand($directions)];
+            $product_desc = $product_descriptions[array_rand($product_descriptions)];
+            $warehouse_location = $warehouse_locations[array_rand($warehouse_locations)];
+            
+            // Generate realistic waybill number
+            $waybill_no = 'WB-' . date('Y') . '-' . str_pad($i + rand(1000, 9999), 6, '0', STR_PAD_LEFT);
+            
+            // Realistic dimensions and weights
+            $length = rand(20, 120); // cm
+            $width = rand(15, 80);   // cm  
+            $height = rand(10, 60);  // cm
+            $weight = rand(5, 150);   // kg
+            $volume = ($length * $width * $height) / 1000000; // m³
+            
+            // Realistic invoice amounts
+            $invoice_amount = rand(250, 8500);
+            
+            $waybill_data = [
+                'direction_id' => $direction->id,
+                'delivery_id' => $warehouse_delivery->id,
+                'customer_id' => $customer->cust_id,
+                'approval' => 'approved',
+                'waybill_no' => $waybill_no,
+                'product_invoice_number' => class_exists('KIT_Waybills') ? KIT_Waybills::generate_product_invoice_number() : 'INV-' . date('Ymd') . '-' . str_pad($i, 4, '0', STR_PAD_LEFT),
+                'product_invoice_amount' => $invoice_amount,
+                'waybill_items_total' => $invoice_amount,
+                'item_length' => $length,
+                'item_width' => $width,
+                'item_height' => $height,
+                'total_mass_kg' => $weight,
+                'total_volume' => $volume,
+                'mass_charge' => $weight * 2.5, // Realistic charge per kg
+                'volume_charge' => $volume * 150, // Realistic charge per m³
+                'charge_basis' => $weight > ($volume * 200) ? 'mass' : 'volume',
+                'vat_include' => 'Yes',
+                'warehouse' => $warehouse_location,
+                'miscellaneous' => "Product: {$product_desc}\nCustomer: {$customer->name} {$customer->surname}\nEmail: {$customer->email}",
+                'include_sad500' => rand(0, 1),
+                'include_sadc' => rand(0, 1),
+                'return_load' => rand(0, 1),
+                'tracking_number' => 'TRK-' . strtoupper(wp_generate_password(8, false, false)),
+                'status' => 'pending',
+                'created_by' => get_current_user_id() ?: 1,
+                'last_updated_by' => get_current_user_id() ?: 1,
+                'created_at' => current_time('mysql'),
+                'last_updated_at' => current_time('mysql')
+            ];
+            
+            $result = $wpdb->insert(
+                $wpdb->prefix . 'kit_waybills',
+                $waybill_data
+            );
+            
+            if ($result) {
+                $created_count++;
+                
+                // Also create waybill items for more realism
+                $item_count = rand(1, 5);
+                for ($j = 1; $j <= $item_count; $j++) {
+                    $item_data = [
+                        'waybillno' => $waybill_no,
+                        'item_description' => "Item {$j}: " . $product_descriptions[array_rand($product_descriptions)],
+                        'quantity' => rand(1, 10),
+                        'weight_kg' => $weight / $item_count,
+                        'length_cm' => $length,
+                        'width_cm' => $width,
+                        'height_cm' => $height,
+                        'volume_cm3' => $volume * 1000000 / $item_count,
+                        'unit_price' => $invoice_amount / $item_count,
+                        'total_price' => $invoice_amount / $item_count
+                    ];
+                    
+                    $wpdb->insert($wpdb->prefix . 'kit_waybill_items', $item_data);
+                }
+            } else {
+                $errors[] = "Failed to create waybill {$waybill_no}: " . $wpdb->last_error;
+            }
+        }
+        
+        return [
+            'success' => true,
+            'created_count' => $created_count,
+            'total_requested' => $count,
+            'errors' => $errors
+        ];
     }
 }

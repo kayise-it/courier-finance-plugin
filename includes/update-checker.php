@@ -46,6 +46,11 @@ if (!defined('KIT_GITHUB_ACCESS_TOKEN')) {
     define('KIT_GITHUB_ACCESS_TOKEN', '');
 }
 
+// Optional: Branch to track for the updater (defaults to main)
+if (!defined('KIT_GITHUB_BRANCH')) {
+    define('KIT_GITHUB_BRANCH', 'main');
+}
+
 $repoUrl = 'https://github.com/' . constant('KIT_GITHUB_PLUGIN_REPO');
 
 $updateChecker = PucFactory::buildUpdateChecker(
@@ -56,7 +61,7 @@ $updateChecker = PucFactory::buildUpdateChecker(
 
 // Ask PUC to look for releases. Set the release asset if needed.
 // If your plugin main file header has Version matching a Git tag (e.g. v2.0.1), ensure tag format aligns.
-$updateChecker->setBranch('main');
+$updateChecker->setBranch(constant('KIT_GITHUB_BRANCH'));
 
 // Support private repos or higher rate limits
 $token = constant('KIT_GITHUB_ACCESS_TOKEN');

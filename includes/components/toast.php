@@ -291,6 +291,20 @@ class KIT_Toast
 		];
 		return $icons[$type] ?? $icons['info'];
 	}
+	
+	/**
+	 * Ensure toast is loaded on any page where it's needed
+	 * Can be called anywhere to activate the component
+	 */
+	public static function ensure_toast_loads()
+	{
+		// Initialize the system
+		self::init();
+		
+		// Load the necessary components
+		self::enqueue_scripts();
+		self::render_toast_container(); // This already includes the JS
+	}
 }
 
 

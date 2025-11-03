@@ -9,6 +9,32 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// Debug: Check if required classes exist
+if (!class_exists('KIT_Customers')) {
+    error_log('KIT_Customers class not found in waybill-form.php');
+    echo '<div class="error"><p>Error: KIT_Customers class not found.</p></div>';
+    return;
+}
+
+if (!class_exists('KIT_Deliveries')) {
+    error_log('KIT_Deliveries class not found in waybill-form.php');
+    echo '<div class="error"><p>Error: KIT_Deliveries class not found.</p></div>';
+    return;
+}
+
+if (!class_exists('KIT_Commons')) {
+    error_log('KIT_Commons class not found in waybill-form.php');
+    echo '<div class="error"><p>Error: KIT_Commons class not found.</p></div>';
+    return;
+}
+
+// Debug: Check if required functions exist
+if (!function_exists('tholaMaCustomer')) {
+    error_log('tholaMaCustomer function not found in waybill-form.php');
+    echo '<div class="error"><p>Error: tholaMaCustomer function not found.</p></div>';
+    return;
+}
+
 // Handle form submissions between steps - TEMPORARILY DISABLED FOR DEBUGGING
 // if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 //     // Save all submitted data to session
@@ -41,7 +67,18 @@ if (isset($_GET['cust_id'])) {
 } else {
     $customer_id = 0;
 }
-$customers = tholaMaCustomer();
+
+// Debug: Try to get customers
+try {
+    $customers = tholaMaCustomer();
+    if (empty($customers)) {
+        error_log('tholaMaCustomer returned empty result');
+        $customers = [];
+    }
+} catch (Exception $e) {
+    error_log('Error calling tholaMaCustomer: ' . $e->getMessage());
+    $customers = [];
+}
 
 $selected_customer_key = $customer_id;
 $is_existing_customer = false;
@@ -89,7 +126,13 @@ if (isset($_GET['cust_id'])) {
 }
 
 
-$customer_name = KIT_Customers::gamaCustomer($set_cust_id);
+// Debug: Try to get customer name
+try {
+    $customer_name = KIT_Customers::gamaCustomer($set_cust_id);
+} catch (Exception $e) {
+    error_log('Error calling KIT_Customers::gamaCustomer: ' . $e->getMessage());
+    $customer_name = 'Unknown Customer';
+}
 
 // Step handling - now using the persisted data
 $current_step = isset($_GET['step']) ? intval($_GET['step']) : 1;
@@ -99,7 +142,17 @@ $form_action = $is_edit_mode
     ? admin_url('admin-post.php?action=update_waybill_action')
     : admin_url('admin-post.php?action=add_waybill_action');
 
-$scheduled_deliveries = KIT_Deliveries::getScheduledDeliveries();
+// Debug: Try to get scheduled deliveries
+try {
+    $scheduled_deliveries = KIT_Deliveries::getScheduledDeliveries();
+    if (empty($scheduled_deliveries)) {
+        error_log('KIT_Deliveries::getScheduledDeliveries returned empty result');
+        $scheduled_deliveries = [];
+    }
+} catch (Exception $e) {
+    error_log('Error calling KIT_Deliveries::getScheduledDeliveries: ' . $e->getMessage());
+    $scheduled_deliveries = [];
+}
 
 ?>
 

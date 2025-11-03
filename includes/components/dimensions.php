@@ -282,9 +282,9 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
                 // Normalize the manipulator input value (handle comma/dot separators)
                 const normalizedManipValue = String(this.value).replace(',', '.');
                 this.value = normalizedManipValue;
-                // Prevent negative values
+                // Allow negative values for discounts/credits
                 const parsed = parseFloat(this.value);
-                if (!isNaN(parsed) && parsed < 0) {
+                if (isNaN(parsed)) {
                     this.value = '0';
                 }
                 

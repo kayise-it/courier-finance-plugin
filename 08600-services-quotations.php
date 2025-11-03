@@ -79,6 +79,41 @@ require_once plugin_dir_path(__FILE__) . 'includes/class-unified-table.php';
 // Initialize GitHub-based updates if available
 require_once plugin_dir_path(__FILE__) . 'includes/update-checker.php';
 
+// Include core class files
+require_once plugin_dir_path(__FILE__) . 'includes/commons.php';
+require_once plugin_dir_path(__FILE__) . 'includes/user-roles.php';
+require_once plugin_dir_path(__FILE__) . 'includes/customers/customers-functions.php';
+require_once plugin_dir_path(__FILE__) . 'includes/deliveries/deliveries-functions.php';
+require_once plugin_dir_path(__FILE__) . 'includes/waybill/waybill-functions.php';
+require_once plugin_dir_path(__FILE__) . 'includes/admin-pages.php';
+require_once plugin_dir_path(__FILE__) . 'includes/admin-menu.php';
+require_once plugin_dir_path(__FILE__) . 'includes/waybillmultiform.php';
+
+// Initialize classes
+add_action('init', function() {
+    if (class_exists('KIT_Commons')) {
+        KIT_Commons::init();
+    }
+    if (class_exists('KIT_Waybills')) {
+        KIT_Waybills::init();
+    }
+    if (class_exists('KIT_Customers')) {
+        KIT_Customers::init();
+    }
+    if (class_exists('KIT_Deliveries')) {
+        KIT_Deliveries::init();
+    }
+    if (class_exists('Plugin')) {
+        Plugin::init();
+    }
+});
+
+// Register admin menu
+add_action('admin_menu', 'plugin_add_menu');
+
+// Register shortcodes
+add_shortcode('waybill_multiform', 'kit_render_waybill_multiform');
+
 // Activate and deactivate hooks (guard against unexpected output) - SIMPLIFIED FOR DEBUGGING
 register_activation_hook(__FILE__, function() {
     try {
@@ -88,7 +123,108 @@ register_activation_hook(__FILE__, function() {
         error_log('Plugin activation error: ' . $e->getMessage());
     }
 });
-register_deactivation_hook(__FILE__, array('Database', 'deactivate'));
+
+// CRITICAL: Register deactivation hook BEFORE any WordPress functions are called
+// This ensures WordPress can find and execute the hook even if plugin fails to load
+function courier_finance_plugin_deactivate() {
+    $timestamp = date('Y-m-d H:i:s');
+    
+    // Determine log file path - try multiple locations
+    $log_paths = [
+        __DIR__ . '/../../deactivation-debug.log',  // wp-content/deactivation-debug.log
+        __DIR__ . '/deactivation-debug.log',  // plugin directory (fallback)
+        '/tmp/courier-finance-deactivation.log',  // System temp (guaranteed writable)
+    ];
+    
+    // Try to get WP_CONTENT_DIR if WordPress is loaded
+    if (defined('WP_CONTENT_DIR')) {
+        array_unshift($log_paths, WP_CONTENT_DIR . '/deactivation-debug.log');
+    }
+    
+    // Also try WordPress debug.log
+    if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG && defined('WP_CONTENT_DIR')) {
+        $log_paths[] = WP_CONTENT_DIR . '/debug.log';
+    }
+    
+    // Write to ALL possible log locations to ensure we capture it
+    $log_message = "[$timestamp] ===== DEACTIVATION HOOK CALLED =====" . PHP_EOL;
+    foreach ($log_paths as $path) {
+        // Try multiple write methods
+        @file_put_contents($path, $log_message, FILE_APPEND | LOCK_EX);
+        @file_put_contents($path, $log_message, FILE_APPEND);
+        
+        // Also try error_log as backup
+        @error_log($log_message);
+    }
+    
+    // Try to load Database class
+    $db_file = __DIR__ . '/includes/class-database.php';
+    if (file_exists($db_file)) {
+        foreach ($log_paths as $path) {
+            @file_put_contents($path, "[$timestamp] Database file found: $db_file" . PHP_EOL, FILE_APPEND);
+        }
+        require_once $db_file;
+    } else {
+        foreach ($log_paths as $path) {
+            @file_put_contents($path, "[$timestamp] ERROR: Database file NOT found: $db_file" . PHP_EOL, FILE_APPEND);
+        }
+    }
+    
+    // Check if Database class exists
+    if (class_exists('Database')) {
+        foreach ($log_paths as $path) {
+            @file_put_contents($path, "[$timestamp] Database class found, calling deactivate()..." . PHP_EOL, FILE_APPEND);
+        }
+        try {
+            Database::deactivate();
+            foreach ($log_paths as $path) {
+                @file_put_contents($path, "[$timestamp] Database::deactivate() completed successfully" . PHP_EOL, FILE_APPEND);
+            }
+        } catch (Exception $e) {
+            $error_msg = "[$timestamp] Exception: " . $e->getMessage() . PHP_EOL;
+            foreach ($log_paths as $path) {
+                @file_put_contents($path, $error_msg, FILE_APPEND);
+                @file_put_contents($path, "[$timestamp] Stack: " . $e->getTraceAsString() . PHP_EOL, FILE_APPEND);
+            }
+        } catch (Error $e) {
+            $error_msg = "[$timestamp] Fatal Error: " . $e->getMessage() . PHP_EOL;
+            foreach ($log_paths as $path) {
+                @file_put_contents($path, $error_msg, FILE_APPEND);
+                @file_put_contents($path, "[$timestamp] Stack: " . $e->getTraceAsString() . PHP_EOL, FILE_APPEND);
+            }
+        }
+    } else {
+        foreach ($log_paths as $path) {
+            @file_put_contents($path, "[$timestamp] ERROR: Database class NOT found after require" . PHP_EOL, FILE_APPEND);
+        }
+    }
+    
+    foreach ($log_paths as $path) {
+        @file_put_contents($path, "[$timestamp] ===== DEACTIVATION HOOK ENDED =====" . PHP_EOL, FILE_APPEND);
+    }
+}
+
+// Register the hook - MUST be at top level, NOT inside a function
+register_deactivation_hook(__FILE__, 'courier_finance_plugin_deactivate');
+
+// Also write a test file immediately to verify the hook registration code runs
+// Try multiple methods to ensure file is written
+$test_file = __DIR__ . '/hook-registered.txt';
+$test_content = date('Y-m-d H:i:s') . ' - Hook registration code executed' . PHP_EOL;
+@file_put_contents($test_file, $test_content);
+@file_put_contents($test_file, $test_content, FILE_APPEND | LOCK_EX);
+
+// Force write to WordPress debug.log immediately
+if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+    $debug_log = WP_CONTENT_DIR . '/debug.log';
+    @file_put_contents($debug_log, '[' . date('Y-m-d H:i:s') . '] Plugin hook registration executed' . PHP_EOL, FILE_APPEND);
+}
+
+// Also write to PHP error log location
+$php_log = ini_get('error_log');
+if ($php_log) {
+    @file_put_contents($php_log, '[' . date('Y-m-d H:i:s') . '] Plugin hook registration executed' . PHP_EOL, FILE_APPEND);
+}
 
 function kit_remove_manage_options_from_editor()
 {
@@ -139,6 +275,10 @@ require_once plugin_dir_path(__FILE__) . 'includes/server-sync-example.php';
 add_action('wp_ajax_migrate_international_price', 'migrate_international_price_callback');
 add_action('wp_ajax_nopriv_migrate_international_price', 'migrate_international_price_callback');
 
+// AJAX handler to run full DB migration (add missing tables/columns via dbDelta)
+add_action('wp_ajax_kit_migrate_schema', 'kit_migrate_schema_callback');
+add_action('wp_ajax_nopriv_kit_migrate_schema', 'kit_migrate_schema_callback');
+
 // AJAX handler for server connection testing
 add_action('wp_ajax_test_server_connection', 'test_server_connection_callback');
 add_action('wp_ajax_nopriv_test_server_connection', 'test_server_connection_callback');
@@ -153,11 +293,30 @@ function migrate_international_price_callback() {
     try {
         // Include the database class
         require_once plugin_dir_path(__FILE__) . 'includes/class-database.php';
-        
+
         // Run the migration
-        KIT_Database::add_international_price_field();
-        
+        Database::add_international_price_field();
+
         wp_send_json_success(['message' => 'International price field added successfully!']);
+    } catch (Exception $e) {
+        wp_send_json_error(['message' => 'Migration failed: ' . $e->getMessage()]);
+    }
+}
+
+function kit_migrate_schema_callback() {
+    // Verify nonce
+    if (!wp_verify_nonce($_POST['nonce'] ?? '', 'kit_migrate_schema')) {
+        wp_send_json_error(['message' => 'Security check failed']);
+        return;
+    }
+
+    try {
+        require_once plugin_dir_path(__FILE__) . 'includes/class-database.php';
+
+        // Re-run activation routines which are idempotent and use dbDelta
+        Database::activate();
+
+        wp_send_json_success(['message' => 'Database migration completed. Missing tables/columns were added if required.']);
     } catch (Exception $e) {
         wp_send_json_error(['message' => 'Migration failed: ' . $e->getMessage()]);
     }
@@ -479,7 +638,7 @@ function quotation_view_page()
         'contact_name' => '',
         'vat_number' => '',
         'telephone' => '',
-        // Warehouse status now managed by warehouse_items table
+        // Warehouse status now managed by kit_waybills table
         'miscellaneous' => '',
         'include_sad500' => 1,
         'include_sadc' => 0,

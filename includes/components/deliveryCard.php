@@ -115,8 +115,22 @@ function renderDeliveryCard($delivery, $card_type = 'scheduled', $clickable = tr
 ?>
 
 <div class="delivery-card bg-white rounded-lg border border-gray-200 p-3 group relative <?php echo $cursor_class; ?>" 
-     data-index="<?php echo esc_attr($delivery->direction_id); ?>"
-     <?php if ($clickable): ?>onclick="selectDeliveryCard(this, <?php echo esc_attr($delivery->direction_id); ?>)"<?php endif; ?>>
+     data-index="<?php echo esc_attr($delivery->id ?? $delivery->direction_id); ?>"
+     data-dispatch-date="<?php echo esc_attr($delivery->dispatch_date ?? ''); ?>"
+     data-truck-number="<?php echo esc_attr($delivery->truck_number ?? ''); ?>"
+     data-driver-id="<?php echo esc_attr($delivery->driver_id ?? ''); ?>"
+     data-driver-name="<?php echo esc_attr($delivery->driver_name ?? ''); ?>"
+     data-driver-phone="<?php echo esc_attr($delivery->driver_phone ?? ''); ?>"
+     data-delivery-id="<?php echo esc_attr($delivery->id ?? ''); ?>"
+     data-direction-id="<?php echo esc_attr($delivery->direction_id ?? ''); ?>"
+     data-reference="<?php echo esc_attr($delivery->delivery_reference ?? ''); ?>"
+     data-status="<?php echo esc_attr($delivery->status ?? 'scheduled'); ?>"
+     data-description="<?php echo esc_attr($delivery->description ?? ''); ?>"
+     data-origin-country="<?php echo esc_attr($origin_country); ?>"
+     data-destination-country="<?php echo esc_attr($dest_country); ?>"
+     data-origin-code="<?php echo esc_attr($delivery->origin_code ?? ''); ?>"
+     data-destination-code="<?php echo esc_attr($delivery->destination_code ?? ''); ?>"
+     <?php if ($clickable): ?>onclick="if(typeof <?php echo esc_js($onclick_function); ?> === 'function') { <?php echo esc_js($onclick_function); ?>(this, <?php echo esc_js($delivery->direction_id ?? $delivery->id ?? 0); ?>); }"<?php endif; ?>>
      
     <?php if ($radio_options): ?>
         <input type="<?php echo esc_attr($radio_options['type'] ?? 'radio'); ?>" 
@@ -143,6 +157,16 @@ function renderDeliveryCard($delivery, $card_type = 'scheduled', $clickable = tr
         <span class="inline-block w-2 h-2 <?php echo $status_config['color']; ?> rounded-full"></span>
         <span class="text-xs text-gray-500"><?php echo $status_config['text']; ?></span>
     </div>
+
+    <!-- Quick Truck & Driver Summary -->
+    <div class="mt-2 text-[11px] text-gray-600 text-center leading-tight">
+        <?php if (!empty($delivery->truck_number)) : ?>
+            <div><span class="text-gray-500">Truck:</span> <?php echo htmlspecialchars($delivery->truck_number); ?></div>
+        <?php endif; ?>
+        <?php if (!empty($delivery->driver_name)) : ?>
+            <div><span class="text-gray-500">Driver:</span> <?php echo htmlspecialchars($delivery->driver_name); ?></div>
+        <?php endif; ?>
+    </div>
     
     <!-- Hover Details (only for clickable cards) -->
     <?php if ($clickable): ?>
@@ -150,6 +174,9 @@ function renderDeliveryCard($delivery, $card_type = 'scheduled', $clickable = tr
         <div class="p-2 text-xs text-blue-800">
             <?php if (!empty($delivery->truck_number)): ?>
                 <div class="font-medium">Truck: <?php echo htmlspecialchars($delivery->truck_number); ?></div>
+            <?php endif; ?>
+            <?php if (!empty($delivery->driver_name)): ?>
+                <div class="font-medium">Driver: <?php echo htmlspecialchars($delivery->driver_name); ?><?php echo !empty($delivery->driver_phone) ? ' • ' . htmlspecialchars($delivery->driver_phone) : ''; ?></div>
             <?php endif; ?>
             <?php if (!empty($delivery->description)): ?>
                 <div><?php echo htmlspecialchars($delivery->description); ?></div>

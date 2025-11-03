@@ -282,7 +282,7 @@ $inactive_countries = $total_countries - $active_countries;
             ];
 
             // Render unified table
-            echo KIT_Unified_Table::advanced($countries_data, $columns, [
+            echo KIT_Unified_Table::infinite($countries_data, $columns, [
                 'title' => 'Operating Countries',
                 'actions' => $actions,
                 'searchable' => true,

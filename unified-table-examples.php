@@ -35,7 +35,7 @@ function example_simple_table() {
         ]
     ];
 
-    return KIT_Unified_Table::simple($data, $columns, [
+    return KIT_Unified_Table::infinite($data, $columns, [
         'title' => 'Users',
         'actions' => $actions,
         'empty_message' => 'No users found'
@@ -86,7 +86,7 @@ function example_advanced_table() {
         ]
     ];
 
-    return KIT_Unified_Table::advanced($data, $columns, [
+    return KIT_Unified_Table::infinite($data, $columns, [
         'title' => 'Waybills',
         'subtitle' => 'Manage all waybill records',
         'actions' => $actions,
@@ -133,44 +133,6 @@ function example_server_side_table() {
 
 // Example 4: Migration from old waybill dashboard
 function migrate_waybill_dashboard() {
-    // Old code (commented out):
-    /*
-    echo '<div class="bg-white shadow rounded-lg overflow-hidden">';
-    echo '<table class="min-w-full text-left text-xs text-gray-700">';
-    echo '<thead class="bg-gray-50">';
-    echo '<tr>';
-    echo '<th class="px-6 py-3 font-medium text-gray-500 uppercase tracking-wider">Waybill #</th>';
-    echo '<th class="px-6 py-3 font-medium text-gray-500 uppercase tracking-wider">Name</th>';
-    echo '<th class="px-6 py-3 font-medium text-gray-500 uppercase tracking-wider">Approval</th>';
-    echo '<th class="px-6 py-3 font-medium text-gray-500 uppercase tracking-wider">Total</th>';
-    echo '<th class="px-6 py-3 font-medium text-gray-500 uppercase tracking-wider">Actions</th>';
-    echo '</tr>';
-    echo '</thead>';
-    echo '<tbody class="bg-white divide-y divide-gray-200">';
-    
-    foreach ($allWaybills as $row) {
-        echo '<tr>';
-        echo '<td class="px-6 py-4 whitespace-nowrap">' . esc_html($row->waybill_no) . '</td>';
-        echo '<td class="px-6 py-4 whitespace-nowrap">' . esc_html($row->customer_name . ' ' . $row->customer_surname) . '</td>';
-        echo '<td class="px-6 py-4 whitespace-nowrap">' . esc_html($row->approval) . '</td>';
-        echo '<td class="px-6 py-4 whitespace-nowrap text-right">';
-        if (KIT_User_Roles::can_see_prices()) {
-            echo KIT_Commons::currency() . ' ' . ((int) $row->product_invoice_amount + (int) $row->miscellaneous);
-        } else {
-            echo '***';
-        }
-        echo '</td>';
-        echo '<td class="px-6 py-4 whitespace-nowrap text-center">';
-        echo '<a href="?page=08600-Waybill-view&waybill_id=' . $row->waybill_id . '" class="text-blue-600 hover:underline">View</a> ';
-        echo '<a href="?page=08600-Waybill&delete_waybill=' . $row->waybill_no . '" class="text-red-600 hover:underline" onclick="return confirm(\'Are you sure you want to delete this waybill?\');">Delete</a>';
-        echo '</td>';
-        echo '</tr>';
-    }
-    
-    echo '</tbody>';
-    echo '</table>';
-    echo '</div>';
-    */
 
     // New code using unified table:
     $allWaybills = KIT_Waybills::get_waybills(['fields' => 'w.waybill_no, w.product_invoice_number, w.created_at, c.name, c.surname',]);
@@ -213,7 +175,7 @@ function migrate_waybill_dashboard() {
     ];
 
     // Render unified table
-    return KIT_Unified_Table::simple($waybillData, $columns, [
+    return KIT_Unified_Table::infinite($waybillData, $columns, [
         'title' => 'All Waybills',
         'actions' => $actions,
         'empty_message' => 'No waybills found'
@@ -283,7 +245,7 @@ function migrate_routes_table() {
     ];
 
     // Render unified table with advanced features
-    return KIT_Unified_Table::advanced($routeData, $columns, [
+    return KIT_Unified_Table::infinite($routeData, $columns, [
         'title' => 'All Routes',
         'actions' => $actions,
         'searchable' => true,

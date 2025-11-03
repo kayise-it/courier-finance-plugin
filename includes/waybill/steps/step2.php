@@ -1,19 +1,21 @@
-<?php if (!defined('ABSPATH')) {
+<?php
+if (!defined('ABSPATH')) {
     exit;
-} ?>
+}
+?>
 
 <?= KIT_Commons::prettyHeading([
     'icon' => '<path d="M16 7a4 4 0 1 0-8 0v2a4 4 0 0 0 8 0V7z" /><path d="M12 19v-2m0 0a7 7 0 0 1-7-7V7a7 7 0 0 1 14 0v3a7 7 0 0 1-7 7z" />',
     'words' => 'Customer Information'
 ]) ?>
-<?php 
+<?php
 $is_existing_customer = $atts['is_existing_customer'];
 // Initialize customer_id with a default value if not set
 $customer_id = isset($customer_id) ? $customer_id : (isset($customer) && isset($customer->cust_id) ? $customer->cust_id : '');
 ?>
 <input type="hidden" id="cust_id" name="cust_id" value="<?php echo esc_attr($customer_id); ?>">
 
-<?php 
+<?php
 // Use customer data passed from shortcode if available, otherwise load from database
 if (isset($customers_data) && is_array($customers_data)) {
     $customers = $customers_data;
@@ -26,7 +28,7 @@ if (isset($customers_data) && is_array($customers_data)) {
 
 <!-- Step 2: Customer Selection and Details - Symmetrical, Simple UI -->
 
-<div class="max-w-3xl mx-auto">
+<div class="w-full mx-auto">
     <div class="grid grid-cols-1 gap-8 mb-8">
         <!-- Left: Customer Search & Type -->
         <div class="flex flex-col gap-6">
@@ -34,16 +36,15 @@ if (isset($customers_data) && is_array($customers_data)) {
             <div>
                 <label for="customer-search" class="block text-sm font-semibold text-gray-700 mb-2">Select Customer</label>
                 <div class="relative">
-                    <input 
-                        type="text" 
-                        id="customer-search" 
-                        name="customer_search" 
+                    <input
+                        type="text"
+                        id="customer-search"
+                        name="customer_search"
                         placeholder="Type to search customers..."
                         class="block w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition px-4 py-2 bg-white text-gray-800"
-                        autocomplete="off"
-                    >
+                        autocomplete="off">
                     <input type="hidden" id="customer-select" name="customer_select" value="<?php echo !empty($customer_id) ? $customer_id : 'new'; ?>">
-                    
+
                     <div id="customer-results" class="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg hidden max-h-60 overflow-y-auto">
                         <!-- Results will be populated by JavaScript -->
                     </div>
@@ -74,7 +75,7 @@ if (isset($customers_data) && is_array($customers_data)) {
         </div>
         <!-- Right: Customer Details (always visible, no accordion) -->
         <div class="rounded-xl border border-gray-200 bg-gradient-to-br from-blue-50 to-white shadow-inner px-6 py-6">
-            <div class="grid grid-cols-1 gap-4">
+            <div class="grid grid-cols-2 gap-4">
                 <div id="company_name_wrapper">
                     <?= KIT_Commons::Linput([
                         'label' => 'Company Name',
@@ -153,9 +154,31 @@ if (isset($customers_data) && is_array($customers_data)) {
                     ]); ?>
                 </div>
                 <div>
+                    <div>
+                        <?= KIT_Commons::Linput([
+                            'label' => 'Notes (optional)',
+                            'name'  => 'customer_notes',
+                            'id'    => 'customer_notes',
+                            'type'  => 'text',
+                            'value' => '',
+                            'class' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-2 text-gray-800 bg-gray-50 transition',
+                        ]); ?>
+                    </div>
+                </div>
+            </div>
+            <div>
+                <div>
                     <?php require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/selectsOrigin.php'); ?>
                 </div>
             </div>
+        </div>
+    </div>
+    <div class="sticky top-16 z-10 mb-4 rounded-lg border border-gray-200 bg-white/80 backdrop-blur px-4 py-3 shadow-sm">
+        <div class="flex flex-wrap gap-3 text-sm text-gray-700">
+            <div><span class="font-semibold">Waybill #:</span> <?php echo isset($waybill_no) ? esc_html($waybill_no) : (isset($_POST['waybill_no']) ? esc_html($_POST['waybill_no']) : '—'); ?></div>
+            <div><span class="font-semibold">Customer:</span> <?php echo $is_existing_customer ? esc_html(trim(($customer->company_name ?? $customer->customer_name ?? '') . ' ' . ($customer->customer_surname ?? ''))) : '—'; ?></div>
+            <div><span class="font-semibold">Origin:</span> <span id="summary-origin">—</span></div>
+            <div><span class="font-semibold">Items:</span> <span id="summary-items">0</span></div>
         </div>
     </div>
     <div class="flex flex-col md:flex-row justify-between items-center gap-4 mt-8">
@@ -229,14 +252,14 @@ if (isset($customers_data) && is_array($customers_data)) {
         const emailInput = getCustomerInput('email_address');
 
         function searchCustomers(query) {
-            
+
             if (!query || query.length < 2) {
                 customerResults.classList.add('hidden');
                 return;
             }
             const results = [];
             const searchTerm = query.toLowerCase();
-            
+
             if (window.CUSTOMERS_DATA) {
                 Object.values(window.CUSTOMERS_DATA).forEach(customer => {
                     const name = (customer.customer_name || '').toLowerCase();
@@ -244,10 +267,10 @@ if (isset($customers_data) && is_array($customers_data)) {
                     const company = (customer.company_name || '').toLowerCase();
                     const cell = (customer.cell || '').toLowerCase();
                     const email = (customer.email_address || '').toLowerCase();
-                    
-                    
-                    if (name.includes(searchTerm) || 
-                        surname.includes(searchTerm) || 
+
+
+                    if (name.includes(searchTerm) ||
+                        surname.includes(searchTerm) ||
                         company.includes(searchTerm) ||
                         cell.includes(searchTerm) ||
                         email.includes(searchTerm) ||
