@@ -27,7 +27,7 @@ if (!KIT_User_Roles::can_access_settings()) {
 
 // Handle form submissions
 if ($_POST && isset($_POST['action'])) {
-    // Handle setup seed: execute SQL from assets/seed_full.sql
+    // Handle setup seed: execute SQL from newSQL.sql
     if ($_POST['action'] === 'seed_setup' && isset($_POST['setup_seed_nonce']) && wp_verify_nonce($_POST['setup_seed_nonce'], 'seed_setup')) {
         $setup_seed_result = handle_setup_seed_sql();
     }
@@ -178,12 +178,12 @@ if ($_POST && isset($_POST['action'])) {
     }
 }
 
-// Auto-generate assets/seed_full.sql from Excel if missing (non-destructive)
+// Auto-generate newSQL.sql from Excel if missing (non-destructive)
 try {
-    $assetsDir_autogen = plugin_dir_path(__FILE__) . '../../assets/';
-    $seed_full_path = $assetsDir_autogen . 'seed_full.sql';
+    $plugin_root_autogen = plugin_dir_path(__FILE__) . '../../';
+    $new_sql_path = $plugin_root_autogen . 'newSQL.sql';
     $excel_path_autogen = plugin_dir_path(__FILE__) . '../../waybill_excel/Waybills_31-10-2025.xlsx';
-    if (!file_exists($seed_full_path)) {
+    if (!file_exists($new_sql_path)) {
         // Prefer DB export to avoid shell_exec dependency
         $export = kit_export_seed_sql_from_db();
         if (!$export['success'] && file_exists($excel_path_autogen) && function_exists('shell_exec')) {
@@ -194,13 +194,12 @@ try {
     // ignore
 }
 
-// Manual exporter: create assets/seed_full.sql from current DB (drivers, customers, deliveries, waybills)
+// Manual exporter: create newSQL.sql from current DB (drivers, customers, deliveries, waybills)
 function kit_export_seed_sql_from_db(): array
 {
     global $wpdb;
-    $assetsDir = plugin_dir_path(__FILE__) . '../../assets/';
-    if (!is_dir($assetsDir)) { @mkdir($assetsDir, 0755, true); }
-    $target = $assetsDir . 'seed_full.sql';
+    $pluginRoot = plugin_dir_path(__FILE__) . '../../';
+    $target = $pluginRoot . 'newSQL.sql';
 
     $drivers = $wpdb->get_results("SELECT name, is_active FROM {$wpdb->prefix}kit_drivers ORDER BY id ASC", ARRAY_A) ?: [];
     $customers = $wpdb->get_results("SELECT cust_id, name, surname, company_name, country_id FROM {$wpdb->prefix}kit_customers ORDER BY id ASC", ARRAY_A) ?: [];
@@ -249,9 +248,9 @@ function kit_export_seed_sql_from_db(): array
 
     $ok = @file_put_contents($target, implode(";\n\n", $lines) . ";\n");
     if ($ok === false) {
-        return ['success' => false, 'message' => 'Failed to write assets/seed_full.sql'];
+        return ['success' => false, 'message' => 'Failed to write newSQL.sql'];
     }
-    return ['success' => true, 'message' => 'seed_full.sql exported from DB', 'path' => $target];
+    return ['success' => true, 'message' => 'newSQL.sql exported from DB', 'path' => $target];
 }
 /**
  * Ensure a prefix-adjusted copy of assets/customers.sql exists as assets/customers_dynamic.sql
@@ -542,22 +541,19 @@ function handle_waybill_import()
     }
 }
 
-// Execute SQL from assets/seed_full.sql with dynamic table prefix replacement
+// Execute SQL from newSQL.sql with dynamic table prefix replacement
 function handle_setup_seed_sql()
 {
     global $wpdb;
 
-    $assetsDir = plugin_dir_path(__FILE__) . '../../assets/';
-    $seed_full_fixed_file = $assetsDir . 'seed_full_fixed.sql';  // Primary: fixed seed file
-    $seed_full_file = $assetsDir . 'seed_full.sql';               // Fallback: original seed file
+    $pluginRoot = plugin_dir_path(__FILE__) . '../../';
+    $new_sql_file = $pluginRoot . 'newSQL.sql';
 
     try {
         // Check for files that actually exist
         $sql_file = null;
-        if (file_exists($seed_full_fixed_file)) {
-            $sql_file = $seed_full_fixed_file;
-        } elseif (file_exists($seed_full_file)) {
-            $sql_file = $seed_full_file;
+        if (file_exists($new_sql_file)) {
+            $sql_file = $new_sql_file;
         } else {
             // Try to generate from Excel automatically as last resort
             $generated = kit_generate_seed_sql_from_excel();
@@ -566,7 +562,7 @@ function handle_setup_seed_sql()
             } else {
                 return [
                     'success' => false,
-                    'message' => 'Seed SQL not found. Please ensure assets/seed_full_fixed.sql or assets/seed_full.sql exists'
+                    'message' => 'Seed SQL not found. Please ensure newSQL.sql exists in the plugin root.'
                 ];
             }
         }
@@ -582,6 +578,14 @@ function handle_setup_seed_sql()
                 'message' => 'Failed to read seed SQL file.'
             ];
         }
+
+        // Strip UTF-8 BOM if present to avoid MySQL "﻿ START" syntax errors
+        if (strncmp($sql_content, "\xEF\xBB\xBF", 3) === 0) {
+            $sql_content = substr($sql_content, 3);
+        }
+
+        // Normalise newlines to LF to keep statement parsing consistent
+        $sql_content = str_replace(["\r\n", "\r"], "\n", $sql_content);
 
         // Replace hardcoded wp_ prefixes with dynamic prefix if needed
         // First replace {PREFIX} placeholder (new format)
@@ -709,12 +713,12 @@ function handle_setup_seed_sql()
         return [ 'success' => false, 'message' => 'Setup seed failed: ' . $e->getMessage() ];
     }
 }
-// Generate assets/seed_full.sql from Excel file (waybill_excel/*.xlsx)
+// Generate newSQL.sql from Excel file (waybill_excel/*.xlsx)
 function kit_generate_seed_sql_from_excel(): array
 {
     $excel_file = plugin_dir_path(__FILE__) . '../../waybill_excel/Waybills_31-10-2025.xlsx';
-    $assetsDir = plugin_dir_path(__FILE__) . '../../assets/';
-    $target_sql = $assetsDir . 'seed_full.sql';
+    $pluginRoot = plugin_dir_path(__FILE__) . '../../';
+    $target_sql = $pluginRoot . 'newSQL.sql';
 
     if (!file_exists($excel_file)) {
         return ['success' => false, 'message' => 'Excel file not found', 'path' => null];
@@ -840,10 +844,9 @@ function kit_generate_seed_sql_from_excel(): array
                . "WHERE NOT EXISTS (SELECT 1 FROM wp_kit_waybill_items i WHERE i.waybillno = w.waybill_no AND i.item_name = {$itemDescSql})";
     }
     $sql[] = 'COMMIT';
-    if (!is_dir($assetsDir)) { @mkdir($assetsDir, 0755, true); }
     $ok = @file_put_contents($target_sql, implode(";\n\n", $sql) . ";\n");
     if ($ok === false) {
-        return ['success' => false, 'message' => 'Failed to write seed_full.sql', 'path' => null];
+        return ['success' => false, 'message' => 'Failed to write newSQL.sql', 'path' => null];
     }
     return ['success' => true, 'message' => 'Generated from Excel', 'path' => $target_sql];
 }
@@ -1220,19 +1223,15 @@ function kit_generate_seed_sql_from_excel(): array
                 <div class="p-6">
                     <?php
                     // Show seed SQL status - match the priority order in handle_setup_seed_sql()
-                    $assetsDir = plugin_dir_path(__FILE__) . '../../assets/';
-                    $seed_full_fixed_file = $assetsDir . 'seed_full_fixed.sql';  // Primary: fixed seed file
-                    $seed_full_file = $assetsDir . 'seed_full.sql';               // Fallback: original seed file
+                    $pluginRoot = plugin_dir_path(__FILE__) . '../../';
+                    $new_sql_file = $pluginRoot . 'newSQL.sql';
                     
-                    // Determine which file exists and will be used (matching handle_setup_seed_sql priority)
+                    // Determine if the seed file exists (matching handle_setup_seed_sql priority)
                     $sql_file = null;
                     $file_display_name = '';
-                    if (file_exists($seed_full_fixed_file)) {
-                        $sql_file = $seed_full_fixed_file;
-                        $file_display_name = 'assets/seed_full_fixed.sql';
-                    } elseif (file_exists($seed_full_file)) {
-                        $sql_file = $seed_full_file;
-                        $file_display_name = 'assets/seed_full.sql';
+                    if (file_exists($new_sql_file)) {
+                        $sql_file = $new_sql_file;
+                        $file_display_name = 'newSQL.sql';
                     }
                     
                     $file_exists = ($sql_file !== null);
@@ -1251,11 +1250,11 @@ function kit_generate_seed_sql_from_excel(): array
                                 <p class="font-medium <?php echo $file_exists ? 'text-blue-800' : 'text-yellow-800'; ?>"><?php echo $file_exists ? 'Seed SQL Found' : 'Seed SQL Not Found'; ?></p>
                                 <?php if ($file_exists): ?>
                                     <p class="mt-1 text-blue-700">
-                                        Primary: <code class="px-2 py-1 rounded bg-gray-100"><?php echo esc_html($file_display_name); ?></code>
+                                        Seed file located at: <code class="px-2 py-1 rounded bg-gray-100"><?php echo esc_html($file_display_name); ?></code>
                                     </p>
                                 <?php else: ?>
                                     <p class="mt-1 text-yellow-700">
-                                        Please ensure <code class="px-2 py-1 rounded bg-gray-100">assets/seed_full_fixed.sql</code> or <code class="px-2 py-1 rounded bg-gray-100">assets/seed_full.sql</code> exists
+                                        Please ensure <code class="px-2 py-1 rounded bg-gray-100">newSQL.sql</code> exists in the plugin root directory
                                     </p>
                                 <?php endif; ?>
                             </div>

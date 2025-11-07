@@ -1475,7 +1475,10 @@ class KIT_Commons
                     'type' => 'button',
                     'gradient' => false, // Enable gradient for primary buttons
                     'modal' => null, // Modal trigger
-                    'data-target' => null // Data target attribute
+                    'data-target' => null, // Data target attribute
+                    'target' => null,
+                    'rel' => null,
+                    'ariaLabel' => null,
                 ];
 
                 $options = array_merge($defaults, $options);
@@ -1563,6 +1566,15 @@ class KIT_Commons
                 }
                 if (!empty($options['data-target'])) {
                     $attributes[] = 'data-target="' . esc_attr($options['data-target']) . '"';
+                }
+                if (!empty($options['target'])) {
+                    $attributes[] = 'target="' . esc_attr($options['target']) . '"';
+                }
+                if (!empty($options['rel'])) {
+                    $attributes[] = 'rel="' . esc_attr($options['rel']) . '"';
+                }
+                if (!empty($options['ariaLabel'])) {
+                    $attributes[] = 'aria-label="' . esc_attr($options['ariaLabel']) . '"';
                 }
 
                 $attributesStr = implode(' ', $attributes);

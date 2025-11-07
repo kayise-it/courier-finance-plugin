@@ -242,15 +242,7 @@ function plugin_Waybill_list_page()
                     ]
                 ];
                 $columns = [
-                    'index' => [
-                        'label' => '#',
-                        'header_class' => 'w-8 max-w-8',
-                        'cell_class' => 'text-center w-8 max-w-8 text-xs',
-                        'callback' => function ($value, $row, $rowIndex) {
-                            // $rowIndex is a global index when using infinite scroll; just add 1 for display
-                            return $rowIndex + 1;
-                        }
-                    ],
+
                     'waybill_no' => [
                         'label' => 'Waybill #',
                         'header_class' => 'w-20 text-left max-w-20',
@@ -258,24 +250,58 @@ function plugin_Waybill_list_page()
                         'callback' => function ($value, $row, $rowIndex) {
                             $waybill_no = $value ?? 'N/A';
                             $waybill_id = $row['waybill_id'] ?? 0;
-                            
+
                             // Get creator name
                             $created_by = $row['created_by'] ?? 0;
                             $user_data = function_exists('get_userdata') ? get_userdata($created_by) : null;
                             $created_by_name = $user_data ? $user_data->display_name : '';
-                            
+
                             $waybill_link = $waybill_id > 0 
                                 ? '<a href="' . esc_url(admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . $waybill_id)) . '" class="text-blue-600 hover:text-blue-800 hover:underline font-medium">' . esc_html($waybill_no) . '</a>'
                                 : esc_html($waybill_no);
-                            
-                            if (!empty($created_by_name)) {
-                                return '<div class="flex flex-col">' . 
-                                       $waybill_link . 
-                                       '<span class="text-[10px] text-gray-400 mt-0.5">' . esc_html($created_by_name) . '</span>' . 
-                                       '</div>';
+
+                            // Approval badge config
+                            $approval = strtolower($row['approval'] ?? 'pending');
+                            $config = [
+                                'approved' => [
+                                    'class' => 'bg-green-100 text-green-800',
+                                    'icon' => '✓',
+                                    'text' => 'Approved'
+                                ],
+                                'pending' => [
+                                    'class' => 'bg-yellow-100 text-yellow-800',
+                                    'icon' => '⏳',
+                                    'text' => 'Pending'
+                                ],
+                                'rejected' => [
+                                    'class' => 'bg-red-100 text-red-800',
+                                    'icon' => '✗',
+                                    'text' => 'Rejected'
+                                ]
+                            ];
+
+                            $settings = $config[$approval] ?? [
+                                'class' => 'bg-gray-100 text-gray-800',
+                                'icon' => '?',
+                                'text' => ucfirst($row['approval'] ?? 'Unknown')
+                            ];
+
+                            $badge = '<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium ' . $settings['class'] . ' mt-1">'
+                                    . '<span>' . $settings['icon'] . '</span>'
+                                    . '<span>' . $settings['text'] . '</span>'
+                                    . '</span>';
+
+                            $extra = [];
+                            if ($created_by_name) {
+                                $extra[] = '<span class="text-[10px] text-gray-400 mt-0.5">' . esc_html($created_by_name) . '</span>';
                             }
-                            
-                            return $waybill_link;
+                            // Always include badge
+                            $extra[] = $badge;
+
+                            return '<div class="flex flex-col">' .
+                                    $waybill_link .
+                                    implode('', $extra) .
+                                    '</div>';
                         }
                     ],
                     'customer_name' => [
@@ -296,18 +322,18 @@ function plugin_Waybill_list_page()
                             $width = $row['item_width'] ?? 0;
                             $height = $row['item_height'] ?? 0;
                             $volume = $row['total_volume'] ?? 0;
-                            
+
                             // Format mass
                             $mass_display = ($mass > 0) ? number_format($mass, 1) . ' kg' : '0 kg';
-                            
+
                             // Format dimensions
                             $dimensions_display = ($length > 0 && $width > 0 && $height > 0) 
                                 ? number_format($length, 0) . ' x ' . number_format($width, 0) . ' x ' . number_format($height, 0)
                                 : '0 x 0 x 0';
-                            
+
                             // Format volume
                             $volume_display = ($volume > 0) ? number_format($volume, 3) . ' m³' : '0 m³';
-                            
+
                             return '<div class="text-xs text-gray-500">' . 
                                    esc_html($mass_display) . ' <br> ' . 
                                    esc_html($dimensions_display) . ' <br> ' . 
@@ -360,44 +386,6 @@ function plugin_Waybill_list_page()
                             
                             $html .= '</div>';
                             return $html;
-                        }
-                    ],
-                    'approval' => [
-                        'label' => 'Approval',
-                        'sortable' => true,
-                        'searchable' => false,
-                        'header_class' => 'w-24 text-left max-w-24',
-                        'cell_class' => 'text-left w-24 max-w-24 truncate text-xs',
-                        'callback' => function ($value, $row, $rowIndex) {
-                            $approval = strtolower($value ?? 'pending');
-                            $config = [
-                                'approved' => [
-                                    'class' => 'bg-green-100 text-green-800',
-                                    'icon' => '✓',
-                                    'text' => 'Approved'
-                                ],
-                                'pending' => [
-                                    'class' => 'bg-yellow-100 text-yellow-800',
-                                    'icon' => '⏳',
-                                    'text' => 'Pending'
-                                ],
-                                'rejected' => [
-                                    'class' => 'bg-red-100 text-red-800',
-                                    'icon' => '✗',
-                                    'text' => 'Rejected'
-                                ]
-                            ];
-                            
-                            $settings = $config[$approval] ?? [
-                                'class' => 'bg-gray-100 text-gray-800',
-                                'icon' => '?',
-                                'text' => ucfirst($value)
-                            ];
-                            
-                            return '<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium ' . $settings['class'] . '">
-                        <span>' . $settings['icon'] . '</span>
-                        <span>' . $settings['text'] . '</span>
-                    </span>';
                         }
                     ],
                     'total' => [

@@ -3567,7 +3567,8 @@ class KIT_Waybills
             }
         }
         
-        return json_encode($qr_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        // Use compact JSON to keep size small for storage and QR encoding
+        return json_encode($qr_data, JSON_UNESCAPED_UNICODE);
     }
 
     /**
@@ -3584,7 +3585,11 @@ class KIT_Waybills
         
         try {
             require_once __DIR__ . '/../../vendor/autoload.php';
-            
+
+            if (! class_exists('\\Endroid\\QrCode\\Writer\\PngWriter')) {
+                throw new \RuntimeException('Endroid QR Code library not installed');
+            }
+
             $writer = new \Endroid\QrCode\Writer\PngWriter();
             $qrCode = \Endroid\QrCode\QrCode::create($data)
                 ->setEncoding(new \Endroid\QrCode\Encoding\Encoding('UTF-8'))
@@ -3596,7 +3601,7 @@ class KIT_Waybills
             $imageData = $result->getString();
             
             return 'data:image/png;base64,' . base64_encode($imageData);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             error_log('QR Code generation error: ' . $e->getMessage());
             return '';
         }

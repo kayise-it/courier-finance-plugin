@@ -527,20 +527,40 @@ $originCityName = KIT_Routes::get_city_name_by_id($waybill['miscellaneous']['oth
                         ?>
                     </span>
                 </div>
-                <div class="flex justify-between items-center">
-                    <span class="text-sm text-gray-700">Dimensions</span>
-                    <span class="text-sm font-semibold text-gray-900">
-                        <?= htmlspecialchars($waybill['item_length'] ?? '0') ?> ×
-                        <?= htmlspecialchars($waybill['item_width'] ?? '0') ?> ×
-                        <?= htmlspecialchars($waybill['item_height'] ?? '0') ?> cm
-                    </span>
-                </div>
+				<div class="flex justify-between items-center">
+					<span class="text-sm text-gray-700">Dimensions</span>
+					<span class="text-sm font-semibold text-gray-900">
+						<?php
+							$len = isset($waybill['item_length']) && $waybill['item_length'] !== '' ? floatval($waybill['item_length']) : 0;
+							$wid = isset($waybill['item_width']) && $waybill['item_width'] !== '' ? floatval($waybill['item_width']) : 0;
+							$hei = isset($waybill['item_height']) && $waybill['item_height'] !== '' ? floatval($waybill['item_height']) : 0;
+							echo number_format($len, 2) . ' × ' . number_format($wid, 2) . ' × ' . number_format($hei, 2) . ' cm';
+						?>
+					</span>
+				</div>
                 <div class="flex justify-between items-center">
                     <span class="text-sm text-gray-700">Total Mass</span>
                     <span class="text-sm font-semibold text-gray-900">
                         <?= htmlspecialchars($waybill['total_mass_kg'] ?? '0') ?> kg
                     </span>
                 </div>
+				<?php
+					$volume_val = isset($waybill['total_volume']) ? floatval($waybill['total_volume']) : 0.0;
+					if ($volume_val <= 0 && !empty($waybill['miscellaneous'])) {
+						$maybe_misc = maybe_unserialize($waybill['miscellaneous']);
+						if (is_array($maybe_misc) && isset($maybe_misc['others']['total_volume'])) {
+							$volume_val = floatval($maybe_misc['others']['total_volume']);
+						}
+					}
+					$has_any_volume = $volume_val > 0;
+					if ($has_any_volume): ?>
+				<div class="flex justify-between items-center">
+					<span class="text-sm text-gray-700">Total Volume</span>
+					<span class="text-sm font-semibold text-gray-900">
+						<?= number_format($volume_val, 3) ?> m³
+					</span>
+				</div>
+				<?php endif; ?>
             </div>
         </div>
     </div>

@@ -173,7 +173,7 @@ class Database
         include_sadc TINYINT(1) DEFAULT 0,
         return_load TINYINT(1) DEFAULT 0,
         tracking_number VARCHAR(50),
-        qr_code_data VARCHAR(255) NULL,
+        qr_code_data LONGTEXT NULL,
         created_by BIGINT UNSIGNED NOT NULL,
         last_updated_by BIGINT UNSIGNED NOT NULL,
         status ENUM('pending', 'quoted', 'paid', 'assigned', 'shipped', 'delivered', 'completed', 'invoiced', 'rejected') DEFAULT 'pending',
@@ -193,6 +193,44 @@ class Database
 
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
+    }
+
+
+    /**
+     * Ensure qr_code_data column can store large JSON strings
+     */
+    private static function ensure_qr_code_data_longtext()
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'kit_waybills';
+
+        // Verify table exists first
+        $table_exists = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = %s AND table_name = %s",
+            DB_NAME,
+            $table_name
+        ));
+        if ((int)$table_exists === 0) {
+            return;
+        }
+
+        // Fetch column type
+        $column_info = $wpdb->get_row($wpdb->prepare(
+            "SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'qr_code_data'",
+            DB_NAME,
+            $table_name
+        ));
+
+        // If missing, add as LONGTEXT; if VARCHAR or TEXT, alter to LONGTEXT
+        if (empty($column_info)) {
+            $wpdb->query("ALTER TABLE $table_name ADD COLUMN qr_code_data LONGTEXT NULL AFTER tracking_number");
+            return;
+        }
+
+        $data_type = isset($column_info->DATA_TYPE) ? strtolower($column_info->DATA_TYPE) : '';
+        if ($data_type !== 'longtext') {
+            $wpdb->query("ALTER TABLE $table_name MODIFY COLUMN qr_code_data LONGTEXT NULL");
+        }
     }
 
 
@@ -827,6 +865,7 @@ class Database
         // Add international_price field to existing company_details table if it doesn't exist
         self::add_international_price_field();
         self::create_waybills_table();
+        self::ensure_qr_code_data_longtext();
         self::create_waybill_items_table();
         self::add_client_invoice_column(); // Ensure column exists for existing installations
         self::add_product_invoice_number_unique(); // Ensure unique constraint exists

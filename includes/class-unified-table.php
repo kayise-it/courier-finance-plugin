@@ -29,7 +29,11 @@ class KIT_Unified_Table
             'bulk_actions' => false,
             'selectable' => false,
             'empty_message' => 'No data found',
-            'class' => 'min-w-full divide-y divide-gray-200',
+            'table_class' => 'w-full table-fixed border-collapse',
+            'header_base_class' => 'px-3 py-2 text-xs font-semibold text-left uppercase tracking-wide',
+            'cell_base_class' => 'px-3 py-2 text-sm text-gray-900 whitespace-normal break-words align-top',
+            'index_cell_class' => 'px-3 py-2 text-sm font-medium text-gray-600 whitespace-normal break-words align-top',
+            'actions_cell_class' => 'px-3 py-2 text-sm font-medium text-gray-900 whitespace-normal break-words align-top flex flex-wrap items-center gap-2',
             'primary_action' => null,
             'items_per_page' => 100,
             'current_page' => 1,
@@ -43,37 +47,76 @@ class KIT_Unified_Table
         $total_items = count($data);
         $display_data = $data; // Show all items
 
+        // Ensure newest entries (by created_at or ID) appear first
+        if (!empty($display_data)) {
+            $sample = reset($display_data);
+            $sampleArray = is_object($sample) ? get_object_vars($sample) : (array) $sample;
+
+            $sortKey = null;
+            if (array_key_exists('created_at', $sampleArray)) {
+                $sortKey = 'created_at';
+            } elseif (array_key_exists('updated_at', $sampleArray)) {
+                $sortKey = 'updated_at';
+            } elseif (array_key_exists('waybill_id', $sampleArray)) {
+                $sortKey = 'waybill_id';
+            } elseif (array_key_exists('id', $sampleArray)) {
+                $sortKey = 'id';
+            }
+
+            if ($sortKey) {
+                usort($display_data, function ($a, $b) use ($sortKey) {
+                    $aVal = is_object($a) ? get_object_vars($a) : (array) $a;
+                    $bVal = is_object($b) ? get_object_vars($b) : (array) $b;
+
+                    $aValue = $aVal[$sortKey] ?? null;
+                    $bValue = $bVal[$sortKey] ?? null;
+
+                    if ($aValue === $bValue) {
+                        return 0;
+                    }
+
+                    // Attempt to compare as timestamps/numbers first
+                    $aNumeric = is_numeric($aValue) ? (float) $aValue : strtotime((string) $aValue);
+                    $bNumeric = is_numeric($bValue) ? (float) $bValue : strtotime((string) $bValue);
+
+                    if ($aNumeric !== false && $bNumeric !== false) {
+                        return $bNumeric <=> $aNumeric; // Descending
+                    }
+
+                    return strcasecmp((string) $bValue, (string) $aValue);
+                });
+            }
+        }
+
         // Build unique IDs for infinite scroll
         $table_id = 'kit-infinite-table-' . uniqid();
         $container_id = 'kit-infinite-wrap-' . uniqid();
 
         ob_start();
 ?>
-        <div class="bg-white shadow rounded-lg overflow-hidden max-w-full" style="max-width: 100vw; box-sizing: border-box;" id="<?php echo esc_attr($container_id); ?>">
+        <div id="<?php echo esc_attr($container_id); ?>" class="w-full">
             <?php if ($options['title'] || $options['subtitle']): ?>
-                <div class="px-6 py-4 border-b border-gray-200">
+                <div class="mb-3">
                     <?php if ($options['title']): ?>
-                        <h3 class="text-lg font-medium text-gray-900"><?php echo esc_html($options['title']); ?></h3>
+                        <h3 class="text-lg font-semibold text-gray-900"><?php echo esc_html($options['title']); ?></h3>
                     <?php endif; ?>
                     <?php if ($options['subtitle']): ?>
-                        <p class="mt-1 text-sm text-gray-500"><?php echo esc_html($options['subtitle']); ?></p>
+                        <p class="text-sm text-gray-600"><?php echo esc_html($options['subtitle']); ?></p>
                     <?php endif; ?>
                 </div>
             <?php endif; ?>
 
-            <?php if (empty($data)): ?>
-                <div class="px-6 py-12 text-center">
-                    <p class="text-gray-500"><?php echo esc_html($options['empty_message']); ?></p>
+            <?php if (empty($display_data)): ?>
+                <div class="py-6 text-center text-sm text-gray-500">
+                    <p><?php echo esc_html($options['empty_message']); ?></p>
                 </div>
             <?php else: ?>
-                <div class="overflow-x-auto max-w-full" style="max-width: 100vw; box-sizing: border-box;">
-                    <table id="<?php echo esc_attr($table_id); ?>" class="<?php echo esc_attr($options['class']); ?>" style="table-layout: fixed; width: 100%; max-width: 100%;">
-                        <thead class="bg-gray-50">
-                            <tr class="px-6 py-3">
+                <div class="w-full overflow-hidden">
+                    <table id="<?php echo esc_attr($table_id); ?>" class="<?php echo esc_attr($options['table_class']); ?>" style="width:100%;">
+                        <thead class="border-b border-gray-200">
+                            <tr>
                                 <!-- Index column header -->
-                                <th class="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16 max-w-16">
-                                    #
-                                </th>
+                                <th class="<?php echo esc_attr($options['header_base_class']); ?> w-16 max-w-16">#</th>
                                 <?php foreach ($columns as $key => $column): ?>
                                     <?php
                                     $label = is_array($column) ? $column['label'] : $column;
@@ -82,34 +125,31 @@ class KIT_Unified_Table
                                     if ($key === 'checkbox') {
                                         $columnSortable = false;
                                     }
-                                    $padding = is_array($column) && isset($column['padding']) ? $column['padding'] : 'px-2 py-2';
-                                    $headerClass = $padding . ' text-left text-xs font-medium text-gray-500 uppercase tracking-wider';
-                                    if (is_array($column) && isset($column['header_class'])) {
+                                    $headerClass = $options['header_base_class'];
+                                    if (is_array($column) && !empty($column['header_class'])) {
                                         $headerClass = trim($headerClass . ' ' . $column['header_class']);
                                     }
                                     ?>
-                                    <th class="<?php echo esc_attr($headerClass); ?>" <?php if ($columnSortable): ?>data-column="<?php echo esc_attr($key); ?>"<?php endif; ?>>
+                                    <th<?php if ($columnSortable): ?> data-column="<?php echo esc_attr($key); ?>"<?php endif; ?> class="<?php echo esc_attr($headerClass); ?>">
                                         <?php if ($columnSortable): ?>
-                                            <button type="button" class="group inline-flex items-center sortable-header cursor-pointer hover:bg-gray-100 px-2 py-1 rounded -ml-2" style="cursor: pointer;">
-                                        <?php echo esc_html($label); ?>
-                                                <svg class="ml-2 h-3 w-3 text-gray-400 group-hover:text-gray-500 sort-icon" fill="currentColor" viewBox="0 0 20 20">
+                                            <button type="button" class="sortable-header flex items-center gap-1 text-gray-700">
+                                                <span class="whitespace-normal break-words"><?php echo esc_html($label); ?></span>
+                                                <svg class="sort-icon w-3 h-3 text-gray-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
                                                     <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
                                                 </svg>
                                             </button>
                                         <?php else: ?>
-                                            <?php echo esc_html($label); ?>
+                                            <span class="flex items-center gap-1 text-gray-700 whitespace-normal break-words"><?php echo esc_html($label); ?></span>
                                         <?php endif; ?>
                                     </th>
                                 <?php endforeach; ?>
                                 <?php if (!empty($options['actions'])): ?>
-                                    <th class="<?php echo esc_attr($padding); ?> text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24 max-w-24">
-                                        Actions
-                                    </th>
+                                    <th class="<?php echo esc_attr($options['header_base_class']); ?> w-24 max-w-24">Actions</th>
                                 <?php endif; ?>
                             </tr>
                         </thead>
-                        <tbody class="bg-white divide-y divide-gray-200 7878">
-                            <?php foreach ($data as $rowIndex => $row): ?>
+                        <tbody class="divide-y divide-gray-100">
+                            <?php foreach ($display_data as $rowIndex => $row): ?>
                                 <?php
                                 $rowAttrStr = '';
                                 if (is_callable($options['row_attrs_callback'])) {
@@ -119,20 +159,17 @@ class KIT_Unified_Table
                                     }
                                 }
                                 ?>
-                                <tr class="hover:bg-gray-50"<?php echo $rowAttrStr; ?>>
+                                <tr<?php echo $rowAttrStr; ?> class="hover:bg-gray-50">
                                     <!-- Index column cell -->
-                                    <td class="px-2 py-2 whitespace-nowrap text-sm text-gray-500 font-medium">
-                                        <?php echo esc_html($rowIndex + 1); ?>
-                                    </td>
+                                    <td class="<?php echo esc_attr($options['index_cell_class']); ?>"><?php echo esc_html($rowIndex + 1); ?></td>
                                     <?php foreach ($columns as $key => $column): ?>
                                         <?php
-                                        $padding = is_array($column) && isset($column['padding']) ? $column['padding'] : 'px-2 py-2';
-                                        $cellClass = $padding . ' whitespace-nowrap text-sm text-gray-900';
+                                        $cellClass = $options['cell_base_class'];
                                         if (is_array($column) && isset($column['cell_class'])) {
-                                            $cellClass = $column['cell_class'] . ' ' . $padding;
+                                            $cellClass = trim($cellClass . ' ' . $column['cell_class']);
                                         }
                                         ?>
-                                        <td class="7878 <?php echo esc_attr($cellClass); ?>">
+                                        <td class="<?php echo esc_attr($cellClass); ?>">
                                             <?php
                                             // Simple, robust value extraction
                                             $value = '';
@@ -157,11 +194,11 @@ class KIT_Unified_Table
                                         </td>
                                     <?php endforeach; ?>
                                     <?php if (!empty($options['actions'])): ?>
-                                        <td class="px-2 py-2 whitespace-nowrap text-sm font-medium 7878">
+                                        <td class="<?php echo esc_attr($options['actions_cell_class']); ?>">
                                             <?php foreach ($options['actions'] as $action): ?>
                                                 <?php
                                                 $href = $action['href'] ?? '#';
-                                                $class = $action['class'] ?? 'text-blue-600 hover:text-blue-800';
+                                                $class = $action['class'] ?? '';
                                                 $onclick = isset($action['onclick']) ? 'onclick="' . esc_attr($action['onclick']) . '"' : '';
                                                 $titleAttr = isset($action['title']) ? 'title="' . esc_attr($action['title']) . '" aria-label="' . esc_attr($action['title']) . '"' : '';
                                                 $target = isset($action['target']) ? 'target="' . esc_attr($action['target']) . '" rel="noopener"' : '';
@@ -179,8 +216,8 @@ class KIT_Unified_Table
                                                 }
                                                 ?>
                                                 <a href="<?php echo esc_url($href); ?>"
-                                                    class="<?php echo esc_attr($class); ?>"
-                                                    <?php echo $onclick; ?> <?php echo $target; ?>>
+                                                    <?php echo $class ? 'class="' . esc_attr($class) . '"' : ''; ?>
+                                                    <?php echo $onclick; ?> <?php echo $titleAttr; ?> <?php echo $target; ?>>
                                                     <?php 
                                                     if (isset($action['is_html']) && $action['is_html']) {
                                                         echo $action['label'];
@@ -189,9 +226,6 @@ class KIT_Unified_Table
                                                     }
                                                     ?>
                                                 </a>
-                                                <?php if ($action !== end($options['actions'])): ?>
-                                                    <span class="mx-2">|</span>
-                                                <?php endif; ?>
                                             <?php endforeach; ?>
                                         </td>
                                     <?php endif; ?>
@@ -411,36 +445,34 @@ class KIT_Unified_Table
 
         ob_start();
     ?>
-        <div class="bg-white shadow rounded-lg overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-200">
-                <div class="flex justify-between items-center">
-                    <div>
+        <div class="w-full">
+            <div class="mb-3">
+                <div class="flex items-center justify-between">
+                    <div class="space-y-1">
                         <?php if ($options['title']): ?>
-                            <h3 class="text-lg font-medium text-gray-900"><?php echo esc_html($options['title']); ?></h3>
+                            <h3 class="text-lg font-semibold text-gray-900"><?php echo esc_html($options['title']); ?></h3>
                         <?php endif; ?>
                         <?php if ($options['subtitle']): ?>
-                            <p class="mt-1 text-sm text-gray-500"><?php echo esc_html($options['subtitle']); ?></p>
+                            <p class="text-sm text-gray-600"><?php echo esc_html($options['subtitle']); ?></p>
                         <?php endif; ?>
                     </div>
                 </div>
             </div>
 
-            <div class="overflow-x-auto">
-                <table id="server-side-table" class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr class="dd3s1234">
+            <div class="w-full overflow-hidden">
+                <table id="server-side-table" class="w-full table-fixed border-collapse" style="width:100%;">
+                    <thead class="border-b border-gray-200">
+                        <tr>
                             <?php foreach ($columns as $key => $column): ?>
                                 <?php
                                 $label = is_array($column) ? $column['label'] : $column;
                                 ?>
-                                <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    <?php echo esc_html($label); ?>
+                                <th class="px-3 py-2 text-xs font-semibold text-left uppercase tracking-wide text-gray-700">
+                                    <span class="flex items-center gap-1 text-gray-700 whitespace-normal break-words"><?php echo esc_html($label); ?></span>
                                 </th>
                             <?php endforeach; ?>
                             <?php if (!empty($options['actions'])): ?>
-                                <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Actions
-                                </th>
+                                <th class="px-3 py-2 text-xs font-semibold text-left uppercase tracking-wide text-gray-700">Actions</th>
                             <?php endif; ?>
                         </tr>
                     </thead>
@@ -482,7 +514,7 @@ class KIT_Unified_Table
                                         <?php 
                                         $label_output = (isset($action['is_html']) && $action['is_html']) ? $action['label'] : esc_html($action['label']);
                                         ?>
-                                        actions += '<a href="<?php echo esc_url($href); ?>" class="<?php echo esc_attr($class); ?>" <?php echo $onclick; ?>><?php echo $label_output; ?></a>';
+                                        actions += '<a href="<?php echo esc_url($href); ?>"<?php echo $class ? ' class="' . esc_attr($class) . '"' : ''; ?> <?php echo $onclick; ?>><?php echo $label_output; ?></a>';
                                         <?php if ($action !== end($options['actions'])): ?>
                                             actions += ' | ';
                                         <?php endif; ?>
