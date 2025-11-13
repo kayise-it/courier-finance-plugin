@@ -1,5 +1,5 @@
 <?php
-$testing = false;
+$testing = true;
 
 /**
  * PDF Generator for Waybills/Quotations
@@ -123,7 +123,6 @@ $volume_charge = floatval($waybill->volume_charge ?? 0);
 $stored_basis = '';
 $stored_volume_rate = 0.0;
 $stored_mass_rate = 0.0;
-$stored_invoice_amount = 0.0;
 if (!empty($waybill->miscellaneous)) {
   $md = maybe_unserialize($waybill->miscellaneous);
   if (is_array($md) && isset($md['others'])) {
@@ -131,9 +130,6 @@ if (!empty($waybill->miscellaneous)) {
     $stored_volume_rate = isset($md['others']['volume_rate_used']) ? floatval($md['others']['volume_rate_used']) : 0.0;
     if (isset($md['others']['mass_rate'])) {
       $stored_mass_rate = floatval($md['others']['mass_rate']);
-    }
-    if (isset($md['others']['product_invoice_amount_snapshot'])) {
-      $stored_invoice_amount = floatval($md['others']['product_invoice_amount_snapshot']);
     }
   }
 }
@@ -181,12 +177,35 @@ if (!empty($waybill->miscellaneous)) {
 }
 
 // Compute a resilient fallback total in case no snapshot/field exists
-$sad500_total = (!empty($waybill->include_sad500) && intval($waybill->include_sad500) === 1)
-  ? floatval(KIT_Waybills::sadc_certificate())
-  : 0.0;
-$sadc_total = (!empty($waybill->include_sadc) && intval($waybill->include_sadc) === 1)
-  ? floatval(KIT_Waybills::sad())
-  : 0.0;
+$sad500_total = 0.0;
+$sadc_total = 0.0;
+if (!empty($waybill->miscellaneous)) {
+  $snap = maybe_unserialize($waybill->miscellaneous);
+  if (is_array($snap) && isset($snap['others'])) {
+    if (!empty($waybill->include_sad500) && intval($waybill->include_sad500) === 1) {
+      if (isset($snap['others']['include_sad500'])) {
+        $sad500_total = KIT_Waybills::normalize_amount($snap['others']['include_sad500']);
+      }
+      if ($sad500_total <= 0) {
+        $sad500_total = KIT_Waybills::sadc_certificate();
+      }
+    }
+    if (!empty($waybill->include_sadc) && intval($waybill->include_sadc) === 1) {
+      if (isset($snap['others']['include_sadc'])) {
+        $sadc_total = KIT_Waybills::normalize_amount($snap['others']['include_sadc']);
+      }
+      if ($sadc_total <= 0) {
+        $sadc_total = KIT_Waybills::sad();
+      }
+    }
+  }
+}
+if ($sad500_total === 0.0 && !empty($waybill->include_sad500) && intval($waybill->include_sad500) === 1) {
+  $sad500_total = KIT_Waybills::sadc_certificate();
+}
+if ($sadc_total === 0.0 && !empty($waybill->include_sadc) && intval($waybill->include_sadc) === 1) {
+  $sadc_total = KIT_Waybills::sad();
+}
 
 // Prefer stored international amount if VAT is not included
 $intl_amount_for_total = 0.0;
@@ -216,11 +235,12 @@ $transport_total = floatval($charge ?? 0);
 $computed_fallback_total = $transport_total + $misc_total + $sad500_total + $sadc_total + $intl_amount_for_total + $items_total;
 
 // Choose the best value to render
-$final_total = $stored_invoice_amount > 0
-  ? $stored_invoice_amount
-  : ((isset($waybill->product_invoice_amount) && floatval($waybill->product_invoice_amount) > 0)
-    ? floatval($waybill->product_invoice_amount)
-    : $computed_fallback_total);
+$product_invoice_amount = isset($waybill->product_invoice_amount)
+  ? KIT_Waybills::normalize_amount($waybill->product_invoice_amount)
+  : 0.0;
+$final_total = $product_invoice_amount > 0
+  ? $product_invoice_amount
+  : $computed_fallback_total;
 
 // Get the image file content and convert it to Base64
 $imagePath = plugin_dir_path(__FILE__) . '/icons/pin.png';
@@ -683,8 +703,8 @@ ob_start();
             </td>
             <td class="cellStyle">SAD500</td>
             <td class="cellStyle aligncenter" <?= (!empty($waybillItems)) ? 'colspan="2"' : '' ?>>1</td>
-            <td class="cellStyle alignright "><?= KIT_Waybills::sadc_certificate() ?></td>
-            <td class="cellStyle" style="text-align:right; font-weight: 700;"><?= KIT_Waybills::sadc_certificate() ?></td>
+            <td class="cellStyle alignright "><?= number_format($sad500_total, 2) ?></td>
+            <td class="cellStyle" style="text-align:right; font-weight: 700;"><?= number_format($sad500_total, 2) ?></td>
           </tr>
         <?php endif ?>
         <?php if (!empty($waybill->include_sadc) && $waybill->include_sadc == 1): ?>
@@ -694,8 +714,8 @@ ob_start();
             </td>
             <td class="cellStyle">SADC Certificate</td>
             <td class="cellStyle aligncenter" <?= (!empty($waybillItems)) ? 'colspan="2"' : '' ?>>1</td>
-            <td class="cellStyle alignright"><?= KIT_Waybills::sad() ?></td>
-            <td class="cellStyle" style="text-align:right; font-weight: 700;"><?= KIT_Waybills::sad() ?></td>
+            <td class="cellStyle alignright"><?= number_format($sadc_total, 2) ?></td>
+            <td class="cellStyle" style="text-align:right; font-weight: 700;"><?= number_format($sadc_total, 2) ?></td>
           </tr>
         <?php endif; ?>
         <?php // Show Agent Clearing & Documentation when VAT is NOT selected, preferring stored snapshot amount 

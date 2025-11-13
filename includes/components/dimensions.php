@@ -207,8 +207,12 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
             ajaxAbortController = new AbortController();
 
             // Use ComponentUtils for AJAX call
+            const directionField = document.getElementById('direction_id') || document.querySelector('input[name="direction_id"]');
+            const directionId = directionField ? directionField.value : '';
+
             ComponentUtils.ajaxCall('handle_get_price_per_m3', {
                 'origin_country_id': elements.countrySelect?.value || '',
+                'direction_id': directionId || '',
                 'total_volume_m3': volume
             }, function(data) {
                 // Handle response

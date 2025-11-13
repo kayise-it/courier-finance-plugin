@@ -26,17 +26,30 @@ if (! $data || empty($data->waybill)) {
 $w = (object) $data->waybill;
 $items = is_array($data->items) ? $data->items : [];
 
+if (! class_exists('KIT_Deliveries')) {
+    require_once __DIR__ . '/includes/deliveries/deliveries-functions.php';
+}
+
+$delivery = (!empty($w->delivery_id)) ? KIT_Deliveries::get_delivery((int) $w->delivery_id) : null;
+
+$totals = KIT_Waybills::calculate_waybill_totals($w, $items);
+$charge_basis = $totals['charge_basis'];
+$transport_total = $totals['transport_total'];
+$misc_total = $totals['misc_total'];
+$misc_items = $totals['misc_items'];
+$sad500_total = $totals['sad500_total'];
+$sadc_total = $totals['sadc_total'];
+$intl_amount = $totals['intl_amount'];
+$items_total = $totals['items_total'];
+$invoice_total = $totals['final_total'];
+
 // Extract description and miscellaneous items from serialized misc field
 $description = '';
-$misc_items = [];
 if (!empty($w->miscellaneous)) {
     $misc_data = maybe_unserialize($w->miscellaneous);
     if (is_array($misc_data)) {
         if (isset($misc_data['others']['waybill_description'])) {
             $description = (string) $misc_data['others']['waybill_description'];
-        }
-        if (isset($misc_data['misc_items']) && is_array($misc_data['misc_items'])) {
-            $misc_items = $misc_data['misc_items'];
         }
     }
 }
@@ -65,6 +78,7 @@ header('Content-Type: text/html; charset=UTF-8');
     <strong>Waybill #:</strong> <?= htmlspecialchars($w->waybill_no ?? '') ?>
     &nbsp;&nbsp;|&nbsp;&nbsp; <strong>Status:</strong> <?= htmlspecialchars($w->status ?? 'pending') ?>
     &nbsp;&nbsp;|&nbsp;&nbsp; <strong>Route:</strong> <?= htmlspecialchars(($w->route_description ?? '')) ?>
+    &nbsp;&nbsp;|&nbsp;&nbsp; <strong>Total:</strong> R<?= number_format($invoice_total, 2) ?>
   </div>
 
   <?php if ($description !== ''): ?>
@@ -97,6 +111,46 @@ header('Content-Type: text/html; charset=UTF-8');
       <td><?= htmlspecialchars(number_format((float)($w->total_mass_kg ?? 0), 2)) ?></td>
     </tr>
   </table>
+
+  <?php if ($delivery): ?>
+    <h3>Delivery</h3>
+    <table>
+      <tr>
+        <th>Reference</th>
+        <td><?= htmlspecialchars($delivery->delivery_reference ?? '') ?></td>
+        <th>Dispatch Date</th>
+        <td><?= htmlspecialchars($delivery->dispatch_date ?? '') ?></td>
+      </tr>
+      <tr>
+        <th>Truck</th>
+        <td><?= htmlspecialchars($delivery->truck_number ?? '') ?></td>
+        <th>Delivery Status</th>
+        <td><?= htmlspecialchars($delivery->status ?? '') ?></td>
+      </tr>
+      <tr>
+        <th>Origin</th>
+        <td><?= htmlspecialchars($delivery->origin_country ?? '') ?></td>
+        <th>Destination</th>
+        <td><?= htmlspecialchars($delivery->destination_country ?? '') ?></td>
+      </tr>
+    </table>
+
+    <?php if (!empty($delivery->driver_name) || !empty($delivery->driver_phone) || !empty($delivery->driver_email)): ?>
+      <h3>Driver</h3>
+      <table>
+        <tr>
+          <th>Name</th>
+          <td><?= htmlspecialchars($delivery->driver_name ?? 'N/A') ?></td>
+          <th>Phone</th>
+          <td><?= htmlspecialchars($delivery->driver_phone ?? 'N/A') ?></td>
+        </tr>
+        <tr>
+          <th>Email</th>
+          <td colspan="3"><?= htmlspecialchars($delivery->driver_email ?? 'N/A') ?></td>
+        </tr>
+      </table>
+    <?php endif; ?>
+  <?php endif; ?>
 
   <h3>Items</h3>
   <?php if (!empty($items)): ?>
@@ -135,6 +189,48 @@ header('Content-Type: text/html; charset=UTF-8');
   <?php else: ?>
     <p style="color:#6b7280; margin:6px 0 14px;">No miscellaneous charges captured for this waybill.</p>
   <?php endif; ?>
+
+  <h3>Charges Summary</h3>
+  <table>
+    <tbody>
+      <tr>
+        <th>Transport Charge (<?= htmlspecialchars(ucfirst($charge_basis)) ?>)</th>
+        <td>R<?= number_format($transport_total, 2) ?></td>
+      </tr>
+      <tr>
+        <th>Items Total</th>
+        <td>R<?= number_format($items_total, 2) ?></td>
+      </tr>
+      <?php if ($misc_total > 0): ?>
+        <tr>
+          <th>Miscellaneous</th>
+          <td>R<?= number_format($misc_total, 2) ?></td>
+        </tr>
+      <?php endif; ?>
+      <?php if ($sadc_total > 0): ?>
+        <tr>
+          <th>SADC Certificate</th>
+          <td>R<?= number_format($sadc_total, 2) ?></td>
+        </tr>
+      <?php endif; ?>
+      <?php if ($sad500_total > 0): ?>
+        <tr>
+          <th>SAD500</th>
+          <td>R<?= number_format($sad500_total, 2) ?></td>
+        </tr>
+      <?php endif; ?>
+      <?php if ($intl_amount > 0): ?>
+        <tr>
+          <th>International Fees</th>
+          <td>R<?= number_format($intl_amount, 2) ?></td>
+        </tr>
+      <?php endif; ?>
+      <tr>
+        <th style="font-size:14px;">Invoice Total</th>
+        <td style="font-size:14px; font-weight:700;">R<?= number_format($invoice_total, 2) ?></td>
+      </tr>
+    </tbody>
+  </table>
 
   <p style="margin-top:12px;color:#555;">This is a customer summary, not a tax invoice.</p>
 </body>

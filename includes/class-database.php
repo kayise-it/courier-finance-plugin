@@ -64,9 +64,7 @@ class Database
             status ENUM('scheduled', 'in_transit', 'delivered', 'unconfirmed') DEFAULT 'scheduled',
             created_by INT NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (id),
-            FOREIGN KEY (direction_id) REFERENCES {$wpdb->prefix}kit_shipping_directions(id),
-            FOREIGN KEY (destination_city_id) REFERENCES {$wpdb->prefix}kit_operating_cities(id)
+            PRIMARY KEY (id)
             ) $charset_collate;";
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
@@ -181,10 +179,6 @@ class Database
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         last_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (id),
-        FOREIGN KEY (direction_id) REFERENCES {$wpdb->prefix}kit_shipping_directions(id),
-        FOREIGN KEY (delivery_id) REFERENCES {$wpdb->prefix}kit_deliveries(id),
-        FOREIGN KEY (customer_id) REFERENCES {$wpdb->prefix}kit_customers(cust_id),
-        FOREIGN KEY (city_id) REFERENCES {$wpdb->prefix}kit_operating_cities(id),
         INDEX (status),
         INDEX (customer_id),
         UNIQUE KEY waybill_no (waybill_no),
@@ -251,8 +245,7 @@ class Database
             total_price DECIMAL(10,2) DEFAULT 0,
             client_invoice VARCHAR(50) NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (id),
-            FOREIGN KEY (waybillno) REFERENCES {$wpdb->prefix}kit_waybills(waybill_no) ON DELETE CASCADE
+            PRIMARY KEY (id)
         ) $charset_collate;";
 
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
@@ -306,8 +299,6 @@ class Database
             last_updated_by INT NULL,
             last_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
-            FOREIGN KEY (waybill_id) REFERENCES {$wpdb->prefix}kit_waybills(id),
-            FOREIGN KEY (customer_id) REFERENCES {$wpdb->prefix}kit_customers(id),
             INDEX (status)
         ) $charset_collate;";
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
@@ -335,10 +326,6 @@ class Database
             last_updated_by BIGINT UNSIGNED NULL,
             last_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
-            FOREIGN KEY (delivery_id) REFERENCES {$wpdb->prefix}kit_deliveries(id),
-            FOREIGN KEY (waybill_id) REFERENCES {$wpdb->prefix}kit_waybills(id),
-            FOREIGN KEY (waybillNo) REFERENCES {$wpdb->prefix}kit_waybills(waybill_no),
-            FOREIGN KEY (customer_id) REFERENCES {$wpdb->prefix}kit_customers(cust_id),
             INDEX (status)
         ) $charset_collate;";
 
@@ -420,8 +407,7 @@ class Database
             city_name VARCHAR(100) NOT NULL,
             is_active TINYINT(1) DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (id),
-            FOREIGN KEY (country_id) REFERENCES $country_table(id) ON DELETE CASCADE
+            PRIMARY KEY (id)
         ) $charset_collate;";
 
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
@@ -486,8 +472,6 @@ class Database
             is_active TINYINT(1) DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
-            FOREIGN KEY (origin_country_id) REFERENCES {$wpdb->prefix}kit_operating_countries(id),
-            FOREIGN KEY (destination_country_id) REFERENCES {$wpdb->prefix}kit_operating_countries(id),
             UNIQUE KEY direction_pair (origin_country_id, destination_country_id)
         ) $charset_collate;";
 
@@ -589,8 +573,6 @@ class Database
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
-            FOREIGN KEY (direction_id) REFERENCES {$wpdb->prefix}kit_shipping_directions(id),
-            FOREIGN KEY (rate_type_id) REFERENCES {$wpdb->prefix}kit_shipping_rate_types(id),
             INDEX weight_range (min_weight, max_weight)
         ) $charset_collate;";
 
@@ -633,8 +615,6 @@ class Database
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
-            FOREIGN KEY (direction_id) REFERENCES {$wpdb->prefix}kit_shipping_directions(id),
-            FOREIGN KEY (rate_type_id) REFERENCES {$wpdb->prefix}kit_shipping_rate_types(id),
             INDEX volume_range (min_volume, max_volume)
         ) $charset_collate;";
 
@@ -680,7 +660,6 @@ class Database
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
-            FOREIGN KEY (direction_id) REFERENCES {$wpdb->prefix}kit_shipping_directions(id),
             INDEX truck_type (truck_type)
         ) $charset_collate;";
 
@@ -794,6 +773,66 @@ class Database
     }
 
     /**
+     * Drop legacy foreign key constraints that were part of early schema versions.
+     * Newer migrations manage relationships at application level, so FK enforcement
+     * causes insert/update failures when related records are pruned.
+     */
+    public static function drop_legacy_foreign_keys()
+    {
+        static $ran = false;
+        if ($ran) {
+            return;
+        }
+        $ran = true;
+
+        global $wpdb;
+
+        if (!isset($wpdb) || !defined('DB_NAME')) {
+            return;
+        }
+
+        $tables = [
+            'kit_waybill_items',
+            'kit_waybills',
+            'kit_quotations',
+            'kit_invoices',
+            'kit_deliveries',
+            'kit_shipping_rates_mass',
+            'kit_shipping_rates_volume',
+            'kit_shipping_dedicated_truck_rates',
+            'kit_operating_cities',
+            'kit_shipping_directions',
+        ];
+
+        foreach ($tables as $table_suffix) {
+            $table_name = $wpdb->prefix . $table_suffix;
+
+            $constraints = $wpdb->get_col($wpdb->prepare(
+                "SELECT CONSTRAINT_NAME
+                 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+                 WHERE TABLE_SCHEMA = %s
+                   AND TABLE_NAME = %s
+                   AND CONSTRAINT_TYPE = 'FOREIGN KEY'",
+                DB_NAME,
+                $table_name
+            ));
+
+            if (empty($constraints)) {
+                continue;
+            }
+
+            foreach ($constraints as $constraint) {
+                $result = $wpdb->query("ALTER TABLE `$table_name` DROP FOREIGN KEY `$constraint`");
+                if ($result === false) {
+                    self::write_log("Failed to drop foreign key $constraint on $table_name: " . $wpdb->last_error);
+                } else {
+                    self::write_log("Dropped foreign key $constraint on $table_name");
+                }
+            }
+        }
+    }
+
+    /**
      * Write log message directly to file (bypasses error_reporting(0) and error_log issues)
      */
     private static function write_log($message) {
@@ -846,6 +885,7 @@ class Database
     }
     public static function activate()
     {
+        self::drop_legacy_foreign_keys();
         self::create_customers_table();
         self::create_services_table();
         self::create_operating_countries_table();

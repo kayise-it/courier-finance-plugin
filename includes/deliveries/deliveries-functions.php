@@ -65,20 +65,43 @@ class KIT_Deliveries
 
         $direction_id    = isset($_POST['direction_id']) ? intval($_POST['direction_id']) : 0;
         $total_volume_m3 = isset($_POST['total_volume_m3']) ? floatval($_POST['total_volume_m3']) : 0;
-        $chargeGroup     = KIT_Waybills::chargeGroup($_POST['origin_country_id'] ?? 0);
+        $origin_country  = isset($_POST['origin_country_id']) ? intval($_POST['origin_country_id']) : 0;
+        $chargeGroup     = KIT_Waybills::chargeGroup($origin_country);
 
-        if (! $chargeGroup || ! $total_volume_m3) {
-            wp_send_json_error(['message' => 'Missing chargeGroup or volume.']);
+        if (! $total_volume_m3) {
+            wp_send_json_error(['message' => 'Missing volume.']);
         }
 
         $table = $wpdb->prefix . 'kit_shipping_rates_volume';
 
-        $rate_per_m3 = $wpdb->get_var($wpdb->prepare("
-        SELECT rate_per_m3
-        FROM $table
-        WHERE direction_id = %d
-          AND %f BETWEEN min_volume AND max_volume
-        LIMIT 1", $chargeGroup, $total_volume_m3));
+        $lookupIds = [];
+        if ($direction_id > 0) {
+            $lookupIds[] = $direction_id;
+        }
+        if ($chargeGroup) {
+            $lookupIds[] = intval($chargeGroup);
+        }
+        $lookupIds = array_values(array_unique(array_filter($lookupIds)));
+
+        if (empty($lookupIds)) {
+            wp_send_json_error(['message' => 'Unable to determine direction or charge group for volume rates.']);
+        }
+
+        $rate_per_m3 = null;
+        foreach ($lookupIds as $lookupId) {
+            $rate_per_m3 = $wpdb->get_var($wpdb->prepare("
+            SELECT rate_per_m3
+            FROM $table
+            WHERE direction_id = %d
+              AND %f BETWEEN min_volume AND max_volume
+              AND is_active = 1
+            ORDER BY effective_date DESC, min_volume DESC
+            LIMIT 1", $lookupId, $total_volume_m3));
+
+            if ($rate_per_m3 !== null) {
+                break;
+            }
+        }
 
         if ($rate_per_m3 !== null) {
             wp_send_json_success(['rate_per_m3' => $rate_per_m3]);
@@ -702,6 +725,53 @@ class KIT_Deliveries
         // Get waybills for this delivery early so we can use the data
         $waybillsandItems = KIT_Waybills::truckWaybills($delivery_id);
 
+        if (is_array($waybillsandItems) && !empty($waybillsandItems)) {
+            foreach ($waybillsandItems as &$waybillRow) {
+                $cityId = isset($waybillRow['city_id']) ? (int) $waybillRow['city_id'] : 0;
+                $cityName = '';
+
+                if ($cityId > 0 && class_exists('KIT_Routes')) {
+                    $cityName = (string) KIT_Routes::get_city_name_by_id($cityId);
+                }
+
+                if ($cityName === '') {
+                    $cityName = 'Unassigned City';
+                }
+
+                $waybillRow['city'] = $cityName;
+
+                $firstName = isset($waybillRow['customer_name']) ? trim((string) $waybillRow['customer_name']) : '';
+                $surname = isset($waybillRow['customer_surname']) ? trim((string) $waybillRow['customer_surname']) : '';
+                $fullName = trim($firstName . ' ' . $surname);
+
+                if ($fullName !== '') {
+                    $waybillRow['customer_name'] = $fullName;
+                } elseif ($firstName !== '') {
+                    $waybillRow['customer_name'] = $firstName;
+                } elseif ($surname !== '') {
+                    $waybillRow['customer_name'] = $surname;
+                } else {
+                    $waybillRow['customer_name'] = 'Unknown Customer';
+                }
+            }
+            unset($waybillRow);
+
+            usort($waybillsandItems, function ($a, $b) {
+                $cityA = strtolower((string) ($a['city'] ?? ''));
+                $cityB = strtolower((string) ($b['city'] ?? ''));
+
+                $cityCompare = strcmp($cityA, $cityB);
+                if ($cityCompare !== 0) {
+                    return $cityCompare;
+                }
+
+                $nameA = strtolower((string) ($a['customer_name'] ?? ''));
+                $nameB = strtolower((string) ($b['customer_name'] ?? ''));
+
+                return strcmp($nameA, $nameB);
+            });
+        }
+
         ?>
 
 <div class="wrap">
@@ -921,11 +991,11 @@ class KIT_Deliveries
                 </div>
 
                 <?php
-                        $columns = [
-                            'waybill_no'    => [
+                        $columns = array(
+                            'waybill_no'    => array(
                                 'label'        => 'Waybill #',
                                 'header_class' => 'whitespace-nowrap',
-                                'callback' => function ($value, $row, $rowIndex) {
+                                'callback'     => function ($value, $row, $rowIndex) {
                                     $waybill_no = $value ?? 'N/A';
                                     $waybill_id = $row['waybill_id'] ?? 0;
 
@@ -936,21 +1006,21 @@ class KIT_Deliveries
                                         return esc_html($waybill_no);
                                     }
                                 },
-                            ],
-                            'customer_name' => [
+                            ),
+                            'customer_name' => array(
                                 'label'        => 'Name & Surname',
                                 'header_class' => 'whitespace-nowrap',
-                            ],
+                            ),
                             'approval'      => 'Approval',
-                            'total_mass_kg' => [
+                            'total_mass_kg' => array(
                                 'label'        => 'Mass & Dims',
                                 'header_class' => 'whitespace-nowrap',
-                                'callback' => function ($value, $row, $rowIndex) {
+                                'callback'     => function ($value, $row, $rowIndex) {
                                     $weight = $value ?? 0;
                                     return number_format($weight, 1) . ' kg';
                                 },
-                            ],
-                            'destination_city' => [
+                            ),
+                            'destination_city' => array(
                                 'label'    => 'Destination City',
                                 'callback' => function ($value, $row, $rowIndex) {
                                     $city_id = $row['city_id'] ?? 0;
@@ -960,19 +1030,19 @@ class KIT_Deliveries
                                     }
                                     return '<span class="text-gray-400">N/A</span>';
                                 },
-                            ],
-                            'total_volume'  => [
+                            ),
+                            'total_volume'  => array(
                                 'label'    => 'Volume (m³)',
                                 'callback' => function ($value, $row, $rowIndex) {
                                     $volume = $value ?? 0;
                                     return number_format($volume, 1) . ' m³';
                                 },
-                            ],
-                        ];
+                            ),
+                        );
                         
                         // Conditionally add total column based on user permissions
                         if (class_exists('KIT_User_Roles') && KIT_User_Roles::can_see_prices()) {
-                            $columns['total'] = [
+                            $columns['total'] = array(
                                 'label'    => 'Total',
                                 'callback' => function ($value, $row, $rowIndex) {
                                     $total = $value ?? 0;
@@ -982,7 +1052,7 @@ class KIT_Deliveries
                                     }
                                     return KIT_Commons::currency() . ' ' . number_format(floatval($total), 2);
                                 },
-                            ];
+                            );
                         }
                         // Debug: Check how many waybills we have
                         $waybill_count = is_array($waybillsandItems) ? count($waybillsandItems) : 0;
@@ -990,10 +1060,14 @@ class KIT_Deliveries
                 <div class="overflow-x-auto -mx-3 md:mx-0">
                     <?php
                             echo KIT_Unified_Table::infinite($waybillsandItems, $columns, [
-                                'title'         => 'Waybills on Truck',
-                                'subtitle'      => 'Showing: ' . $waybill_count . ' waybills',
-                                'empty_message' => 'No waybills assigned',
-                                'class'         => 'min-w-full divide-y divide-gray-200',
+                                'title'                 => 'Waybills on Truck',
+                                'subtitle'              => 'Showing: ' . $waybill_count . ' waybills',
+                                'empty_message'         => 'No waybills assigned',
+                                'class'                 => 'min-w-full divide-y divide-gray-200',
+                                'groupby'               => 'city',
+                                'group_heading_prefix'  => 'City: ',
+                                'preserve_order'        => true,
+                                'group_collapsible'     => true,
                             ]);
                             ?>
                 </div>

@@ -1360,6 +1360,53 @@ class KIT_Waybills
     }
 
     /**
+     * Normalize a monetary value that may contain currency symbols or formatting.
+     *
+     * @param mixed $value
+     * @return float
+     */
+    public static function normalize_amount($value)
+    {
+        if (is_string($value)) {
+            $value = preg_replace('/[^0-9\.\-]/', '', $value);
+        }
+
+        if (is_numeric($value)) {
+            return floatval($value);
+        }
+
+        return 0.0;
+    }
+
+    /**
+     * Default SADC certificate charge (in Rands) when no company setting exists.
+     *
+     * @return float
+     */
+    public static function defaultSadcCharge()
+    {
+        $default = 1000.00;
+        if (function_exists('apply_filters')) {
+            $default = apply_filters('kit_waybills_default_sadc_charge', $default);
+        }
+        return floatval($default);
+    }
+
+    /**
+     * Default SAD500 charge (in Rands) when no company setting exists.
+     *
+     * @return float
+     */
+    public static function defaultSad500Charge()
+    {
+        $default = 350.00;
+        if (function_exists('apply_filters')) {
+            $default = apply_filters('kit_waybills_default_sad500_charge', $default);
+        }
+        return floatval($default);
+    }
+
+    /**
      * Check if VAT warning should be shown (VAT checked but no items)
      */
     public static function shouldShowVatWarning($vat_checked, $waybillItemsTotal)
@@ -1369,22 +1416,38 @@ class KIT_Waybills
     public static function sad()
     {
         global $wpdb;
-        $wpdprefix = $wpdb->prefix;
-        $company_table = $wpdprefix . 'kit_company_details';
-        $sadc_charge = $wpdb->get_var("SELECT sadc_charge FROM $company_table LIMIT 1");
-        if ($sadc_charge !== null && is_numeric($sadc_charge)) {
-            return floatval($sadc_charge);
+        $sadc_charge = null;
+
+        if (isset($wpdb) && isset($wpdb->prefix)) {
+            $company_table = $wpdb->prefix . 'kit_company_details';
+            $sadc_charge = $wpdb->get_var("SELECT sadc_charge FROM $company_table LIMIT 1");
+            if ($sadc_charge !== null) {
+                $normalized = self::normalize_amount($sadc_charge);
+                if ($normalized > 0) {
+                    return $normalized;
+                }
+            }
         }
+
+        return self::defaultSadcCharge();
     }
     public static function sadc_certificate()
     {
         global $wpdb;
-        $wpdprefix = $wpdb->prefix;
-        $company_table = $wpdprefix . 'kit_company_details';
-        $sad500_charge = $wpdb->get_var("SELECT sad500_charge FROM $company_table LIMIT 1");
-        if ($sad500_charge !== null && is_numeric($sad500_charge)) {
-            return floatval($sad500_charge);
+        $sad500_charge = null;
+
+        if (isset($wpdb) && isset($wpdb->prefix)) {
+            $company_table = $wpdb->prefix . 'kit_company_details';
+            $sad500_charge = $wpdb->get_var("SELECT sad500_charge FROM $company_table LIMIT 1");
+            if ($sad500_charge !== null) {
+                $normalized = self::normalize_amount($sad500_charge);
+                if ($normalized > 0) {
+                    return $normalized;
+                }
+            }
         }
+
+        return self::defaultSad500Charge();
     }
 
     public static function international_price()
@@ -1493,10 +1556,15 @@ class KIT_Waybills
             $rate_used = self::international_price_in_rands() / max(1.0, self::international_price());
             $others['usd_to_zar_rate_used'] = $rate_used;
             $others['international_price_rands'] = self::international_price_in_rands();
+            $others['international_price_snapshot_at'] = current_time('mysql');
 
             // Also store SAD500/SADC if checked (they can coexist with international_price)
-            if ($has_sad500) $others['include_sad500'] = self::sad();
-            if ($has_waybill_fee) $others['include_sadc'] = self::sadc_certificate();
+            if ($has_sad500) {
+                $others['include_sad500'] = self::sadc_certificate();
+            }
+            if ($has_waybill_fee) {
+                $others['include_sadc'] = self::sad();
+            }
         }
 
         return [
@@ -1774,7 +1842,6 @@ class KIT_Waybills
         $final_misc_data['others']['volume_rate_used'] = $snapshot_volume_rate;
         $final_misc_data['others']['mass_rate'] = $snapshot_mass_rate > 0 ? $snapshot_mass_rate : ($final_misc_data['others']['mass_rate'] ?? 0);
         // Destination city/country are not stored in misc->others anymore. Use waybills.city_id
-        $misc_serialized = serialize($final_misc_data);
 
         // Customer creation is now handled earlier in the flow before validation
 
@@ -1859,6 +1926,12 @@ class KIT_Waybills
 
         $calculation_breakdown = KIT_Bulletproof_Calculator::calculate_waybill_total($calculation_params);
         $waybillTotal = $calculation_breakdown['totals']['final_total'];
+
+        // Persist the computed total in the misc snapshot for downstream consumers (e.g. PDF)
+        if (!isset($final_misc_data['others']) || !is_array($final_misc_data['others'])) {
+            $final_misc_data['others'] = [];
+        }
+        $misc_serialized = serialize($final_misc_data);
 
         $include_sad500 = isset($_POST['include_sad500']) ? 1 : 0;
         $include_sadc = isset($_POST['include_sadc']) ? 1 : 0;
@@ -3454,6 +3527,156 @@ class KIT_Waybills
     }
 
     /**
+     * Calculate consistent pricing totals for a waybill.
+     *
+     * @param array|object $waybill Waybill data (array or object).
+     * @param array        $items   Waybill items (array of arrays).
+     *
+     * @return array{
+     *     charge_basis:string,
+     *     transport_total:float,
+     *     misc_total:float,
+     *     misc_items:array,
+     *     sad500_total:float,
+     *     sadc_total:float,
+     *     intl_amount:float,
+     *     items_total:float,
+     *     final_total:float,
+     *     product_invoice_amount:float,
+     *     stored_volume_rate:float,
+     *     stored_mass_rate:float
+     * }
+     */
+    public static function calculate_waybill_totals($waybill, $items = [])
+    {
+        $waybill_data = is_object($waybill) ? (array) $waybill : (array) ($waybill ?? []);
+        $items = is_array($items) ? $items : [];
+
+        $mass_charge = isset($waybill_data['mass_charge']) ? floatval($waybill_data['mass_charge']) : 0.0;
+        $volume_charge = isset($waybill_data['volume_charge']) ? floatval($waybill_data['volume_charge']) : 0.0;
+
+        $misc_total = 0.0;
+        $misc_items = [];
+        $stored_basis = '';
+        $stored_volume_rate = 0.0;
+        $stored_mass_rate = 0.0;
+        $stored_intl_calc = 0.0;
+        $stored_sad500 = 0.0;
+        $stored_sadc = 0.0;
+
+        if (!empty($waybill_data['miscellaneous'])) {
+            $misc_data = maybe_unserialize($waybill_data['miscellaneous']);
+
+            if (is_array($misc_data)) {
+                if (isset($misc_data['misc_total'])) {
+                    $misc_total = floatval($misc_data['misc_total']);
+                } elseif (isset($misc_data['misc_items']) && is_array($misc_data['misc_items'])) {
+                    foreach ($misc_data['misc_items'] as $mi) {
+                        $price = isset($mi['misc_price']) ? floatval($mi['misc_price']) : 0.0;
+                        $qty = isset($mi['misc_quantity']) ? intval($mi['misc_quantity']) : 0;
+                        $misc_total += $price * $qty;
+                    }
+                }
+
+                if (isset($misc_data['misc_items']) && is_array($misc_data['misc_items'])) {
+                    $misc_items = $misc_data['misc_items'];
+                }
+
+                if (isset($misc_data['others']) && is_array($misc_data['others'])) {
+                    $others = $misc_data['others'];
+                    if (isset($others['used_charge_basis'])) {
+                        $stored_basis = (string) $others['used_charge_basis'];
+                    }
+                    if (isset($others['volume_rate_used'])) {
+                        $stored_volume_rate = floatval($others['volume_rate_used']);
+                    }
+                    if (isset($others['mass_rate'])) {
+                        $stored_mass_rate = floatval($others['mass_rate']);
+                    }
+                    if (isset($others['international_price_rands'])) {
+                        $stored_intl_calc = self::normalize_amount($others['international_price_rands']);
+                    }
+                    if (isset($others['include_sad500'])) {
+                        $stored_sad500 = self::normalize_amount($others['include_sad500']);
+                    }
+                    if (isset($others['include_sadc'])) {
+                        $stored_sadc = self::normalize_amount($others['include_sadc']);
+                    }
+                }
+            }
+        }
+
+        $charge_basis = '';
+        if (!empty($waybill_data['charge_basis'])) {
+            $charge_basis = (string) $waybill_data['charge_basis'];
+        } elseif (!empty($stored_basis)) {
+            $charge_basis = $stored_basis;
+        } else {
+            $charge_basis = ($mass_charge > $volume_charge) ? 'mass' : 'volume';
+        }
+
+        $transport_total = ($charge_basis === 'mass' || $charge_basis === 'weight')
+            ? $mass_charge
+            : $volume_charge;
+
+        $sad500_total = (!empty($waybill_data['include_sad500']) && intval($waybill_data['include_sad500']) === 1)
+            ? ($stored_sad500 > 0.0 ? $stored_sad500 : floatval(self::sadc_certificate()))
+            : 0.0;
+
+        $sadc_total = (!empty($waybill_data['include_sadc']) && intval($waybill_data['include_sadc']) === 1)
+            ? ($stored_sadc > 0.0 ? $stored_sadc : floatval(self::sad()))
+            : 0.0;
+
+        $intl_amount = 0.0;
+        $vat_included = isset($waybill_data['vat_include']) ? intval($waybill_data['vat_include']) : 0;
+        if ($vat_included === 0) {
+            $intl_amount = $stored_intl_calc > 0.0
+                ? $stored_intl_calc
+                : floatval(self::international_price_in_rands());
+        }
+
+        $items_total = 0.0;
+        foreach ($items as $item) {
+            if (is_object($item)) {
+                $item = (array) $item;
+            }
+            $qty = isset($item['quantity']) ? intval($item['quantity']) : 0;
+            $unit = isset($item['unit_price']) ? floatval($item['unit_price']) : 0.0;
+            $items_total += $qty * $unit;
+        }
+
+        $computed_fallback_total = $transport_total + $misc_total + $sad500_total + $sadc_total + $intl_amount + $items_total;
+
+        $product_invoice_amount = 0.0;
+        if (isset($waybill_data['product_invoice_amount'])) {
+            $raw_invoice_amount = $waybill_data['product_invoice_amount'];
+            if (is_string($raw_invoice_amount)) {
+                $raw_invoice_amount = str_replace(',', '', $raw_invoice_amount);
+            }
+            $product_invoice_amount = floatval($raw_invoice_amount);
+        }
+
+        $final_total = $product_invoice_amount > 0.0
+            ? $product_invoice_amount
+            : $computed_fallback_total;
+
+        return [
+            'charge_basis'            => $charge_basis,
+            'transport_total'         => $transport_total,
+            'misc_total'              => $misc_total,
+            'misc_items'              => $misc_items,
+            'sad500_total'            => $sad500_total,
+            'sadc_total'              => $sadc_total,
+            'intl_amount'             => $intl_amount,
+            'items_total'             => $items_total,
+            'final_total'             => $final_total,
+            'product_invoice_amount'  => $product_invoice_amount,
+            'stored_volume_rate'      => $stored_volume_rate,
+            'stored_mass_rate'        => $stored_mass_rate,
+        ];
+    }
+
+    /**
      * Generate QR code data JSON for waybill containing all details
      * @param int $waybill_no Waybill number
      * @return string JSON encoded QR code data
@@ -3889,6 +4112,7 @@ class KIT_Waybills
 
 
 
+
         // Get direction_id based on origin_country and destination_country from $_POST
         $origin_country = intval($_POST['origin_country'] ?? 0);
         $destination_country = intval($_POST['destination_country'] ?? 0);
@@ -3957,6 +4181,9 @@ class KIT_Waybills
             if (empty($new_vat) && is_array($original_misc) && isset($original_misc['others']['international_price_rands'])) {
                 $final_misc_data['others']['international_price_rands'] = $original_misc['others']['international_price_rands'];
                 $final_misc_data['others']['usd_to_zar_rate_used'] = $original_misc['others']['usd_to_zar_rate_used'] ?? null;
+                if (isset($original_misc['others']['international_price_snapshot_at'])) {
+                    $final_misc_data['others']['international_price_snapshot_at'] = $original_misc['others']['international_price_snapshot_at'];
+                }
             }
             
             // ✅ Preserve waybill_description from original if it exists and wasn't explicitly posted
@@ -3971,8 +4198,6 @@ class KIT_Waybills
                 }
             }
         }
-
-        $misc_serialized = serialize($final_misc_data);
 
         $addOptions = self::vatValidate(isset($_POST['vat_include']), isset($_POST['include_sadc']), isset($_POST['include_sad500']));
 
@@ -4033,6 +4258,29 @@ class KIT_Waybills
 
         $calculation_breakdown = KIT_Bulletproof_Calculator::calculate_waybill_total($calculation_params);
         $waybillTotal = $calculation_breakdown['totals']['final_total'];
+
+        // Ensure charge basis aligns with the dominant charge after recalculation
+        $epsilon = 0.005;
+        if (empty($charge_basis) || $charge_basis === 'auto') {
+            if (($mass_charge - $volume_charge) > $epsilon) {
+                $charge_basis = 'mass';
+            } elseif (($volume_charge - $mass_charge) > $epsilon) {
+                $charge_basis = 'volume';
+            } else {
+                $charge_basis = 'mass';
+            }
+        } else {
+            if ($charge_basis === 'volume' && ($mass_charge - $volume_charge) > $epsilon) {
+                $charge_basis = 'mass';
+            } elseif ($charge_basis === 'mass' && ($volume_charge - $mass_charge) > $epsilon) {
+                $charge_basis = 'volume';
+            }
+        }
+
+        if (!isset($final_misc_data['others']) || !is_array($final_misc_data['others'])) {
+            $final_misc_data['others'] = [];
+        }
+        $misc_serialized = serialize($final_misc_data);
 
         //$_POST['vat_include']
         // Process warehouse status
@@ -4111,6 +4359,13 @@ class KIT_Waybills
             'last_updated_by'   => get_current_user_id(),
             'last_updated_at'   => current_time('mysql'),
         ];
+
+
+        // echo '<pre>';
+        // print_r($_POST);
+        // print_r($waybill_data);
+        // echo '</pre>';
+        // die();
 
         // Generate and update QR code data
         $qr_code_data = self::generate_qr_code_data($waybill_no);
@@ -4228,6 +4483,14 @@ class KIT_Waybills
         $redirect_url = admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . $waybill_id . '&updated=1');
         if (self::shouldShowVatWarning($vat_include, $waybillItemsTotal)) {
             $redirect_url = add_query_arg('vat_warning', '1', $redirect_url);
+        }
+
+        // Final consistency check: ensure stored totals match calculator output
+        if (!empty($waybill_no)) {
+            self::doubleCalcWaybillTotal([
+                'waybill_no' => $waybill_no,
+                'update_if_mismatch' => true,
+            ]);
         }
 
         // ✅ Redirect to success page

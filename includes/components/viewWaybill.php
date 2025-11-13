@@ -2,16 +2,201 @@
 // Determine which charge is greater
 $mass_charge = floatval($waybill['mass_charge'] ?? 0);
 $volume_charge = floatval($waybill['volume_charge'] ?? 0);
+$waybill_no = intval($waybill['waybill_no'] ?? 0);
 
 $is_mass_greater = $mass_charge > $volume_charge;
 $is_volume_greater = $volume_charge > $mass_charge;
 $is_equal = $mass_charge === $volume_charge;
+$preferred_charge = $is_mass_greater ? 'mass' : ($is_volume_greater ? 'volume' : 'mass');
+$primary_charge = $preferred_charge === 'mass' ? $mass_charge : $volume_charge;
+$vat_charge = 0.0;
 
 $destinationCountryName = KIT_Routes::get_country_name_by_id($waybill['miscellaneous']['others']['destination_country_id'] ?? 0);
 // Use canonical waybill.city_id for destination city
 $destinationCityName = KIT_Routes::get_city_name_by_id($waybill['city_id'] ?? 0);
 $originCountryName = KIT_Routes::get_country_name_by_id($waybill['miscellaneous']['others']['origin_country_id'] ?? 0);
 $originCityName = KIT_Routes::get_city_name_by_id($waybill['miscellaneous']['others']['origin_city_id'] ?? 0);
+
+// Normalize miscellaneous data (may be serialized string or array)
+$rawMisc = $waybill['miscellaneous'] ?? [];
+if (!is_array($rawMisc)) {
+    $maybeMisc = function_exists('maybe_unserialize') ? maybe_unserialize($rawMisc) : @unserialize($rawMisc);
+    $misc_data = is_array($maybeMisc) ? $maybeMisc : [];
+} else {
+    $misc_data = $rawMisc;
+}
+
+// Safely resolve totals and flags
+$waybill_items_total = floatval($waybill['waybill_items_total'] ?? 0);
+$include_sad500 = intval($waybill['include_sad500'] ?? 0) === 1;
+$include_sadc = intval($waybill['include_sadc'] ?? 0) === 1;
+$include_vat = intval($waybill['vat_include'] ?? 0) === 1;
+
+$misc_total = 0.0;
+if (isset($misc_data['misc_total'])) {
+    $misc_total = floatval($misc_data['misc_total']);
+} elseif (isset($misc_data['misc_items']) && is_array($misc_data['misc_items'])) {
+    foreach ($misc_data['misc_items'] as $misc_item) {
+        $price = isset($misc_item['misc_price']) ? floatval($misc_item['misc_price']) : 0.0;
+        $qty = isset($misc_item['misc_quantity']) ? floatval($misc_item['misc_quantity']) : 0.0;
+        $misc_total += $price * $qty;
+    }
+}
+
+$international_price_rands = isset($misc_data['others']['international_price_rands'])
+    ? KIT_Waybills::normalize_amount($misc_data['others']['international_price_rands'])
+    : 0.0;
+$handling_fee = (!$include_vat && $international_price_rands > 0) ? $international_price_rands : 0.0;
+$intl_amount = $handling_fee;
+
+$stored_sad500 = isset($misc_data['others']['include_sad500']) ? KIT_Waybills::normalize_amount($misc_data['others']['include_sad500']) : 0.0;
+$stored_sadc = isset($misc_data['others']['include_sadc']) ? KIT_Waybills::normalize_amount($misc_data['others']['include_sadc']) : 0.0;
+
+$sad500_amount = $include_sad500 ? ($stored_sad500 > 0 ? $stored_sad500 : floatval(KIT_Waybills::sadc_certificate())) : 0.0;
+$sadc_amount = $include_sadc ? ($stored_sadc > 0 ? $stored_sadc : floatval(KIT_Waybills::sad())) : 0.0;
+$stored_total = floatval($waybill['product_invoice_amount'] ?? 0);
+$additional_charges_total = null;
+$calculated_total = null;
+
+$calculated_items_total = 0.0;
+if (!empty($waybill['items']) && is_array($waybill['items'])) {
+    foreach ($waybill['items'] as $item) {
+        $qty = isset($item['quantity']) ? floatval($item['quantity']) : 0.0;
+        $price = isset($item['unit_price']) ? floatval($item['unit_price']) : 0.0;
+        $line_total = $qty * $price;
+        if (isset($item['total_price']) && is_numeric($item['total_price'])) {
+            $line_total = floatval($item['total_price']);
+        }
+        $calculated_items_total += $line_total;
+    }
+}
+if ($calculated_items_total > 0) {
+    $waybill_items_total = $calculated_items_total;
+}
+$vat_charge = ($include_vat && $waybill_items_total > 0) ? $waybill_items_total * 0.10 : 0.0;
+
+$calculation_breakdown = null;
+$using_breakdown = false;
+if (class_exists('KIT_Waybills') && $waybill_no > 0) {
+    $double_calc = KIT_Waybills::doubleCalcWaybillTotal([
+        'waybill_no' => $waybill_no,
+        'update_if_mismatch' => false,
+    ]);
+    if (is_array($double_calc) && empty($double_calc['error'])) {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('[viewWaybill] doubleCalc breakdown for waybill ' . $waybill_no . ': ' . print_r($double_calc, true));
+            error_log('[viewWaybill] raw mass_charge=' . $mass_charge . ' volume_charge=' . $volume_charge . ' misc_total=' . $misc_total . ' waybill_items_total=' . $waybill_items_total);
+        }
+    }
+    if (is_array($double_calc) && empty($double_calc['error'])) {
+        $stored_total = floatval($double_calc['db_total'] ?? $stored_total);
+        $calculated_total = floatval($double_calc['calc_total'] ?? $calculated_total);
+        $calculation_breakdown = $double_calc['breakdown'] ?? null;
+        $using_breakdown = is_array($calculation_breakdown);
+    }
+}
+
+if ($using_breakdown) {
+    $base_charges = $calculation_breakdown['base_charges'] ?? [];
+    $additional_charges = $calculation_breakdown['additional_charges'] ?? [];
+    $totals_section = $calculation_breakdown['totals'] ?? [];
+
+    if (isset($base_charges['mass_charge'])) {
+        $mass_charge = floatval($base_charges['mass_charge']);
+    }
+    if (isset($base_charges['volume_charge'])) {
+        $volume_charge = floatval($base_charges['volume_charge']);
+    }
+    if (isset($base_charges['primary_charge']['amount'])) {
+        $primary_charge = floatval($base_charges['primary_charge']['amount']);
+    }
+    if (isset($base_charges['primary_charge']['basis'])) {
+        $preferred_charge = $base_charges['primary_charge']['basis'];
+    }
+
+    if (isset($additional_charges['misc_total'])) {
+        $misc_total = floatval($additional_charges['misc_total']);
+    }
+    if (isset($additional_charges['sad500'])) {
+        $sad500_amount = floatval($additional_charges['sad500']);
+    }
+    if (isset($additional_charges['sadc'])) {
+        $sadc_amount = floatval($additional_charges['sadc']);
+    }
+    if (isset($additional_charges['vat'])) {
+        $vat_charge = floatval($additional_charges['vat']);
+    }
+    if (isset($additional_charges['international_price'])) {
+        $handling_fee = floatval($additional_charges['international_price']);
+        $intl_amount = $handling_fee;
+    }
+    $additional_charges_total = isset($additional_charges['total'])
+        ? floatval($additional_charges['total'])
+        : $sad500_amount + $sadc_amount + ($include_vat ? $vat_charge : $handling_fee);
+
+    if (isset($totals_section['final_total'])) {
+        $calculated_total = floatval($totals_section['final_total']);
+    }
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('[viewWaybill] breakdown primary=' . $primary_charge . ' mass=' . $mass_charge . ' volume=' . $volume_charge . ' additional_total=' . $additional_charges_total . ' calc_total=' . $calculated_total);
+    }
+}
+
+$stored_total = floatval($stored_total);
+
+$total_volume = 0.0;
+if (isset($misc_data['others']['total_volume'])) {
+    $total_volume = floatval($misc_data['others']['total_volume']);
+} elseif (isset($waybill['total_volume'])) {
+    $total_volume = floatval($waybill['total_volume']);
+}
+
+$total_mass_kg = floatval($waybill['total_mass_kg'] ?? 0);
+$mass_rate = ($total_mass_kg > 0) ? ($mass_charge > 0 ? $mass_charge / $total_mass_kg : 0.0) : 0.0;
+
+// Determine preferred charge and calculate totals
+if (!$using_breakdown) {
+    $epsilon = 0.005;
+    $mass_gt = ($mass_charge - $volume_charge) > $epsilon;
+    $vol_gt = ($volume_charge - $mass_charge) > $epsilon;
+    $preferred_charge = $mass_gt ? 'mass' : ($vol_gt ? 'volume' : 'mass');
+    $primary_charge = $preferred_charge === 'mass' ? $mass_charge : $volume_charge;
+}
+
+$volume_rate = 0.0;
+$volume_display_charge = $volume_charge;
+if ($total_volume > 0.0) {
+    if ($volume_charge > 0.0) {
+        $volume_rate = $volume_charge / $total_volume;
+    } elseif (!empty($misc_data['others']['volume_rate_used'])) {
+        $volume_rate = floatval($misc_data['others']['volume_rate_used']);
+        $volume_display_charge = $volume_rate * $total_volume;
+    } else {
+        $volume_rate = 0.74;
+        $volume_display_charge = $volume_rate * $total_volume;
+    }
+}
+
+$additional_charges_total = $additional_charges_total ?? ($sad500_amount + $sadc_amount + ($include_vat ? $vat_charge : $handling_fee));
+$calculated_total = $calculated_total ?? ($primary_charge + $misc_total + $vat_charge + $handling_fee + $additional_charges_total);
+$totals_match = abs($calculated_total - $stored_total) < 0.01;
+$grand_total_display = $calculated_total;
+
+if (!$totals_match && class_exists('KIT_Waybills') && $waybill_no > 0) {
+    $updatedTotalCheck = KIT_Waybills::doubleCalcWaybillTotal([
+        'waybill_no' => $waybill_no,
+        'update_if_mismatch' => true,
+    ]);
+
+    if (is_array($updatedTotalCheck) && empty($updatedTotalCheck['error'])) {
+        if (!empty($updatedTotalCheck['updated'])) {
+            $stored_total = floatval($updatedTotalCheck['calc_total'] ?? $stored_total);
+        } elseif (isset($updatedTotalCheck['db_total'])) {
+            $stored_total = floatval($updatedTotalCheck['db_total']);
+        }
+        $totals_match = abs($calculated_total - $stored_total) < 0.01;
+    }
+}
 
 ?>
 <div class="max-w-6xl mx-auto p-3 md:p-6 space-y-4 md:space-y-6 bg-white rounded-lg shadow-md">
@@ -141,14 +326,25 @@ $originCityName = KIT_Routes::get_city_name_by_id($waybill['miscellaneous']['oth
                     <div class="border-2 border-gray-300 rounded-lg p-4 bg-gray-50">
                         <div class="flex justify-between items-center">
                             <span class="text-lg font-semibold text-gray-900">Grand Total</span>
-                            <span class="text-xl font-bold text-gray-900"><?= KIT_Commons::displayWaybillTotal($waybill['product_invoice_amount']) ?></span>
+                            <span class="text-xl font-bold text-gray-900"><?= KIT_Commons::displayWaybillTotal($grand_total_display) ?></span>
                         </div>
+                        <?php if (!$totals_match): ?>
+                            <div class="text-xs text-red-600 mt-2">
+                                Stored total out of date: <?= KIT_Commons::displayWaybillTotal($stored_total) ?>. Re-save or verify to sync.
+                            </div>
+                        <?php endif; ?>
                     </div>
                 </div>
             <?php
             endif;
             ?>
         </div>
+        <?php if (!$totals_match): ?>
+            <div class="w-full bg-yellow-50 border border-yellow-200 text-yellow-800 text-xs md:text-sm rounded-md px-3 py-2">
+                <strong>Heads up:</strong> Calculated total <?= KIT_Commons::displayWaybillTotal($grand_total_display) ?> differs from stored total <?= KIT_Commons::displayWaybillTotal($stored_total) ?>.
+                Re-run the total verification utility or re-save the waybill to update the database.
+            </div>
+        <?php endif; ?>
 
         <div class="flex space-x-3">
             <?php
@@ -197,21 +393,6 @@ $originCityName = KIT_Routes::get_city_name_by_id($waybill['miscellaneous']['oth
                     ); ?>
                 </div>
             <?php endif; ?>
-            <?php
-            // Decide which button to show based on whether DB total matches recalculation
-            $allowFix = false;
-            $buttonText = 'Confirm Waybill Total';
-            if (class_exists('KIT_Waybills')) {
-                $checkTotal = KIT_Waybills::doubleCalcWaybillTotal(['waybill_no' => intval($waybill['waybill_no'])]);
-                if (is_array($checkTotal) && empty($checkTotal['error'])) {
-                    $allowFix = !$checkTotal['matches'];
-                    if ($allowFix) {
-                        $buttonText = 'Verify & Update DB';
-                    }
-                }
-            }
-            ?>
-
         </div>
         <!-- VAT Warning Display -->
         <?php if (isset($_GET['vat_warning']) && $_GET['vat_warning'] == '1'): ?>
@@ -246,9 +427,9 @@ $originCityName = KIT_Routes::get_city_name_by_id($waybill['miscellaneous']['oth
                 
                 // Fallback to miscellaneous field if direct column is empty
                 if (empty($waybill_description) && !empty($waybill['miscellaneous'])) {
-                    $misc_data = maybe_unserialize($waybill['miscellaneous']);
-                    if (is_array($misc_data) && isset($misc_data['others']['waybill_description'])) {
-                        $waybill_description = trim($misc_data['others']['waybill_description']);
+                    $description_misc = maybe_unserialize($waybill['miscellaneous']);
+                    if (is_array($description_misc) && isset($description_misc['others']['waybill_description'])) {
+                        $waybill_description = trim($description_misc['others']['waybill_description']);
                     }
                 }
                 ?>
@@ -265,66 +446,6 @@ $originCityName = KIT_Routes::get_city_name_by_id($waybill['miscellaneous']['oth
         <div class="bg-gray-50 border border-gray-200 rounded-md p-3 mb-4">
             <h2 class="text-sm font-semibold text-gray-800 mb-2">Cost Summary</h2>
 
-            <?php
-            // Calculate all cost components
-            $mass_charge = floatval($waybill['mass_charge'] ?? 0);
-            $volume_charge = floatval($waybill['volume_charge'] ?? 0);
-            $total_mass_kg = floatval($waybill['total_mass_kg'] ?? 0);
-            $total_volume = 0.0;
-            if (isset($waybill['miscellaneous']['others']['total_volume'])) {
-                $total_volume = floatval($waybill['miscellaneous']['others']['total_volume']);
-            } elseif (isset($waybill['total_volume'])) {
-                $total_volume = floatval($waybill['total_volume']);
-            }
-
-            // Calculate mass rate
-            $mass_rate = ($total_mass_kg > 0) ? $mass_charge / $total_mass_kg : 0;
-
-            // Determine charge basis (which is greater)
-            $epsilon = 0.005;
-            $mass_gt = ($mass_charge - $volume_charge) > $epsilon;
-            $vol_gt = ($volume_charge - $mass_charge) > $epsilon;
-            $preferred_charge = $mass_gt ? 'mass' : ($vol_gt ? 'volume' : 'mass');
-            $primary_charge = $preferred_charge === 'mass' ? $mass_charge : $volume_charge;
-
-            // Get additional charges
-            $include_sad500 = intval($waybill['include_sad500'] ?? 0) === 1;
-            $include_sadc = intval($waybill['include_sadc'] ?? 0) === 1;
-            $include_vat = intval($waybill['vat_include'] ?? 0) === 1;
-
-            $sad500_amount = $include_sad500 ? floatval(KIT_Waybills::sadc_certificate()) : 0;
-            $sadc_amount = $include_sadc ? floatval(KIT_Waybills::sad()) : 0;
-
-            // Calculate items-related charges based on VAT_INCLUDE flag
-            $waybill_items_total = floatval($waybill['waybill_items_total'] ?? 0);
-            $items_charge = 0; // This is either VAT or International, never both
-
-            if ($waybill_items_total > 0) {
-                if ($include_vat) {
-                    // Charge VAT (10% of items value)
-                    $items_charge = $waybill_items_total * 0.10;
-                } else {
-                    // Charge International $100 (converted to Rands)
-                    $misc_data = maybe_unserialize($waybill['miscellaneous'] ?? '');
-                    if (is_array($misc_data) && isset($misc_data['others']['international_price_rands'])) {
-                        $items_charge = floatval($misc_data['others']['international_price_rands']);
-                    }
-                }
-            }
-
-            $international_price_rands = floatval($waybill['miscellaneous']['others']['international_price_rands'] ?? 0);
-            $intl_amount = $international_price_rands; // Define intl_amount for backward compatibility
-            // Calculate totals
-            $misc_total = floatval($waybill['miscellaneous']['misc_total'] ?? 0);
-
-            // Additional charges: SAD500 + SADC + International Price (only if no VAT)
-            $additional_charges_total = $sad500_amount + $sadc_amount + ($include_vat ? 0 : $international_price_rands);
-
-            // FINAL TOTAL: Primary + Misc + VAT (if included) + Additional charges
-            $calculated_total = $primary_charge + $misc_total + ($include_vat ? $items_charge : 0) + $additional_charges_total;
-            $stored_total = floatval($waybill['product_invoice_amount'] ?? 0);
-            ?>
-
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <!-- LEFT: Components (dense) -->
                 <div class="space-y-2">
@@ -335,7 +456,7 @@ $originCityName = KIT_Routes::get_city_name_by_id($waybill['miscellaneous']['oth
                         </div>
                         <div class="flex justify-between text-xs text-gray-600 mt-1">
                             <span>Volume</span>
-                            <span><?= number_format($total_volume, 2) ?>m³ × <?= KIT_Commons::currency() . '0.74' ?> = <?= KIT_Commons::currency() . number_format($volume_charge, 2) ?></span>
+                            <span><?= number_format($total_volume, 2) ?>m³ × <?= KIT_Commons::currency() . number_format($volume_rate, 2) ?> = <?= KIT_Commons::currency() . number_format($volume_display_charge, 2) ?></span>
                         </div>
                         <div class="flex justify-between items-center mt-2 pt-2 border-t">
                             <span class="text-xs font-semibold">Basis: <?= ucfirst($preferred_charge) ?></span>
@@ -349,15 +470,10 @@ $originCityName = KIT_Routes::get_city_name_by_id($waybill['miscellaneous']['oth
                                 <span class="text-gray-600">Items value (not added)</span>
                                 <span class="font-semibold"><?= KIT_Commons::currency() . number_format($waybill_items_total, 2) ?></span>
                             </div>
-                            <?php if ($include_vat): ?>
+                            <?php if ($vat_charge > 0): ?>
                                 <div class="flex justify-between text-xs mt-1">
                                     <span class="text-gray-600">VAT (10%)</span>
-                                    <span class="font-semibold"><?= KIT_Commons::currency() . number_format($items_charge, 2) ?></span>
-                                </div>
-                            <?php else: ?>
-                                <div class="flex justify-between text-xs mt-1">
-                                    <span class="text-gray-600">Handling Fee</span>
-                                    <span class="font-semibold"><?= KIT_Commons::currency() . number_format($items_charge, 2) ?></span>
+                                    <span class="font-semibold"><?= KIT_Commons::currency() . number_format($vat_charge, 2) ?></span>
                                 </div>
                             <?php endif; ?>
                         <?php else: ?>
@@ -365,12 +481,6 @@ $originCityName = KIT_Routes::get_city_name_by_id($waybill['miscellaneous']['oth
                                 <span class="text-gray-600">Items value</span>
                                 <span class="font-semibold"><?= KIT_Commons::currency() . number_format($waybill_items_total, 2) ?></span>
                             </div>
-                            <?php if (!$include_vat && $items_charge > 0): ?>
-                                <div class="flex justify-between text-xs mt-1">
-                                    <span class="text-gray-600">Handling Fee</span>
-                                    <span class="font-semibold"><?= KIT_Commons::currency() . number_format($items_charge, 2) ?></span>
-                                </div>
-                            <?php endif; ?>
                         <?php endif; ?>
                         <div class="flex justify-between text-xs mt-1">
                             <span class="text-gray-600">Miscellaneous</span>
@@ -382,10 +492,10 @@ $originCityName = KIT_Routes::get_city_name_by_id($waybill['miscellaneous']['oth
                         <?php
 
                         // Show International Price if present (regardless of VAT)
-                        if (isset($waybill['miscellaneous']['others']['international_price_rands']) && floatval($waybill['miscellaneous']['others']['international_price_rands']) > 0): ?>
+                        if (isset($misc_data['others']['international_price_rands']) && floatval($misc_data['others']['international_price_rands']) > 0): ?>
                             <div class="flex justify-between text-xs mt-1">
                                 <span class="text-gray-600">Handling Fee</span>
-                                <span class="font-semibold"><?= KIT_Commons::currency() . number_format(floatval($waybill['miscellaneous']['others']['international_price_rands']), 2) ?></span>
+                                <span class="font-semibold"><?= KIT_Commons::currency() . number_format($international_price_rands, 2) ?></span>
                             </div>
                         <?php endif; ?>
                         <?php if ($include_sad500): ?>
@@ -394,13 +504,7 @@ $originCityName = KIT_Routes::get_city_name_by_id($waybill['miscellaneous']['oth
                         <?php if ($include_sadc): ?>
                             <div class="flex justify-between text-xs mt-1"><span class="text-gray-600">SADC</span><span class="font-medium"><?= KIT_Commons::currency() . number_format($sadc_amount, 2) ?></span></div>
                         <?php endif; ?>
-                        <?php if (!$include_vat && $items_charge > 0): ?>
-                            <div class="flex justify-between text-xs mt-1"><span class="text-gray-600">Handling Fee</span><span class="font-medium"><?= KIT_Commons::currency() . number_format($items_charge, 2) ?></span></div>
-                            <?php if (isset($waybill['miscellaneous']['others']['usd_to_zar_rate_used'])): ?>
-                                <div class="text-[10px] text-gray-500 mt-1">Rate: <?= $waybill['miscellaneous']['others']['usd_to_zar_rate_used'] ?> (Base $100)</div>
-                            <?php endif; ?>
-                        <?php endif; ?>
-                        <?php if (!$include_sad500 && !$include_sadc && !$include_vat && $items_charge == 0 && !isset($waybill['miscellaneous']['others']['international_price_rands'])): ?>
+                        <?php if (!$include_sad500 && !$include_sadc && $handling_fee <= 0 && !isset($misc_data['others']['international_price_rands'])): ?>
                             <div class="text-[11px] text-gray-500">No additional charges<?php if (isset($waybill['international_price_in_rands']) && floatval($waybill['international_price_in_rands']) > 0): ?> — International Price: <span class="font-medium text-gray-700"><?= KIT_Commons::currency() . number_format(floatval($waybill['international_price_in_rands']), 2) ?></span><?php endif; ?></div>
                         <?php endif; ?>
                         <div class="flex justify-between items-center mt-2 pt-2 border-t">
@@ -415,10 +519,10 @@ $originCityName = KIT_Routes::get_city_name_by_id($waybill['miscellaneous']['oth
                 <div class="space-y-2">
                     <div class="bg-white border border-gray-200 rounded p-3">
                         <div class="flex justify-between text-xs"><span>A. Primary</span><span class="font-medium"><?= KIT_Commons::currency() . number_format($primary_charge, 2) ?></span></div>
-                        <?php if ($include_vat && $waybill_items_total > 0): ?>
-                            <div class="flex justify-between text-xs mt-1"><span>B. VAT (10%)</span><span class="font-medium"><?= KIT_Commons::currency() . number_format($items_charge, 2) ?></span></div>
-                        <?php elseif (!$include_vat && ($items_charge > 0 || $intl_amount > 0)): ?>
-                            <div class="flex justify-between text-xs mt-1"><span>B. Handling Fee</span><span class="font-medium"><?= KIT_Commons::currency() . number_format(($items_charge > 0 ? $items_charge : $intl_amount), 2) ?></span></div>
+                        <?php if ($vat_charge > 0): ?>
+                            <div class="flex justify-between text-xs mt-1"><span>B. VAT (10%)</span><span class="font-medium"><?= KIT_Commons::currency() . number_format($vat_charge, 2) ?></span></div>
+                        <?php elseif ($handling_fee > 0): ?>
+                            <div class="flex justify-between text-xs mt-1"><span>B. Handling Fee</span><span class="font-medium"><?= KIT_Commons::currency() . number_format($handling_fee, 2) ?></span></div>
                         <?php endif; ?>
                         <div class="flex justify-between text-xs mt-1"><span>C. Misc</span><span class="font-medium"><?= KIT_Commons::currency() . number_format($misc_total, 2) ?></span></div>
                         <div class="flex justify-between text-xs mt-1"><span>D. Additional</span><span class="font-medium"><?= KIT_Commons::currency() . number_format($additional_charges_total, 2) ?></span></div>
@@ -434,8 +538,13 @@ $originCityName = KIT_Routes::get_city_name_by_id($waybill['miscellaneous']['oth
                     <div class="bg-blue-50 border border-blue-300 rounded p-3">
                         <div class="flex justify-between items-center">
                             <span class="text-sm font-semibold">Grand Total</span>
-                            <span class="text-lg font-bold text-blue-700"><?= KIT_Commons::currency() . number_format($stored_total, 2) ?></span>
+                            <span class="text-lg font-bold text-blue-700"><?= KIT_Commons::displayWaybillTotal($grand_total_display) ?></span>
                         </div>
+                        <?php if (!$totals_match): ?>
+                            <div class="mt-1 text-[11px] text-red-600">
+                                Stored: <?= KIT_Commons::displayWaybillTotal($stored_total) ?> (outdated)
+                            </div>
+                        <?php endif; ?>
                         <div class="mt-2 grid grid-cols-3 gap-2 text-[11px] text-gray-700">
                             <div>VAT: <strong><?= $include_vat ? 'Yes' : 'No' ?></strong></div>
                             <div>SAD500: <strong><?= $include_sad500 ? 'Yes' : 'No' ?></strong></div>

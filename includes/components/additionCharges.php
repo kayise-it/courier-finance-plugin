@@ -1,5 +1,11 @@
 <?php if (!defined('ABSPATH')) { exit; }
 
+$sadcChargeValue   = class_exists('KIT_Waybills') ? floatval(KIT_Waybills::sad()) : 0.0;
+$sad500ChargeValue = class_exists('KIT_Waybills') ? floatval(KIT_Waybills::sadc_certificate()) : 0.0;
+$currencySymbol    = class_exists('KIT_Commons') ? KIT_Commons::currency() : 'R';
+$sadcChargeDisplay = $currencySymbol . number_format($sadcChargeValue, 2);
+$sad500ChargeDisplay = $currencySymbol . number_format($sad500ChargeValue, 2);
+
 if (!isset($optionChoice)) : ?>
 
     <div class="">
@@ -10,11 +16,17 @@ if (!isset($optionChoice)) : ?>
                     <!-- Checkbox for SADC Certificate -->
                     <div>
                         <input type="checkbox" name="include_sadc" id="sadc_certificate" <?= (isset($waybill['include_sadc']) && $waybill['include_sadc'] == 1)? 'checked' : '' ?> class="optionz" value="1">
-                        <label for="sadc_certificate">SADC Certificate</label>
+                        <label for="sadc_certificate" class="flex items-center gap-2">
+                            <span>SADC Certificate</span>
+                            <span class="text-[11px] text-gray-500 font-medium">+<?= $sadcChargeDisplay ?></span>
+                        </label>
                     </div>
                     <div>
                         <input type="checkbox" name="include_sad500" id="include_sad500" <?= (isset($waybill['include_sad500']) && $waybill['include_sad500'] == 1)? 'checked' : '' ?> class="" value="1">
-                        <label for="include_sad500">SAD500</label>
+                        <label for="include_sad500" class="flex items-center gap-2">
+                            <span>SAD500</span>
+                            <span class="text-[11px] text-gray-500 font-medium">+<?= $sad500ChargeDisplay ?></span>
+                        </label>
                     </div>
                     <div>
                         <!-- The VAT option Checkbox -->
@@ -32,11 +44,17 @@ if (!isset($optionChoice)) : ?>
             <!-- Checkbox for SADC Certificate -->
             <div>
                 <input type="checkbox" <?= (!empty($waybill['include_sadc'])) ? 'checked' : '' ?> name="include_sadc" id="sadc_certificate" class="optionz" value="1">
-                <label for="sadc_certificate">SADC Certificate</label>
+                <label for="sadc_certificate" class="flex items-center gap-2">
+                    <span>SADC Certificate</span>
+                    <span class="text-[11px] text-gray-500 font-medium">+<?= $sadcChargeDisplay ?></span>
+                </label>
             </div>
             <div>
                 <input type="checkbox" <?= (!empty($waybill['include_sad500'])) ? 'checked' : '' ?> name="include_sad500" id="include_sad500" class="" value="1">
-                <label for="include_sad500">SAD500</label>
+                <label for="include_sad500" class="flex items-center gap-2">
+                    <span>SAD500</span>
+                    <span class="text-[11px] text-gray-500 font-medium">+<?= $sad500ChargeDisplay ?></span>
+                </label>
             </div>
         </div>
         <div class="bg-slate-100 border-dotted border-2 mt-2 border-gray-300 rounded-lg p-2">
@@ -52,7 +70,7 @@ if (!isset($optionChoice)) : ?>
             <span class="font-semibold">SADC Certificate:</span>
             <span><?= !empty($waybill['include_sadc']) ? '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-green-500 text-green-100">
                                     Yes
-                                </span>: +' . KIT_Commons::currency() . KIT_Waybills::sad() : '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-500 text-red-100">
+                                </span>: +' . $sadcChargeDisplay : '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-500 text-red-100">
                                     No
                                 </span>' ?></span>
         </div>
@@ -60,7 +78,7 @@ if (!isset($optionChoice)) : ?>
             <span class="font-semibold">SAD500:</span>
             <span><?= !empty($waybill['include_sad500']) ? '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-green-500 text-green-100">
                                     Yes
-                                </span> +' . KIT_Commons::currency() . KIT_Waybills::sadc_certificate() : '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-500 text-red-100">
+                                </span> +' . $sad500ChargeDisplay : '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-500 text-red-100">
                                     No
                                 </span>' ?></span>
         </div>
@@ -68,7 +86,7 @@ if (!isset($optionChoice)) : ?>
             <span class="font-semibold">VAT Included:</span>
             <span><?= !empty($waybill['vat_include']) ? '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-green-500 text-blue-100">
                                     Yes
-                                </span> +' . KIT_Commons::currency() . ($waybill['miscellaneous']['others']['vat_total']??0) : '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-500 text-red-100">
+                                </span> +' . $currencySymbol . ($waybill['miscellaneous']['others']['vat_total']??0) : '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-500 text-red-100">
                                     No
                                 </span>' ?></span>
         </div>
@@ -77,7 +95,7 @@ if (!isset($optionChoice)) : ?>
             <span class="font-semibold">Agent Clearing & Documentation:</span>
             <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-blue-500 text-blue-100">
                 Yes
-            </span>: +<?= KIT_Commons::currency() . number_format(KIT_Waybills::international_price_in_rands(), 2) ?>
+            </span>: +<?= $currencySymbol . number_format(KIT_Waybills::international_price_in_rands(), 2) ?>
         </div>
         <?php endif; ?>
     </div>
@@ -85,15 +103,15 @@ if (!isset($optionChoice)) : ?>
         echo '<div class="flex gap-4">';
         
         // SADC Certificate button
-        $sadcHighlight = (!empty($waybill['include_sad500']) && $waybill['include_sad500'] == 1);
-        echo KIT_Commons::renderButton('SADC Certificate +'. KIT_Commons::currency() .KIT_Waybills::sad(), $sadcHighlight ? 'warning' : 'secondary', 'sm', [
+        $sadcHighlight = (!empty($waybill['include_sadc']) && $waybill['include_sadc'] == 1);
+        echo KIT_Commons::renderButton('SADC Certificate +' . $sadcChargeDisplay, $sadcHighlight ? 'warning' : 'secondary', 'sm', [
             'classes' => $sadcHighlight ? 'bg-yellow-400 text-black hover:bg-yellow-500' : '',
             'gradient' => $sadcHighlight
         ]);
         
         // SAD500 button
         $sad500Highlight = (!empty($waybill['include_sad500']) && $waybill['include_sad500'] == 1);
-        echo KIT_Commons::renderButton('SAD500 +'. KIT_Commons::currency() .KIT_Waybills::sadc_certificate(), $sad500Highlight ? 'warning' : 'secondary', 'sm', [
+        echo KIT_Commons::renderButton('SAD500 +' . $sad500ChargeDisplay, $sad500Highlight ? 'warning' : 'secondary', 'sm', [
             'classes' => $sad500Highlight ? 'bg-yellow-400 text-black hover:bg-yellow-500' : '',
             'gradient' => $sad500Highlight
         ]);
@@ -107,7 +125,7 @@ if (!isset($optionChoice)) : ?>
         
         // Agent Clearing button
         if (empty($waybill['vat_include'])) {
-            echo KIT_Commons::renderButton('Agent Clearing & Documentation +'. KIT_Commons::currency() . number_format(KIT_Waybills::international_price_in_rands(), 2), 'warning', 'sm', [
+            echo KIT_Commons::renderButton('Agent Clearing & Documentation +' . $currencySymbol . number_format(KIT_Waybills::international_price_in_rands(), 2), 'warning', 'sm', [
                 'classes' => 'bg-yellow-400 text-black hover:bg-yellow-500',
                 'gradient' => true
             ]);

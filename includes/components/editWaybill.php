@@ -59,12 +59,26 @@ try {
     $customers = [];
 }
 
+if (class_exists('KIT_Commons')) {
+    KIT_Commons::enqueueComponentScripts(['kitscript']);
+} elseif (function_exists('wp_enqueue_script')) {
+    wp_enqueue_script('kitscript', COURIER_FINANCE_PLUGIN_URL . 'js/kitscript.js', ['jquery'], null, true);
+}
+
+if (function_exists('wp_localize_script')) {
+    wp_localize_script('kitscript', 'EditWaybillData', [
+        'customers' => $customers,
+    ]);
+}
+
 // Debug: Check what's in the waybill data
 echo "<!-- DEBUG: waybill data structure -->";
 echo "<!-- DEBUG: miscellaneous = " . print_r($waybill['miscellaneous'], true) . " -->";
 if (isset($waybill['miscellaneous']['others'])) {
     echo "<!-- DEBUG: others = " . print_r($waybill['miscellaneous']['others'], true) . " -->";
 }
+
+
 ?>
 
 <div class="max-w-6xl mx-auto p-6 bg-white rounded-lg shadow-md">
@@ -181,7 +195,7 @@ if (isset($waybill['miscellaneous']['others'])) {
                 </div>
 
                 <!-- Customer Details Form -->
-                <div class="rounded-xl border border-gray-200 bg-gradient-to-br from-blue-50 to-white shadow-inner px-4 py-4">
+                <div class="rounded-xl border border-gray-200 bg-gradient-to-br from-blue-50 to-white shadow-inner">
                     <div class="grid grid-cols-2 gap-3">
                         <div id="company_name_wrapper_edit">
                             <?= KIT_Commons::Linput([
@@ -357,7 +371,7 @@ if (isset($waybill['miscellaneous']['others'])) {
 
                     <div class="mt-4 border border-gray-200 rounded-lg">
                         <!-- Header -->
-                        <div class="px-4 py-3 bg-gray-50 border-b border-gray-200">
+                        <div class="bg-gray-50 border-b border-gray-200">
                             <h3 class="text-md font-medium text-gray-800">Change Truck Assignment</h3>
                             <p class="text-sm text-gray-600 mt-1">Select a different delivery/truck for this waybill</p>
                         </div>
@@ -381,9 +395,10 @@ if (isset($waybill['miscellaneous']['others'])) {
                         <input type="hidden" name="warehouse_status" id="warehouse_status" value="<?= esc_attr(isset($waybill['warehouse']) && $waybill['warehouse'] ? '1' : '0') ?>">
 
                         <!-- Delivery Cards Selection -->
-                        <div class="p-4">
+                        <div class="">
                             <?php
                             $atts = ['hide_header' => true];
+                            $atts['small_width'] = true;
                             require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/scheduledDeliveries.php');
                             ?>
 
@@ -477,426 +492,3 @@ if (isset($waybill['miscellaneous']['others'])) {
 
     </form>
 </div>
-
-<script>
-    // Load customers data
-    window.CUSTOMERS_DATA = window.CUSTOMERS_DATA || (function() {
-        try {
-            const customers = <?php echo json_encode($customers, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
-            const customersObj = {};
-            if (customers && Array.isArray(customers)) {
-                customers.forEach(customer => {
-                    customersObj[customer.cust_id] = customer;
-                });
-            }
-            return customersObj;
-        } catch (e) {
-            console.error('Error loading customers:', e);
-            return {};
-        }
-    })();
-
-    document.addEventListener('DOMContentLoaded', function() {
-        // Client type radio logic
-        const clientTypeRadios = document.querySelectorAll('.client-type-radio-edit');
-        const companyNameWrapper = document.getElementById('company_name_wrapper_edit');
-        const companyNameInput = document.getElementById('company_name_edit');
-
-        function updateCompanyNameVisibility() {
-            const selectedType = document.querySelector('input[name="client_type"]:checked')?.value;
-            if (selectedType === 'individual') {
-                if (companyNameWrapper) companyNameWrapper.style.display = 'none';
-                if (companyNameInput) companyNameInput.value = '1ndividual';
-            } else {
-                if (companyNameWrapper) companyNameWrapper.style.display = '';
-            }
-        }
-
-        clientTypeRadios.forEach(function(radio) {
-            radio.addEventListener('change', updateCompanyNameVisibility);
-        });
-        updateCompanyNameVisibility();
-
-        // Customer selection logic
-        const customerSearch = document.getElementById('customer-search-edit');
-        const customerSelect = document.getElementById('customer-select-edit');
-        const customerResults = document.getElementById('customer-results-edit');
-        const custIdInput = document.querySelector('input[name="cust_id"]');
-        const addNewCustomerBtn = document.getElementById('add-new-customer-btn-edit');
-        const recentCustomersBtn = document.getElementById('recent-customers-btn-edit');
-
-        function getCustomerInput(idBase) {
-            return document.getElementById(idBase) ||
-                document.getElementById('a' + idBase) ||
-                document.getElementById('a_' + idBase) ||
-                document.querySelector('[name="' + idBase + '"]');
-        }
-        const nameInput = getCustomerInput('customer_name_edit');
-        const surnameInput = getCustomerInput('customer_surname_edit');
-        const cellInput = getCustomerInput('cell_edit');
-        const addressInput = getCustomerInput('address_edit');
-        const emailInput = getCustomerInput('email_address_edit');
-        const telephoneInput = getCustomerInput('telephone_edit');
-
-        function searchCustomers(query) {
-            if (!query || query.length < 2) {
-                customerResults.classList.add('hidden');
-                return;
-            }
-            const results = [];
-            const searchTerm = query.toLowerCase();
-
-            if (window.CUSTOMERS_DATA) {
-                Object.values(window.CUSTOMERS_DATA).forEach(customer => {
-                    const name = (customer.customer_name || '').toLowerCase();
-                    const surname = (customer.customer_surname || '').toLowerCase();
-                    const company = (customer.company_name || '').toLowerCase();
-                    const cell = (customer.cell || '').toLowerCase();
-                    const email = (customer.email_address || '').toLowerCase();
-
-                    if (name.includes(searchTerm) ||
-                        surname.includes(searchTerm) ||
-                        company.includes(searchTerm) ||
-                        cell.includes(searchTerm) ||
-                        email.includes(searchTerm) ||
-                        `${name} ${surname}`.includes(searchTerm)) {
-                        results.push(customer);
-                    }
-                });
-            }
-            displaySearchResults(results.slice(0, 10));
-        }
-
-        function displaySearchResults(results) {
-            customerResults.innerHTML = '';
-            if (results.length === 0) {
-                customerResults.innerHTML = '<div class="px-4 py-2 text-gray-500 text-sm">No customers found</div>';
-            } else {
-                results.forEach(customer => {
-                    const item = document.createElement('div');
-                    item.className = 'px-4 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0';
-                    item.innerHTML = `
-                        <div class="font-medium text-gray-900">${customer.customer_name} ${customer.customer_surname}</div>
-                        <div class="text-sm text-gray-500">${customer.company_name || customer.cell || ''}</div>
-                    `;
-                    item.addEventListener('click', () => selectCustomer(customer));
-                    customerResults.appendChild(item);
-                });
-            }
-            customerResults.classList.remove('hidden');
-        }
-
-        function selectCustomer(customer) {
-            customerSearch.value = `${customer.customer_name} ${customer.customer_surname}`;
-            customerSelect.value = customer.cust_id;
-            custIdInput.value = customer.cust_id;
-            customerResults.classList.add('hidden');
-            populateCustomerDetails(customer.cust_id);
-        }
-
-        function addNewCustomer() {
-            customerSearch.value = '';
-            customerSelect.value = 'new';
-            custIdInput.value = '0';
-            customerResults.classList.add('hidden');
-            clearCustomerFields();
-        }
-
-        function showRecentCustomers() {
-            if (!window.CUSTOMERS_DATA) return;
-            const recentCustomers = Object.values(window.CUSTOMERS_DATA)
-                .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
-                .slice(0, 10);
-            displaySearchResults(recentCustomers);
-        }
-
-        function populateCustomerDetails(customerId) {
-            if (!window.CUSTOMERS_DATA || !window.CUSTOMERS_DATA[customerId]) {
-                return;
-            }
-            const customer = window.CUSTOMERS_DATA[customerId];
-            const dn = customer.customer_name || '';
-            const ds = customer.customer_surname || '';
-            const dc = customer.cell || '';
-            const da = customer.address || '';
-            const de = customer.email_address || '';
-            const dco = customer.company_name || customer.customer_name || '';
-            if (nameInput) nameInput.value = dn;
-            if (surnameInput) surnameInput.value = ds;
-            if (cellInput) cellInput.value = dc;
-            if (telephoneInput) telephoneInput.value = dc;
-            if (addressInput) addressInput.value = da;
-            if (emailInput) emailInput.value = de;
-            if (companyNameInput) companyNameInput.value = dco;
-            if (custIdInput) custIdInput.value = customerId;
-            updateCompanyNameVisibility();
-            populateOriginFromCustomer(customerId);
-
-            // Show confirmation
-            const confirmationDiv = document.createElement('div');
-            confirmationDiv.className = 'mt-2 p-2 bg-green-100 border border-green-300 rounded text-sm text-green-700';
-            confirmationDiv.innerHTML = '✅ Customer updated! Click "Save Changes" to apply.';
-            
-            const existingConfirmation = document.querySelector('.customer-change-confirmation');
-            if (existingConfirmation) {
-                existingConfirmation.remove();
-            }
-            
-            confirmationDiv.className += ' customer-change-confirmation';
-            customerSearch.parentNode.appendChild(confirmationDiv);
-            
-            setTimeout(() => {
-                if (confirmationDiv.parentNode) {
-                    confirmationDiv.remove();
-                }
-            }, 3000);
-        }
-
-        function populateOriginFromCustomer(customerId) {
-            if (!window.CUSTOMERS_DATA || !window.CUSTOMERS_DATA[customerId]) {
-                return;
-            }
-            const customer = window.CUSTOMERS_DATA[customerId];
-            const customerData = {
-                country_id: customer.country_id || '',
-                city_id: customer.city_id || ''
-            };
-            const originCountryId = customerData.country_id || 1;
-            const originCountrySelect = document.getElementById('origin_country_select');
-            if (originCountrySelect) {
-                originCountrySelect.value = originCountryId;
-                // Trigger change event to load cities
-                if (typeof loadCitiesForCountry === 'function') {
-                    loadCitiesForCountry(originCountryId, 'origin', customerData.city_id);
-                } else if (originCountrySelect.onchange) {
-                    originCountrySelect.onchange();
-                }
-            }
-        }
-
-        function clearCustomerFields() {
-            if (nameInput) nameInput.value = '';
-            if (surnameInput) surnameInput.value = '';
-            if (cellInput) cellInput.value = '';
-            if (telephoneInput) telephoneInput.value = '';
-            if (addressInput) addressInput.value = '';
-            if (emailInput) emailInput.value = '';
-            if (companyNameInput) companyNameInput.value = '';
-            if (custIdInput) custIdInput.value = '0';
-            const businessRadio = document.getElementById('client_type_business_edit');
-            if (businessRadio) businessRadio.checked = true;
-            updateCompanyNameVisibility();
-        }
-
-        if (customerSearch) {
-            customerSearch.addEventListener('input', function() {
-                searchCustomers(this.value);
-            });
-            customerSearch.addEventListener('focus', function() {
-                if (this.value.length >= 2) {
-                    searchCustomers(this.value);
-                }
-            });
-            document.addEventListener('click', function(e) {
-                if (!customerSearch.contains(e.target) && !customerResults.contains(e.target)) {
-                    customerResults.classList.add('hidden');
-                }
-            });
-            customerSearch.addEventListener('keydown', function(e) {
-                if (e.key === 'Escape') {
-                    customerResults.classList.add('hidden');
-                }
-            });
-        }
-        if (addNewCustomerBtn) {
-            addNewCustomerBtn.addEventListener('click', addNewCustomer);
-        }
-        if (recentCustomersBtn) {
-            recentCustomersBtn.addEventListener('click', showRecentCustomers);
-        }
-        
-        // Initial population on page load
-        const initialCustomerId = custIdInput?.value;
-        if (initialCustomerId && initialCustomerId !== '0' && window.CUSTOMERS_DATA && window.CUSTOMERS_DATA[initialCustomerId]) {
-            const customer = window.CUSTOMERS_DATA[initialCustomerId];
-            customerSearch.value = `${customer.customer_name} ${customer.customer_surname}`;
-            customerSelect.value = initialCustomerId;
-            populateCustomerDetails(initialCustomerId);
-        } else if (initialCustomerId === '0' || !initialCustomerId) {
-            customerSearch.value = '';
-            customerSelect.value = 'new';
-        }
-
-        // Handle warehouse checkbox changes
-        const warehouseCheckbox = document.getElementById('pending_option');
-        if (warehouseCheckbox) {
-            warehouseCheckbox.addEventListener('change', function() {
-                const isWarehoused = this.checked;
-                console.log('🏪 Warehouse status changed:', isWarehoused);
-
-                // Update waybill warehouse status
-                if (typeof window.waybillData === 'undefined') {
-                    window.waybillData = {};
-                }
-                window.waybillData.warehouse = isWarehoused;
-
-                // Update hidden field for form submission
-                const warehouseStatusField = document.getElementById('warehouse_status');
-                if (warehouseStatusField) {
-                    warehouseStatusField.value = isWarehoused ? '1' : '0';
-                }
-
-                // Show confirmation message
-                const confirmationDiv = document.createElement('div');
-                confirmationDiv.className = 'mt-2 p-2 bg-blue-100 border border-blue-300 rounded text-sm text-blue-700';
-                confirmationDiv.innerHTML = isWarehoused ?
-                    '✅ Waybill marked as warehoused' :
-                    '✅ Waybill removed from warehouse';
-
-                // Remove any existing confirmation
-                const existingConfirmation = document.querySelector('.warehouse-confirmation');
-                if (existingConfirmation) {
-                    existingConfirmation.remove();
-                }
-
-                confirmationDiv.className += ' warehouse-confirmation';
-                this.parentNode.appendChild(confirmationDiv);
-
-                // Auto-hide confirmation after 3 seconds
-                setTimeout(() => {
-                    if (confirmationDiv.parentNode) {
-                        confirmationDiv.remove();
-                    }
-                }, 3000);
-            });
-        }
-
-        // Auto-select the current delivery card if it exists
-        const currentDeliveryId = document.getElementById('current_delivery_id')?.value;
-        if (currentDeliveryId) {
-            console.log('🔍 Looking for current delivery card with ID:', currentDeliveryId);
-
-            // Wait a bit for delivery cards to load
-            setTimeout(() => {
-                const deliveryCards = document.querySelectorAll('.delivery-card');
-                console.log('📋 Found', deliveryCards.length, 'delivery cards');
-
-                deliveryCards.forEach(card => {
-                    const cardId = card.getAttribute('data-index');
-                    console.log('🔍 Checking card with data-index:', cardId);
-
-                    if (cardId === currentDeliveryId) {
-                        console.log('✅ Found current delivery card, auto-selecting...');
-                        selectDeliveryCard(card, cardId);
-                    }
-                });
-            }, 500);
-        }
-
-        // Handle delivery card clicks (called from onclick attribute on cards)
-        if (typeof window.handleDeliveryClick === 'undefined') {
-            window.handleDeliveryClick = function(cardElement, directionId) {
-                if (typeof window.selectDeliveryCard === 'function') {
-                    window.selectDeliveryCard(cardElement, directionId);
-                } else {
-                    console.error('selectDeliveryCard function not found');
-                }
-            };
-        }
-
-        // Enhanced selectDeliveryCard function for edit waybill
-        window.selectDeliveryCard = function(cardElement, directionId) {
-            console.log('🖱️ Selecting delivery card:', directionId);
-
-            // Remove selection from all cards
-            document.querySelectorAll('.delivery-card').forEach(card => {
-                card.classList.remove('selected');
-            });
-
-            // Add selection to clicked card
-            cardElement.classList.add('selected');
-
-            // Get delivery data from card attributes
-            const dispatchDate = cardElement.getAttribute('data-dispatch-date') || '';
-            const truckNumber = cardElement.getAttribute('data-truck-number') || '';
-            const driverId = cardElement.getAttribute('data-driver-id') || '';
-            const deliveryId = cardElement.getAttribute('data-delivery-id') || '';
-
-            // Update hidden fields
-            const deliveryIdField = document.getElementById('delivery_id');
-            const directionIdField = document.getElementById('direction_id');
-
-            if (deliveryIdField) {
-                // Use actual delivery_id if available, otherwise use directionId
-                deliveryIdField.value = deliveryId || directionId;
-                console.log('✅ Updated delivery_id to:', deliveryIdField.value);
-            }
-
-            if (directionIdField) {
-                directionIdField.value = directionId;
-                console.log('✅ Updated direction_id to:', directionId);
-            }
-
-            // Update dispatch date
-            const dispatchDateField = document.getElementById('dispatch_date_edit');
-            if (dispatchDateField && dispatchDate) {
-                dispatchDateField.value = dispatchDate;
-                console.log('✅ Updated dispatch_date to:', dispatchDate);
-            }
-
-            // Update truck number
-            const truckNumberField = document.getElementById('truck_number_edit');
-            if (truckNumberField && truckNumber) {
-                truckNumberField.value = truckNumber;
-                console.log('✅ Updated truck_number to:', truckNumber);
-            }
-
-            // Update truck driver
-            const truckDriverField = document.getElementById('truck_driver_edit');
-            if (truckDriverField && driverId) {
-                truckDriverField.value = driverId;
-                console.log('✅ Updated truck_driver to:', driverId);
-            }
-
-            // Show confirmation message
-            const confirmationDiv = document.createElement('div');
-            confirmationDiv.className = 'mt-2 p-2 bg-green-100 border border-green-300 rounded text-sm text-green-700';
-            confirmationDiv.innerHTML = '✅ Delivery, dispatch date, truck, and driver updated! Click "Save Changes" to apply.';
-
-            // Remove any existing confirmation
-            const existingConfirmation = document.querySelector('.delivery-assignment-confirmation');
-            if (existingConfirmation) {
-                existingConfirmation.remove();
-            }
-
-            confirmationDiv.className += ' delivery-assignment-confirmation';
-            cardElement.parentNode.appendChild(confirmationDiv);
-
-            // Auto-hide confirmation after 3 seconds
-            setTimeout(() => {
-                if (confirmationDiv.parentNode) {
-                    confirmationDiv.remove();
-                }
-            }, 3000);
-        };
-
-        // Add click handlers to delivery cards if they don't have onclick
-        setTimeout(() => {
-            const deliveryCards = document.querySelectorAll('.delivery-card');
-            deliveryCards.forEach(card => {
-                // Only add if not already handled
-                if (!card.hasAttribute('onclick')) {
-                    card.addEventListener('click', function(e) {
-                        e.preventDefault();
-                        const directionId = this.getAttribute('data-index') || 
-                                         this.getAttribute('data-delivery-id') || 
-                                         this.getAttribute('data-direction-id');
-                        if (directionId && typeof window.selectDeliveryCard === 'function') {
-                            window.selectDeliveryCard(this, directionId);
-                        }
-                    });
-                }
-            });
-        }, 100);
-    });
-</script>

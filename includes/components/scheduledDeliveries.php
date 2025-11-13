@@ -6,6 +6,7 @@ require_once __DIR__ . '/deliveryCard.php';
 
 // Check if we should hide the header (for integrated use in editWaybill)
 $hide_header = isset($atts['hide_header']) && $atts['hide_header'] === true;
+$smallWidth = isset($atts['small_width']) && $atts['small_width'] === true;
 ?>
 <style>
 /* Simple delivery card styling */
@@ -41,7 +42,7 @@ $hide_header = isset($atts['hide_header']) && $atts['hide_header'] === true;
     </div>
     
     <!-- Horizontal Row Layout - match the image layout -->
-    <div id="scheduled-deliveries-list" class="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-6 gap-3 min-h-32 max-h-96 overflow-y-auto">
+    <div id="scheduled-deliveries-list" class="grid grid-cols-1 <?= $smallWidth ? '' : 'md:grid-cols-4 lg:grid-cols-6' ?> gap-3 min-h-32 max-h-96 overflow-y-auto">
         <?php
         $delivery_going = KIT_Deliveries::getScheduledDeliveries();
 

@@ -8,6 +8,26 @@ function hello() {
     alert("Hello");
 }
 
+(function initializeCustomersData() {
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    const existingData = (window.CUSTOMERS_DATA && typeof window.CUSTOMERS_DATA === 'object') ? window.CUSTOMERS_DATA : {};
+    const localizedCustomers = (typeof EditWaybillData !== 'undefined' && Array.isArray(EditWaybillData.customers)) ? EditWaybillData.customers : [];
+    const customersFromLocalized = {};
+
+    if (Array.isArray(localizedCustomers)) {
+        localizedCustomers.forEach(customer => {
+            if (customer && typeof customer === 'object' && customer.cust_id) {
+                customersFromLocalized[customer.cust_id] = customer;
+            }
+        });
+    }
+
+    window.CUSTOMERS_DATA = Object.assign({}, existingData, customersFromLocalized);
+})();
+
 function fetchRatePerKg() {
     // ✅ BULLETPROOF: Comprehensive input validation and sanitization
     try {
@@ -480,6 +500,517 @@ document.addEventListener('DOMContentLoaded', function () {
             if (destinationCityHelp) destinationCityHelp.style.display = 'none';
         }
     });
+
+    (function initEditWaybillEditPage() {
+        const editForm = document.querySelector('form[action*="update_waybill_action"]');
+        const customerSearch = document.getElementById('customer-search-edit');
+
+        if (!editForm || !customerSearch) {
+            return;
+        }
+
+        const customersData = (window.CUSTOMERS_DATA && typeof window.CUSTOMERS_DATA === 'object') ? window.CUSTOMERS_DATA : {};
+        const customerSelect = document.getElementById('customer-select-edit');
+        const customerResults = document.getElementById('customer-results-edit');
+        const custIdInput = document.querySelector('input[name="cust_id"]');
+        const addNewCustomerBtn = document.getElementById('add-new-customer-btn-edit');
+        const recentCustomersBtn = document.getElementById('recent-customers-btn-edit');
+
+        const originDefaults = {
+            country: (document.getElementById('origin_country_initial')?.value || '').trim(),
+            city: (() => {
+                const val = (document.getElementById('origin_city_initial')?.value || '').trim();
+                return val === '0' ? '' : val;
+            })()
+        };
+        let allowAutoOriginFromCustomer = !originDefaults.city;
+        let originRestoreApplied = false;
+
+        const destinationDefaults = {
+            country: (document.getElementById('destination_country_initial')?.value || '').trim(),
+            city: (() => {
+                const val = (document.getElementById('destination_city_initial')?.value || '').trim();
+                return val === '0' ? '' : val;
+            })()
+        };
+        let destinationRestoreApplied = false;
+
+        function getCustomerInput(idBase) {
+            return document.getElementById(idBase) ||
+                document.getElementById('a' + idBase) ||
+                document.getElementById('a_' + idBase) ||
+                document.querySelector('[name="' + idBase + '"]');
+        }
+
+        const nameInput = getCustomerInput('customer_name_edit');
+        const surnameInput = getCustomerInput('customer_surname_edit');
+        const cellInput = getCustomerInput('cell_edit');
+        const addressInput = getCustomerInput('address_edit');
+        const emailInput = getCustomerInput('email_address_edit');
+        const telephoneInput = getCustomerInput('telephone_edit');
+        const companyNameInput = document.getElementById('company_name_edit');
+        const companyNameWrapper = document.getElementById('company_name_wrapper_edit');
+        const clientTypeRadios = document.querySelectorAll('.client-type-radio-edit');
+
+        function updateCompanyNameVisibility() {
+            const selectedType = document.querySelector('input[name="client_type"]:checked')?.value;
+            if (selectedType === 'individual') {
+                if (companyNameWrapper) companyNameWrapper.style.display = 'none';
+                if (companyNameInput) companyNameInput.value = '1ndividual';
+            } else if (companyNameWrapper) {
+                companyNameWrapper.style.display = '';
+            }
+        }
+
+        clientTypeRadios.forEach(function(radio) {
+            radio.addEventListener('change', updateCompanyNameVisibility);
+        });
+        updateCompanyNameVisibility();
+
+        function restoreOriginSelections(force) {
+            if (originRestoreApplied && !force) {
+                return;
+            }
+
+            const originCountrySelect = document.getElementById('origin_country_select');
+            const originCitySelect = document.getElementById('origin_city_select');
+            if (!originCountrySelect) {
+                return;
+            }
+
+            if (originDefaults.country) {
+                originCountrySelect.value = originDefaults.country;
+            }
+
+            const applyCitySelection = () => {
+                if (!originCitySelect || !originDefaults.city) {
+                    return false;
+                }
+                const targetValue = String(originDefaults.city);
+                if (String(originCitySelect.value) === targetValue) {
+                    return true;
+                }
+                const match = Array.from(originCitySelect.options || []).some(option => String(option.value) === targetValue);
+                if (match) {
+                    originCitySelect.value = targetValue;
+                    return true;
+                }
+                return false;
+            };
+
+            if (originCitySelect && originDefaults.city) {
+                const observer = new MutationObserver((mutations, obs) => {
+                    if (applyCitySelection()) {
+                        obs.disconnect();
+                    }
+                });
+                observer.observe(originCitySelect, { childList: true });
+                applyCitySelection();
+            }
+
+            if (originDefaults.country && typeof loadCitiesForCountry === 'function') {
+                loadCitiesForCountry(originDefaults.country, 'origin', originDefaults.city || '');
+            } else if (originDefaults.country && originCountrySelect.onchange) {
+                originCountrySelect.onchange();
+                setTimeout(applyCitySelection, 250);
+            } else {
+                applyCitySelection();
+            }
+
+            originRestoreApplied = true;
+        }
+
+        function restoreDestinationSelections(force) {
+            if (destinationRestoreApplied && !force) {
+                return;
+            }
+
+            const destinationCountrySelect = document.getElementById('destination_country_select');
+            const destinationCitySelect = document.getElementById('destination_city_select');
+            if (!destinationCountrySelect) {
+                return;
+            }
+
+            if (destinationDefaults.country) {
+                destinationCountrySelect.value = destinationDefaults.country;
+            }
+
+            const applyDestinationCity = () => {
+                if (!destinationCitySelect || !destinationDefaults.city) {
+                    return false;
+                }
+                const targetValue = String(destinationDefaults.city);
+                if (String(destinationCitySelect.value) === targetValue) {
+                    return true;
+                }
+                const match = Array.from(destinationCitySelect.options || []).some(option => String(option.value) === targetValue);
+                if (match) {
+                    destinationCitySelect.value = targetValue;
+                    return true;
+                }
+                return false;
+            };
+
+            const observeDestination = destinationCitySelect && destinationDefaults.city;
+            if (observeDestination) {
+                const observer = new MutationObserver((mutations, obs) => {
+                    if (applyDestinationCity()) {
+                        obs.disconnect();
+                    }
+                });
+                observer.observe(destinationCitySelect, { childList: true });
+                applyDestinationCity();
+            }
+
+            if (destinationDefaults.country && typeof loadCitiesForCountry === 'function') {
+                loadCitiesForCountry(destinationDefaults.country, 'destination', destinationDefaults.city || '');
+            } else if (destinationDefaults.country && destinationCountrySelect.onchange) {
+                destinationCountrySelect.onchange();
+                setTimeout(applyDestinationCity, 250);
+            } else {
+                applyDestinationCity();
+            }
+
+            destinationRestoreApplied = true;
+        }
+
+        function searchCustomers(query) {
+            if (!customerResults) {
+                return;
+            }
+            if (!query || query.length < 2) {
+                customerResults.classList.add('hidden');
+                return;
+            }
+            const results = [];
+            const searchTerm = query.toLowerCase();
+
+            Object.values(customersData).forEach(customer => {
+                const name = (customer.customer_name || '').toLowerCase();
+                const surname = (customer.customer_surname || '').toLowerCase();
+                const company = (customer.company_name || '').toLowerCase();
+                const cell = (customer.cell || '').toLowerCase();
+                const email = (customer.email_address || '').toLowerCase();
+
+                if (
+                    name.includes(searchTerm) ||
+                    surname.includes(searchTerm) ||
+                    company.includes(searchTerm) ||
+                    cell.includes(searchTerm) ||
+                    email.includes(searchTerm) ||
+                    `${name} ${surname}`.includes(searchTerm)
+                ) {
+                    results.push(customer);
+                }
+            });
+
+            displaySearchResults(results.slice(0, 10));
+        }
+
+        function displaySearchResults(results) {
+            if (!customerResults) {
+                return;
+            }
+            customerResults.innerHTML = '';
+            if (results.length === 0) {
+                customerResults.innerHTML = '<div class="px-4 py-2 text-gray-500 text-sm">No customers found</div>';
+            } else {
+                results.forEach(customer => {
+                    const item = document.createElement('div');
+                    item.className = 'px-4 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0';
+                    item.innerHTML = `
+                        <div class="font-medium text-gray-900">${customer.customer_name || ''} ${customer.customer_surname || ''}</div>
+                        <div class="text-sm text-gray-500">${customer.company_name || customer.cell || ''}</div>
+                    `;
+                    item.addEventListener('click', () => selectCustomer(customer));
+                    customerResults.appendChild(item);
+                });
+            }
+            customerResults.classList.remove('hidden');
+        }
+
+        function selectCustomer(customer) {
+            allowAutoOriginFromCustomer = true;
+            originDefaults.country = '';
+            originDefaults.city = '';
+            originRestoreApplied = true;
+
+            customerSearch.value = `${customer.customer_name || ''} ${customer.customer_surname || ''}`.trim();
+            if (customerSelect) customerSelect.value = customer.cust_id || '';
+            if (custIdInput) custIdInput.value = customer.cust_id || '';
+            if (customerResults) customerResults.classList.add('hidden');
+            populateCustomerDetails(customer.cust_id);
+        }
+
+        function addNewCustomer() {
+            customerSearch.value = '';
+            if (customerSelect) customerSelect.value = 'new';
+            if (custIdInput) custIdInput.value = '0';
+            if (customerResults) customerResults.classList.add('hidden');
+            clearCustomerFields();
+            allowAutoOriginFromCustomer = true;
+            originDefaults.country = '';
+            originDefaults.city = '';
+            originRestoreApplied = true;
+        }
+
+        function showRecentCustomers() {
+            if (!customerResults) return;
+            const recentCustomers = Object.values(customersData)
+                .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+                .slice(0, 10);
+            displaySearchResults(recentCustomers);
+        }
+
+        function populateCustomerDetails(customerId) {
+            if (!customersData || !customersData[customerId]) {
+                return;
+            }
+            const customer = customersData[customerId];
+            const dn = customer.customer_name || '';
+            const ds = customer.customer_surname || '';
+            const dc = customer.cell || '';
+            const da = customer.address || '';
+            const de = customer.email_address || '';
+            const dco = customer.company_name || customer.customer_name || '';
+            if (nameInput) nameInput.value = dn;
+            if (surnameInput) surnameInput.value = ds;
+            if (cellInput) cellInput.value = dc;
+            if (telephoneInput) telephoneInput.value = dc;
+            if (addressInput) addressInput.value = da;
+            if (emailInput) emailInput.value = de;
+            if (companyNameInput) companyNameInput.value = dco;
+            if (custIdInput) custIdInput.value = customerId;
+            updateCompanyNameVisibility();
+            populateOriginFromCustomer(customerId);
+
+            const confirmationDiv = document.createElement('div');
+            confirmationDiv.className = 'mt-2 p-2 bg-green-100 border border-green-300 rounded text-sm text-green-700 customer-change-confirmation';
+            confirmationDiv.innerHTML = '✅ Customer updated! Click "Save Changes" to apply.';
+
+            const existingConfirmation = document.querySelector('.customer-change-confirmation');
+            if (existingConfirmation) {
+                existingConfirmation.remove();
+            }
+
+            customerSearch.parentNode.appendChild(confirmationDiv);
+
+            setTimeout(() => {
+                if (confirmationDiv.parentNode) {
+                    confirmationDiv.remove();
+                }
+            }, 3000);
+        }
+
+        function populateOriginFromCustomer(customerId) {
+            if (!customersData || !customersData[customerId] || !allowAutoOriginFromCustomer) {
+                return;
+            }
+            const customer = customersData[customerId];
+            const customerData = {
+                country_id: customer.country_id || '',
+                city_id: customer.city_id || ''
+            };
+            const originCountryId = customerData.country_id || 1;
+            const originCountrySelect = document.getElementById('origin_country_select');
+            if (originCountrySelect) {
+                originCountrySelect.value = originCountryId;
+                if (typeof loadCitiesForCountry === 'function') {
+                    loadCitiesForCountry(originCountryId, 'origin', customerData.city_id);
+                } else if (originCountrySelect.onchange) {
+                    originCountrySelect.onchange();
+                }
+            }
+        }
+
+        function clearCustomerFields() {
+            if (nameInput) nameInput.value = '';
+            if (surnameInput) surnameInput.value = '';
+            if (cellInput) cellInput.value = '';
+            if (telephoneInput) telephoneInput.value = '';
+            if (addressInput) addressInput.value = '';
+            if (emailInput) emailInput.value = '';
+            if (companyNameInput) companyNameInput.value = '';
+            if (custIdInput) custIdInput.value = '0';
+            const businessRadio = document.getElementById('client_type_business_edit');
+            if (businessRadio) businessRadio.checked = true;
+            updateCompanyNameVisibility();
+        }
+
+        if (customerSearch) {
+            customerSearch.addEventListener('input', function() {
+                searchCustomers(this.value);
+            });
+            customerSearch.addEventListener('focus', function() {
+                if (this.value.length >= 2) {
+                    searchCustomers(this.value);
+                }
+            });
+            document.addEventListener('click', function(e) {
+                if (!customerSearch.contains(e.target) && !customerResults?.contains(e.target)) {
+                    customerResults?.classList.add('hidden');
+                }
+            });
+            customerSearch.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') {
+                    customerResults?.classList.add('hidden');
+                }
+            });
+        }
+
+        if (addNewCustomerBtn) {
+            addNewCustomerBtn.addEventListener('click', addNewCustomer);
+        }
+        if (recentCustomersBtn) {
+            recentCustomersBtn.addEventListener('click', showRecentCustomers);
+        }
+
+        const initialCustomerId = custIdInput?.value;
+        if (initialCustomerId && initialCustomerId !== '0' && customersData[initialCustomerId]) {
+            const customer = customersData[initialCustomerId];
+            customerSearch.value = `${customer.customer_name || ''} ${customer.customer_surname || ''}`.trim();
+            if (customerSelect) customerSelect.value = initialCustomerId;
+            populateCustomerDetails(initialCustomerId);
+        } else if (initialCustomerId === '0' || !initialCustomerId) {
+            customerSearch.value = '';
+            if (customerSelect) customerSelect.value = 'new';
+        }
+
+        if (!allowAutoOriginFromCustomer) {
+            setTimeout(() => restoreOriginSelections(false), 0);
+        }
+        setTimeout(() => restoreDestinationSelections(false), 0);
+
+        const warehouseCheckbox = document.getElementById('pending_option');
+        if (warehouseCheckbox) {
+            warehouseCheckbox.addEventListener('change', function() {
+                const isWarehoused = this.checked;
+                if (typeof window.waybillData === 'undefined') {
+                    window.waybillData = {};
+                }
+                window.waybillData.warehouse = isWarehoused;
+
+                const warehouseStatusField = document.getElementById('warehouse_status');
+                if (warehouseStatusField) {
+                    warehouseStatusField.value = isWarehoused ? '1' : '0';
+                }
+
+                const confirmationDiv = document.createElement('div');
+                confirmationDiv.className = 'mt-2 p-2 bg-blue-100 border border-blue-300 rounded text-sm text-blue-700 warehouse-confirmation';
+                confirmationDiv.innerHTML = isWarehoused ?
+                    '✅ Waybill marked as warehoused' :
+                    '✅ Waybill removed from warehouse';
+
+                const existingConfirmation = document.querySelector('.warehouse-confirmation');
+                if (existingConfirmation) {
+                    existingConfirmation.remove();
+                }
+
+                this.parentNode.appendChild(confirmationDiv);
+
+                setTimeout(() => {
+                    if (confirmationDiv.parentNode) {
+                        confirmationDiv.remove();
+                    }
+                }, 3000);
+            });
+        }
+
+        window.selectDeliveryCard = function(cardElement, directionId) {
+            document.querySelectorAll('.delivery-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+
+            cardElement.classList.add('selected');
+
+            const dispatchDate = cardElement.getAttribute('data-dispatch-date') || '';
+            const truckNumber = cardElement.getAttribute('data-truck-number') || '';
+            const driverId = cardElement.getAttribute('data-driver-id') || '';
+            const deliveryId = cardElement.getAttribute('data-delivery-id') || '';
+
+            const deliveryIdField = document.getElementById('delivery_id');
+            const directionIdField = document.getElementById('direction_id');
+
+            if (deliveryIdField) {
+                deliveryIdField.value = deliveryId || directionId;
+            }
+            if (directionIdField) {
+                directionIdField.value = directionId;
+            }
+
+            const dispatchDateField = document.getElementById('dispatch_date_edit');
+            if (dispatchDateField && dispatchDate) {
+                dispatchDateField.value = dispatchDate;
+            }
+
+            const truckNumberField = document.getElementById('truck_number_edit');
+            if (truckNumberField && truckNumber) {
+                truckNumberField.value = truckNumber;
+            }
+
+            const truckDriverField = document.getElementById('truck_driver_edit');
+            if (truckDriverField && driverId) {
+                truckDriverField.value = driverId;
+            }
+
+            const confirmationDiv = document.createElement('div');
+            confirmationDiv.className = 'mt-2 p-2 bg-green-100 border border-green-300 rounded text-sm text-green-700 delivery-assignment-confirmation';
+            confirmationDiv.innerHTML = '✅ Delivery, dispatch date, truck, and driver updated! Click "Save Changes" to apply.';
+
+            const existingConfirmation = document.querySelector('.delivery-assignment-confirmation');
+            if (existingConfirmation) {
+                existingConfirmation.remove();
+            }
+
+            cardElement.parentNode.appendChild(confirmationDiv);
+
+            setTimeout(() => {
+                if (confirmationDiv.parentNode) {
+                    confirmationDiv.remove();
+                }
+            }, 3000);
+        };
+
+        if (typeof window.handleDeliveryClick === 'undefined') {
+            window.handleDeliveryClick = function(cardElement, directionId) {
+                if (typeof window.selectDeliveryCard === 'function') {
+                    window.selectDeliveryCard(cardElement, directionId);
+                } else {
+                    console.error('selectDeliveryCard function not found');
+                }
+            };
+        }
+
+        const currentDeliveryId = document.getElementById('current_delivery_id')?.value;
+        if (currentDeliveryId) {
+            setTimeout(() => {
+                const deliveryCards = document.querySelectorAll('.delivery-card');
+                deliveryCards.forEach(card => {
+                    const cardId = card.getAttribute('data-index');
+                    if (cardId === currentDeliveryId && typeof window.selectDeliveryCard === 'function') {
+                        window.selectDeliveryCard(card, cardId);
+                    }
+                });
+            }, 500);
+        }
+
+        setTimeout(() => {
+            const deliveryCards = document.querySelectorAll('.delivery-card');
+            deliveryCards.forEach(card => {
+                if (!card.hasAttribute('onclick')) {
+                    card.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        const directionId = this.getAttribute('data-index') ||
+                            this.getAttribute('data-delivery-id') ||
+                            this.getAttribute('data-direction-id');
+                        if (directionId && typeof window.selectDeliveryCard === 'function') {
+                            window.selectDeliveryCard(this, directionId);
+                        }
+                    });
+                }
+            });
+        }, 100);
+    })();
 
     // Remove legacy manipulator handler that overwrote rate; handled in weight.php now
 });

@@ -94,6 +94,9 @@ add_action('init', function() {
     if (class_exists('KIT_Commons')) {
         KIT_Commons::init();
     }
+    if (class_exists('Database')) {
+        Database::drop_legacy_foreign_keys();
+    }
     if (class_exists('KIT_Waybills')) {
         KIT_Waybills::init();
     }

@@ -159,8 +159,23 @@ class KIT_Bulletproof_Calculator
     private static function get_sad500_charge()
     {
         global $wpdb;
-        $charge = $wpdb->get_var("SELECT sad500_charge FROM {$wpdb->prefix}kit_company_details LIMIT 1");
-        return $charge ? floatval($charge) : 5000.00;
+        $charge = null;
+
+        if (isset($wpdb)) {
+            $charge = $wpdb->get_var("SELECT sad500_charge FROM {$wpdb->prefix}kit_company_details LIMIT 1");
+            if ($charge !== null) {
+                $charge = floatval($charge);
+                if ($charge > 0) {
+                    return $charge;
+                }
+            }
+        }
+
+        if (class_exists('KIT_Waybills')) {
+            return KIT_Waybills::defaultSad500Charge();
+        }
+
+        return 350.00;
     }
     
     /**
@@ -169,8 +184,23 @@ class KIT_Bulletproof_Calculator
     private static function get_sadc_charge()
     {
         global $wpdb;
-        $charge = $wpdb->get_var("SELECT sadc_charge FROM {$wpdb->prefix}kit_company_details LIMIT 1");
-        return $charge ? floatval($charge) : 1000.00;
+        $charge = null;
+
+        if (isset($wpdb)) {
+            $charge = $wpdb->get_var("SELECT sadc_charge FROM {$wpdb->prefix}kit_company_details LIMIT 1");
+            if ($charge !== null) {
+                $charge = floatval($charge);
+                if ($charge > 0) {
+                    return $charge;
+                }
+            }
+        }
+
+        if (class_exists('KIT_Waybills')) {
+            return KIT_Waybills::defaultSadcCharge();
+        }
+
+        return 1000.00;
     }
     
     /**

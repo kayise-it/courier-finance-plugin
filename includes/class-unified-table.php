@@ -38,7 +38,18 @@ class KIT_Unified_Table
             'items_per_page' => 100,
             'current_page' => 1,
             // Optional: callback to add attributes to each <tr>. Signature: function($row, $rowIndex): array
-            'row_attrs_callback' => null
+            'row_attrs_callback' => null,
+            'groupby' => null,
+            'group_heading_prefix' => '',
+            'group_heading_cell_class' => 'px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-700 bg-gray-100',
+            'group_heading_row_class' => 'bg-gray-50',
+            'preserve_order' => false,
+            'group_collapsible' => false,
+            'group_collapsed' => false,
+            'group_toggle_button_class' => 'w-full text-left flex items-center justify-between gap-2',
+            'group_toggle_icon_class' => 'transition-transform duration-150 ease-in-out',
+            'group_toggle_icon_collapsed' => 'rotate-0',
+            'group_toggle_icon_expanded' => 'rotate-90',
         ];
 
         $options = array_merge($defaults, $options);
@@ -47,8 +58,8 @@ class KIT_Unified_Table
         $total_items = count($data);
         $display_data = $data; // Show all items
 
-        // Ensure newest entries (by created_at or ID) appear first
-        if (!empty($display_data)) {
+        // Ensure newest entries (by created_at or ID) appear first unless caller preserves order
+        if (!empty($display_data) && !$options['preserve_order']) {
             $sample = reset($display_data);
             $sampleArray = is_object($sample) ? get_object_vars($sample) : (array) $sample;
 
@@ -88,6 +99,55 @@ class KIT_Unified_Table
             }
         }
 
+        $groupField = !empty($options['groupby']) ? $options['groupby'] : null;
+        if ($groupField) {
+            $groupedDisplayData = [];
+            $currentGroupLabel = null;
+            $currentGroupId = '';
+            $groupIndex = 0;
+
+            foreach ($display_data as $row) {
+                $rowArray = is_object($row) ? get_object_vars($row) : (array) $row;
+                $groupValue = $rowArray[$groupField] ?? '';
+
+                if (is_scalar($groupValue)) {
+                    $groupLabel = (string) $groupValue;
+                } elseif (is_object($groupValue) && method_exists($groupValue, '__toString')) {
+                    $groupLabel = (string) $groupValue;
+                } else {
+                    $groupLabel = '';
+                }
+
+                if ($groupLabel === '') {
+                    $groupLabel = 'Unassigned City';
+                }
+
+                if ($currentGroupLabel !== $groupLabel) {
+                    $groupIndex++;
+                    $currentGroupId = 'group-' . $groupIndex;
+                    $groupedDisplayData[] = [
+                        '__group_row'   => true,
+                        '__group_label' => $groupLabel,
+                        '__group_id'    => $currentGroupId,
+                        '__group_collapsed' => !empty($options['group_collapsed']),
+                    ];
+                    $currentGroupLabel = $groupLabel;
+                }
+
+                if (is_array($row)) {
+                    $row['__group_id'] = $currentGroupId;
+                } elseif (is_object($row)) {
+                    $row->__group_id = $currentGroupId;
+                }
+
+                $groupedDisplayData[] = $row;
+            }
+
+            $display_data = $groupedDisplayData;
+        }
+
+        $hasGroupRows = !empty($groupField);
+
         // Build unique IDs for infinite scroll
         $table_id = 'kit-infinite-table-' . uniqid();
         $container_id = 'kit-infinite-wrap-' . uniqid();
@@ -112,7 +172,7 @@ class KIT_Unified_Table
                 </div>
             <?php else: ?>
                 <div class="w-full overflow-hidden">
-                    <table id="<?php echo esc_attr($table_id); ?>" class="<?php echo esc_attr($options['table_class']); ?>" style="width:100%;">
+                    <table id="<?php echo esc_attr($table_id); ?>" class="<?php echo esc_attr($options['table_class']); ?>" style="width:100%;"<?php if ($hasGroupRows): ?> data-has-group-rows="1"<?php endif; ?>>
                         <thead class="border-b border-gray-200">
                             <tr>
                                 <!-- Index column header -->
@@ -149,19 +209,74 @@ class KIT_Unified_Table
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100">
+                            <?php
+                            $visibleRowCounter = 0;
+                            $totalColumns = 1 + count($columns) + (!empty($options['actions']) ? 1 : 0);
+                            ?>
                             <?php foreach ($display_data as $rowIndex => $row): ?>
                                 <?php
+                                if ((is_array($row) && !empty($row['__group_row'])) || (is_object($row) && !empty($row->__group_row))) {
+                                    $groupLabel = is_array($row) ? ($row['__group_label'] ?? 'Unassigned City') : ($row->__group_label ?? 'Unassigned City');
+                                    $groupId = is_array($row) ? ($row['__group_id'] ?? '') : ($row->__group_id ?? '');
+                                    $groupCollapsed = is_array($row) ? (!empty($row['__group_collapsed'])) : (!empty($row->__group_collapsed));
+                                    $isCollapsible = !empty($options['group_collapsible']);
+                                    $headingContent = trim(($options['group_heading_prefix'] ?? '') . $groupLabel);
+                                    $headingCellClass = $options['group_heading_cell_class'];
+                                    if ($isCollapsible) {
+                                        $headingCellClass = 'p-0 align-middle bg-transparent border-0';
+                                    }
+
+                                    $gradientButtonClasses = 'inline-flex w-full items-center justify-between text-left font-semibold px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:from-blue-800 active:to-indigo-800 text-white shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2';
+                                    if (class_exists('KIT_Commons') && method_exists('KIT_Commons', 'buttonClass') && method_exists('KIT_Commons', 'buttonPrimary')) {
+                                        $baseButton = KIT_Commons::buttonClass();
+                                        $baseButton = str_replace('justify-center', 'justify-between', $baseButton);
+                                        $baseButton = str_replace('gap-2', 'gap-3', $baseButton);
+                                        $baseButton .= ' text-left w-full';
+                                        $typeButton = KIT_Commons::buttonPrimary('sm', true, true);
+                                        $gradientButtonClasses = trim($baseButton . ' ' . $typeButton . ' group-toggle');
+                                    } else {
+                                        $gradientButtonClasses .= ' group-toggle';
+                                    }
+
+                                    $iconClasses = 'group-toggle-icon w-4 h-4 text-white transition-transform duration-200';
+                                    ?>
+                                    <tr class="<?php echo esc_attr($options['group_heading_row_class']); ?>" data-group-row="1"<?php if ($groupId): ?> data-group-id="<?php echo esc_attr($groupId); ?>"<?php endif; ?> data-collapsed="<?php echo $groupCollapsed ? '1' : '0'; ?>">
+                                        <td colspan="<?php echo esc_attr($totalColumns); ?>" class="<?php echo esc_attr($headingCellClass); ?>">
+                                            <?php if ($isCollapsible): ?>
+                                                <button type="button" class="<?php echo esc_attr($gradientButtonClasses); ?>" data-group-toggle="<?php echo esc_attr($groupId); ?>" aria-expanded="<?php echo $groupCollapsed ? 'false' : 'true'; ?>">
+                                                    <span class="group-toggle-label"><?php echo esc_html($headingContent); ?></span>
+                                                    <span class="group-toggle-icon-wrapper inline-flex items-center justify-center w-5 h-5">
+                                                        <svg class="<?php echo esc_attr($iconClasses); ?>"<?php if ($groupCollapsed): ?> style="transform: rotate(-90deg);"<?php endif; ?> fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                                                        </svg>
+                                                    </span>
+                                                </button>
+                                            <?php else: ?>
+                                                <span class="inline-flex items-center font-semibold text-gray-700"><?php echo esc_html($headingContent); ?></span>
+                                            <?php endif; ?>
+                                        </td>
+                                    </tr>
+                                    <?php
+                                    continue;
+                                }
+
+                                $visibleRowCounter++;
+
                                 $rowAttrStr = '';
                                 if (is_callable($options['row_attrs_callback'])) {
-                                    $attrs = (array) call_user_func($options['row_attrs_callback'], $row, $rowIndex);
+                                    $attrs = (array) call_user_func($options['row_attrs_callback'], $row, $visibleRowCounter - 1);
                                     foreach ($attrs as $attrKey => $attrVal) {
                                         $rowAttrStr .= ' ' . esc_attr($attrKey) . '="' . esc_attr((string) $attrVal) . '"';
                                     }
                                 }
+                                $rowGroupId = is_array($row) ? ($row['__group_id'] ?? '') : (is_object($row) ? ($row->__group_id ?? '') : '');
+                                if (!empty($rowGroupId)) {
+                                    $rowAttrStr .= ' data-group-id="' . esc_attr($rowGroupId) . '"';
+                                }
                                 ?>
                                 <tr<?php echo $rowAttrStr; ?> class="hover:bg-gray-50">
                                     <!-- Index column cell -->
-                                    <td class="<?php echo esc_attr($options['index_cell_class']); ?>"><?php echo esc_html($rowIndex + 1); ?></td>
+                                    <td class="<?php echo esc_attr($options['index_cell_class']); ?>"><?php echo esc_html($visibleRowCounter); ?></td>
                                     <?php foreach ($columns as $key => $column): ?>
                                         <?php
                                         $cellClass = $options['cell_base_class'];
@@ -186,7 +301,7 @@ class KIT_Unified_Table
                                             }
 
                                             if (is_array($column) && isset($column['callback'])) {
-                                                echo $column['callback']($value, $row, $rowIndex);
+                                                echo $column['callback']($value, $row, $visibleRowCounter - 1);
                                             } else {
                                                 echo esc_html($value);
                                             }
@@ -240,50 +355,132 @@ class KIT_Unified_Table
         <!-- Infinite scroll specific JavaScript -->
         <script>
             document.addEventListener('DOMContentLoaded', function() {
-                // Search functionality - client-side search for infinite scroll
-                if (<?php echo $options['searchable'] ? 'true' : 'false'; ?>) {
-                    const searchInput = document.getElementById('infinite-table-search');
-                    if (searchInput) {
-                        searchInput.addEventListener('input', function() {
-                            const searchTerm = this.value.toLowerCase().trim();
-                            const table = document.getElementById('<?php echo esc_js($table_id); ?>');
-                            const rows = table ? table.querySelectorAll('tbody tr') : [];
-                            let visibleIndex = 1;
+                const table = document.getElementById('<?php echo esc_js($table_id); ?>');
+                if (!table) {
+                    return;
+                }
 
-                            rows.forEach(row => {
-                                const text = row.textContent.toLowerCase();
-                                if (searchTerm === '' || text.includes(searchTerm)) {
-                                    row.style.display = '';
-                                    // Update index for visible rows
-                                    const indexCell = row.children[0];
-                                    if (indexCell && indexCell.tagName === 'TD') {
-                                        indexCell.textContent = visibleIndex++;
-                                    }
-                                } else {
-                                    row.style.display = 'none';
-                                }
-                            });
-                        });
+                const collapsedGroups = new Set();
+                const searchInput = <?php echo $options['searchable'] ? "document.getElementById('infinite-table-search')" : 'null'; ?>;
+                const clearSearchBtn = <?php echo $options['searchable'] ? "document.getElementById('clear-infinite-search')" : 'null'; ?>;
 
-                        const clearSearchBtn = document.getElementById('clear-infinite-search');
-                        if (clearSearchBtn) {
-                            clearSearchBtn.addEventListener('click', function() {
-                                searchInput.value = '';
-                                // Re-index all rows when clearing search
-                                const table = document.getElementById('<?php echo esc_js($table_id); ?>');
-                                const rows = table ? table.querySelectorAll('tbody tr') : [];
-                                rows.forEach((row, index) => {
-                                    row.style.display = '';
-                                    const indexCell = row.children[0];
-                                    if (indexCell && indexCell.tagName === 'TD') {
-                                        indexCell.textContent = index + 1;
-                                    }
-                                });
-                                searchInput.dispatchEvent(new Event('input'));
-                            });
+                const reindexRows = () => {
+                    let index = 1;
+                    const rows = table.querySelectorAll('tbody tr');
+                    rows.forEach(row => {
+                        if (row.dataset.groupRow === '1') {
+                            return;
+                        }
+                        if (row.style.display === 'none') {
+                            return;
+                        }
+                        const indexCell = row.children[0];
+                        if (indexCell && indexCell.tagName === 'TD') {
+                            indexCell.textContent = index++;
+                        }
+                    });
+                };
+
+                const applyFilters = () => {
+                    const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
+                    const rows = table.querySelectorAll('tbody tr');
+                    let pendingGroupRow = null;
+                    let pendingGroupHasMatch = false;
+
+                    rows.forEach(row => {
+                        const isGroupRow = row.dataset.groupRow === '1';
+
+                        if (isGroupRow) {
+                            if (pendingGroupRow) {
+                                pendingGroupRow.style.display = pendingGroupHasMatch ? '' : 'none';
+                            }
+                            pendingGroupRow = row;
+                            pendingGroupHasMatch = false;
+                            row.style.display = '';
+                            return;
+                        }
+
+                        const groupId = row.dataset.groupId || '';
+                        const isCollapsed = groupId !== '' && collapsedGroups.has(groupId);
+                        const text = row.textContent.toLowerCase();
+                        const matchesSearch = searchTerm === '' || text.includes(searchTerm);
+
+                        if (matchesSearch) {
+                            pendingGroupHasMatch = true;
+                            if (isCollapsed) {
+                                row.style.display = 'none';
+                            } else {
+                                row.style.display = '';
+                            }
+                        } else {
+                            row.style.display = 'none';
+                        }
+                    });
+
+                    if (pendingGroupRow) {
+                        pendingGroupRow.style.display = pendingGroupHasMatch ? '' : 'none';
+                    }
+
+                    reindexRows();
+                };
+
+                const updateGroupToggleVisual = (headerRow, isCollapsed) => {
+                    if (!headerRow) {
+                        return;
+                    }
+                    headerRow.dataset.collapsed = isCollapsed ? '1' : '0';
+                    const toggleBtn = headerRow.querySelector('[data-group-toggle]');
+                    if (toggleBtn) {
+                        toggleBtn.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+                        const icon = toggleBtn.querySelector('.group-toggle-icon');
+                        if (icon) {
+                            icon.style.transform = isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)';
                         }
                     }
+                };
+
+                const groupHeaders = table.querySelectorAll('tbody tr[data-group-row="1"]');
+                groupHeaders.forEach(headerRow => {
+                    const groupId = headerRow.dataset.groupId;
+                    if (!groupId) {
+                        return;
+                    }
+                    const defaultCollapsed = headerRow.dataset.collapsed === '1';
+                    if (defaultCollapsed) {
+                        collapsedGroups.add(groupId);
+                    }
+                    updateGroupToggleVisual(headerRow, collapsedGroups.has(groupId));
+
+                    const toggleBtn = headerRow.querySelector('[data-group-toggle]');
+                    if (toggleBtn) {
+                        toggleBtn.addEventListener('click', function(event) {
+                            event.preventDefault();
+                            const currentlyCollapsed = collapsedGroups.has(groupId);
+                            if (currentlyCollapsed) {
+                                collapsedGroups.delete(groupId);
+                            } else {
+                                collapsedGroups.add(groupId);
+                            }
+                            updateGroupToggleVisual(headerRow, collapsedGroups.has(groupId));
+                            applyFilters();
+                        });
+                    }
+                });
+
+                if (searchInput) {
+                    searchInput.addEventListener('input', applyFilters);
                 }
+
+                if (clearSearchBtn) {
+                    clearSearchBtn.addEventListener('click', function() {
+                        if (searchInput) {
+                            searchInput.value = '';
+                        }
+                        applyFilters();
+                    });
+                }
+
+                applyFilters();
 
                 // Select All functionality for infinite scroll
                 if (<?php echo $options['selectable'] ? 'true' : 'false'; ?>) {
@@ -329,8 +526,7 @@ class KIT_Unified_Table
 
                 // Sorting functionality - client-side sorting for infinite scroll
                 if (<?php echo $options['sortable'] ? 'true' : 'false'; ?>) {
-                    const table = document.getElementById('<?php echo esc_js($table_id); ?>');
-                    if (!table) return;
+                    if (table.dataset && table.dataset.hasGroupRows === '1') return;
                     
                     const sortHeaders = table.querySelectorAll('.sortable-header');
                     let currentSortColumn = '';

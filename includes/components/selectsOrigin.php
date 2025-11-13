@@ -25,6 +25,19 @@
         }
     }
 
+    // Fallback to top-level waybill values if present
+    if (!$origin_city_id && isset($waybill['origin_city_id'])) {
+        $origin_city_id = intval($waybill['origin_city_id']);
+    } elseif (!$origin_city_id && isset($waybill['origin_city'])) {
+        $origin_city_id = intval($waybill['origin_city']);
+    }
+
+    if (!$origin_country_id && isset($waybill['origin_country_id'])) {
+        $origin_country_id = intval($waybill['origin_country_id']);
+    } elseif (!$origin_country_id && isset($waybill['origin_country'])) {
+        $origin_country_id = intval($waybill['origin_country']);
+    }
+
     // Determine default country ID - prioritize delivery form data, then existing waybill data, then customer data, then default to 1
     $defaultCountryId = ($origin_country_id) ? $origin_country_id : 1;
 
@@ -92,3 +105,5 @@
     echo KIT_Deliveries::selectAllCitiesByCountry('origin_city', 'origin_city_select', $defaultCountryId, $defaultCityId);
     ?>
 </div>
+<input type="hidden" id="origin_country_initial" value="<?= esc_attr($defaultCountryId); ?>">
+<input type="hidden" id="origin_city_initial" value="<?= esc_attr($origin_city_id ?: ''); ?>">
