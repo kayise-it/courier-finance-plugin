@@ -63,12 +63,17 @@ class KIT_Customers
             $company_name = 'Individual';
         }
 
+        // Handle email - convert empty string to null for database
+        $email_address = isset($cust['email_address']) && trim($cust['email_address']) !== ''
+            ? sanitize_email(trim($cust['email_address']))
+            : null;
+
         $cust_data = [
             'cust_id'  => rand(1000, 9999),
             'name'     => sanitize_text_field($cust['name'] ?? $cust['customer_name'] ?? ''),
             'surname'  => sanitize_text_field($cust['surname'] ?? $cust['customer_surname'] ?? ''),
             'cell'     => sanitize_text_field($cust['cell'] ?? ''),
-            'email_address'  => sanitize_text_field($cust['email_address'] ?? ''),
+            'email_address'  => $email_address,
             'address'  => sanitize_text_field($cust['address'] ?? ''),
             'country_id'  => intval($cust['country_id'] ?? 0),
             'city_id'  => $city_id,
@@ -77,13 +82,13 @@ class KIT_Customers
         ];
 
         // Insert into DB
-        // Specify data types to allow NULL for city_id
+        // Specify data types to allow NULL for city_id and email_address
         $inserted = $wpdb->insert($table_name, $cust_data, [
             '%d',
             '%s',
             '%s',
             '%s',
-            '%s',
+            ($email_address === null ? null : '%s'),
             '%s',
             '%d',
             ($city_id === null ? null : '%d'),
@@ -127,12 +132,16 @@ class KIT_Customers
             $update_data['address'] = sanitize_text_field($data['address']);
         }
         if (isset($data['email_address'])) {
-            $update_data['email_address'] = sanitize_text_field($data['email_address']);
+            // Handle email - convert empty string to null for database
+            $email_value = trim($data['email_address']);
+            $update_data['email_address'] = $email_value !== '' ? sanitize_email($email_value) : null;
         }
-        if (isset($data['country_id'])) {
+        // Only update country_id if a valid value (> 0) is provided
+        if (isset($data['country_id']) && intval($data['country_id']) > 0) {
             $update_data['country_id'] = intval($data['country_id']);
         }
-        if (isset($data['city_id'])) {
+        // Only update city_id if a valid value (> 0) is provided
+        if (isset($data['city_id']) && intval($data['city_id']) > 0) {
             $update_data['city_id'] = intval($data['city_id']);
         }
 
@@ -154,7 +163,7 @@ class KIT_Customers
             wp_die('Nonce verification failed');
         }
 
-        $cust_id = intval($_POST['cust_id']);
+        $cust_id = intval($_POST['cust_id'] ?? $_POST['customer_id'] ?? 0);
 
         $data = [
             'company_name' => sanitize_text_field($_POST['company_name']),
@@ -163,9 +172,31 @@ class KIT_Customers
             'cell'    => sanitize_text_field($_POST['cell']),
             'address' => sanitize_textarea_field($_POST['address']),
             'email_address' => sanitize_text_field($_POST['email_address']),
-            'country_id' => intval($_POST['country_id']),
-            'city_id' => intval($_POST['city_id']),
         ];
+
+        // Handle field name mismatch: form submits 'origin_country' and 'origin_city' 
+        // Only include if valid values are provided (don't overwrite with 0)
+        $country_id_value = null;
+        if (isset($_POST['origin_country']) && $_POST['origin_country'] !== '' && $_POST['origin_country'] !== '0') {
+            $country_id_value = intval($_POST['origin_country']);
+        } elseif (isset($_POST['country_id']) && $_POST['country_id'] !== '' && $_POST['country_id'] !== '0') {
+            $country_id_value = intval($_POST['country_id']);
+        }
+        
+        if ($country_id_value !== null && $country_id_value > 0) {
+            $data['country_id'] = $country_id_value;
+        }
+        
+        $city_id_value = null;
+        if (isset($_POST['origin_city']) && $_POST['origin_city'] !== '' && $_POST['origin_city'] !== '0') {
+            $city_id_value = intval($_POST['origin_city']);
+        } elseif (isset($_POST['city_id']) && $_POST['city_id'] !== '' && $_POST['city_id'] !== '0') {
+            $city_id_value = intval($_POST['city_id']);
+        }
+        
+        if ($city_id_value !== null && $city_id_value > 0) {
+            $data['city_id'] = $city_id_value;
+        }
 
         // 🔥 Call your method here
         $updated = KIT_Customers::update_customer($cust_id, $data);
@@ -174,8 +205,7 @@ class KIT_Customers
         $id = KIT_Customers::idCustomer($cust_id);
 
         if ($updated) {
-            //Send a message to the user that the customer was updated successfully
-            $msg = '<div class="bg-green-100 text-green-800 p-4 rounded mb-4">Customer updated successfully. 🗑️</div>';
+            // Redirect with success parameter (toast will be shown on redirected page)
             wp_redirect(admin_url('admin.php?page=08600-customers&view_customer=' . $cust_id . '&updated=1'));
             exit;
         }
@@ -196,9 +226,9 @@ class KIT_Customers
         }
 
         // Check if required fields are present
-        if (empty($_POST['name']) || empty($_POST['surname']) || empty($_POST['cell']) || empty($_POST['company_name']) || empty($_POST['email_address']) || empty($_POST['address'])) {
+        if (empty($_POST['name']) || empty($_POST['surname']) || empty($_POST['cell']) || empty($_POST['company_name']) || empty($_POST['address'])) {
             error_log('Customer AJAX missing required fields');
-            wp_send_json_error(['message' => 'Please fill in all required fields (Company Name, First Name, Last Name, Cell, Email, Address)']);
+            wp_send_json_error(['message' => 'Please fill in all required fields (Company Name, First Name, Last Name, Cell, Address)']);
         }
 
         global $wpdb;
@@ -216,13 +246,18 @@ class KIT_Customers
             $company_name = 'Individual';
         }
 
+        // Handle email - convert empty string to null for database
+        $email_address = isset($_POST['email_address']) && trim($_POST['email_address']) !== ''
+            ? sanitize_email(trim($_POST['email_address']))
+            : null;
+
         $cust_data = [
             'cust_id'  => $cust_id,
             'name'     => sanitize_text_field($_POST['name'] ?? ''),
             'surname'  => sanitize_text_field($_POST['surname'] ?? ''),
             'cell'     => sanitize_text_field($_POST['cell'] ?? ''),
             'address'  => sanitize_text_field($_POST['address'] ?? ''),
-            'email_address' => sanitize_text_field($_POST['email_address'] ?? ''),
+            'email_address' => $email_address,
             'company_name' => $company_name,
             'country_id' => intval($_POST['country_id'] ?? 0),
             'city_id' => intval($_POST['city_id'] ?? 0),
@@ -276,6 +311,169 @@ class KIT_Customers
         }
     }
 
+    /**
+     * Render customer form for modal or inline use
+     * 
+     * @param array $atts Array of attributes:
+     *   - form_action: Form action URL
+     *   - customer: Customer data (null for new)
+     *   - is_modal: Whether rendered in modal (boolean)
+     * @return string HTML form content
+     */
+    public static function render_customer_form($atts = [])
+    {
+        $atts = shortcode_atts([
+            'form_action' => admin_url('admin-post.php'),
+            'customer' => null,
+            'is_modal' => false,
+        ], $atts);
+
+        $form_action = esc_url($atts['form_action']);
+        $customer = $atts['customer'];
+        $is_modal = $atts['is_modal'];
+
+        // Get countries
+        require_once plugin_dir_path(__FILE__) . '../deliveries/deliveries-functions.php';
+        $countries = KIT_Deliveries::getCountriesObject();
+
+        ob_start();
+?>
+        <form id="add-customer-form" method="post" action="<?php echo $form_action; ?>" class="space-y-6">
+            <input type="hidden" name="action" value="add_customer">
+            <?php wp_nonce_field('add_customer_nonce', 'customer_nonce'); ?>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label for="company_name" class="block text-sm font-medium text-gray-700 mb-2">Company Name *</label>
+                    <input type="text" name="company_name" id="company_name" required
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        value="<?php echo esc_attr($customer['company_name'] ?? $_POST['company_name'] ?? ''); ?>">
+                </div>
+
+                <div>
+                    <label for="name" class="block text-sm font-medium text-gray-700 mb-2">First Name *</label>
+                    <input type="text" name="name" id="name" required
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        value="<?php echo esc_attr($customer['name'] ?? $_POST['name'] ?? ''); ?>">
+                </div>
+
+                <div>
+                    <label for="surname" class="block text-sm font-medium text-gray-700 mb-2">Last Name *</label>
+                    <input type="text" name="surname" id="surname" required
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        value="<?php echo esc_attr($customer['surname'] ?? $_POST['surname'] ?? ''); ?>">
+                </div>
+
+                <div>
+                    <label for="cell" class="block text-sm font-medium text-gray-700 mb-2">Cell Phone *</label>
+                    <input type="tel" name="cell" id="cell" required
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        value="<?php echo esc_attr($customer['cell'] ?? $_POST['cell'] ?? ''); ?>">
+                </div>
+
+                <div>
+                    <label for="email_address" class="block text-sm font-medium text-gray-700 mb-2">Email Address *</label>
+                    <input type="email" name="email_address" id="email_address" required
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        value="<?php echo esc_attr($customer['email_address'] ?? $_POST['email_address'] ?? ''); ?>">
+                </div>
+
+                <div>
+                    <label for="country_id" class="block text-sm font-medium text-gray-700 mb-2">Country</label>
+                    <select name="country_id" id="country_id"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500">
+                        <option value="">Select Country</option>
+                        <?php foreach ($countries as $country): ?>
+                            <option value="<?php echo esc_attr($country->id); ?>"
+                                <?php selected($customer['country_id'] ?? $_POST['country_id'] ?? '', $country->id); ?>>
+                                <?php echo esc_html($country->country_name); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="city_id" class="block text-sm font-medium text-gray-700 mb-2">City</label>
+                    <select name="city_id" id="city_id"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500">
+                        <option value="">Select City</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="vat_number" class="block text-sm font-medium text-gray-700 mb-2">VAT Number</label>
+                    <input type="text" name="vat_number" id="vat_number"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        placeholder="VAT registration number"
+                        value="<?php echo esc_attr($customer['vat_number'] ?? $_POST['vat_number'] ?? ''); ?>">
+                </div>
+            </div>
+
+            <div>
+                <label for="address" class="block text-sm font-medium text-gray-700 mb-2">Address *</label>
+                <textarea name="address" id="address" rows="3" required
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"><?php echo esc_textarea($customer['address'] ?? $_POST['address'] ?? ''); ?></textarea>
+            </div>
+
+            <div class="flex justify-end gap-3 pt-6 border-t border-gray-200">
+                <?php if (!$is_modal): ?>
+                    <a href="<?php echo admin_url('admin.php?page=08600-customers'); ?>"
+                        class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                        Cancel
+                    </a>
+                <?php endif; ?>
+                <button type="submit"
+                    class="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    Save Customer
+                </button>
+            </div>
+        </form>
+
+        <script>
+            jQuery(document).ready(function($) {
+                // Handle country change to load cities
+                $('#country_id').on('change', function() {
+                    var countryId = $(this).val();
+                    var citySelect = $('#city_id');
+
+                    citySelect.html('<option value="">Loading cities...</option>');
+
+                    if (countryId) {
+                        $.ajax({
+                            url: ajaxurl || '/wp-admin/admin-ajax.php',
+                            type: 'POST',
+                            data: {
+                                action: 'get_cities_by_country',
+                                country_id: countryId,
+                                nonce: '<?php echo wp_create_nonce('customer_nonce'); ?>'
+                            },
+                            success: function(response) {
+                                citySelect.html('<option value="">Select City</option>');
+                                if (response.success && response.data) {
+                                    $.each(response.data, function(index, city) {
+                                        citySelect.append($('<option>', {
+                                            value: city.id,
+                                            text: city.city_name
+                                        }));
+                                    });
+                                }
+                            },
+                            error: function() {
+                                citySelect.html('<option value="">Error loading cities</option>');
+                            }
+                        });
+                    } else {
+                        citySelect.html('<option value="">Select City</option>');
+                    }
+                });
+
+                // Form will submit normally - server handles redirect
+            });
+        </script>
+    <?php
+        return ob_get_clean();
+    }
+
     //After the new customer is saved, go back to the customer table and update the cust_id to the new customer id
     public static function update_customer_id($customer_id)
     {
@@ -302,11 +500,19 @@ class KIT_Customers
         $deleted = $wpdb->delete($customers_table, ['cust_id' => $customer_id]);
 
         if ($deleted) {
-            echo '<div class="bg-red-100 text-red-800 p-4 rounded mb-4">Customer deleted successfully. 🗑️</div>';
+            if (!class_exists('KIT_Toast')) {
+                require_once plugin_dir_path(__FILE__) . '../components/toast.php';
+            }
+            KIT_Toast::ensure_toast_loads();
+            echo KIT_Toast::success('Customer deleted successfully.', 'Customer Deleted');
             wp_redirect(admin_url('admin.php?page=customers-dashboard'));
             exit;
         } else {
-            echo '<div class="bg-yellow-100 text-yellow-800 p-4 rounded mb-4">Customer not found or already deleted.</div>';
+            if (!class_exists('KIT_Toast')) {
+                require_once plugin_dir_path(__FILE__) . '../components/toast.php';
+            }
+            KIT_Toast::ensure_toast_loads();
+            echo KIT_Toast::warning('Customer not found or already deleted.', 'Warning');
         }
     }
 
@@ -314,7 +520,28 @@ class KIT_Customers
     {
         global $wpdb;
         $table_name = $wpdb->prefix . 'kit_customers';
-        return $wpdb->get_results("SELECT * FROM $table_name");
+        $waybills_table = $wpdb->prefix . 'kit_waybills';
+        return $wpdb->get_results("
+        SELECT 
+            c.id, 
+            c.cust_id, 
+            c.name as customer_name, 
+            c.surname as customer_surname, 
+            c.email_address, 
+            c.cell, 
+            c.address, 
+            c.country_id, 
+            c.city_id,
+            country.country_name,
+            city.city_name,
+            c.company_name,
+            COUNT(w.id) as total_waybills
+        FROM $table_name c
+        LEFT JOIN {$wpdb->prefix}kit_operating_countries country ON c.country_id = country.id
+        LEFT JOIN {$wpdb->prefix}kit_operating_cities city ON c.city_id = city.id
+        LEFT JOIN $waybills_table w ON w.customer_id = c.cust_id
+        GROUP BY c.id, c.cust_id, c.name, c.surname, c.email_address, c.cell, c.address, c.country_id, c.city_id, country.country_name, city.city_name, c.company_name
+        ");
     }
 
     /**
@@ -560,12 +787,46 @@ class KIT_Customers
             return;
         }
 
+        // Handle download PDF customer summary action
+        if (isset($_GET['download_pdf_customer_summary']) && !empty($_GET['download_pdf_customer_summary'])) {
+            $customer_id = intval($_GET['download_pdf_customer_summary']);
+
+            // Get all waybill numbers for this customer
+            global $wpdb;
+            $waybills_table = $wpdb->prefix . 'kit_waybills';
+            $waybill_nos = $wpdb->get_col($wpdb->prepare(
+                "SELECT waybill_no FROM $waybills_table WHERE customer_id = %d ORDER BY waybill_no ASC",
+                $customer_id
+            ));
+
+            if (!empty($waybill_nos)) {
+                // Use pdf-customer-bulk.php to generate customer summary with all waybills
+                // Go up 2 levels from includes/customers/ to plugin root
+                $plugin_url = dirname(dirname(plugin_dir_url(__FILE__)));
+                $pdf_url = add_query_arg([
+                    'selected_ids' => implode(',', $waybill_nos),
+                    'customer_id' => $customer_id
+                ], $plugin_url . '/pdf-customer-bulk.php');
+
+                wp_redirect($pdf_url);
+                exit;
+            } else {
+                // No waybills found for this customer
+                if (class_exists('KIT_Toast')) {
+                    KIT_Toast::ensure_toast_loads();
+                    echo KIT_Toast::error('No waybills found for this customer.', 'No Waybills');
+                }
+                wp_redirect(admin_url('admin.php?page=08600-customers&view_customer=' . $customer_id));
+                exit;
+            }
+        }
+
         // Handle customer update form submission
         if (isset($_POST['action']) && $_POST['action'] === 'update_customer') {
             if (wp_verify_nonce($_POST['cust_update_nonce'], 'update_customer_nonce')) {
                 $customer_id = intval($_POST['customer_id']);
 
-                // Update customer data
+                // Update customer data - build base array
                 $update_data = array(
                     'name' => sanitize_text_field($_POST['name']),
                     'surname' => sanitize_text_field($_POST['surname']),
@@ -573,10 +834,33 @@ class KIT_Customers
                     'email_address' => sanitize_email($_POST['email_address']),
                     'address' => sanitize_textarea_field($_POST['address']),
                     'company_name' => sanitize_text_field($_POST['company_name']),
-                    'country_id' => intval($_POST['country_id']),
-                    'city_id' => intval($_POST['city_id']),
                     'vat_number' => sanitize_text_field($_POST['vat_number'])
                 );
+
+                // Handle field name mismatch: form submits 'origin_country' and 'origin_city' 
+                // Only update if a non-empty value is provided (don't overwrite with 0)
+                // Check both field name formats and only update if we have a valid value
+                $country_id_value = null;
+                if (isset($_POST['origin_country']) && $_POST['origin_country'] !== '' && $_POST['origin_country'] !== '0') {
+                    $country_id_value = intval($_POST['origin_country']);
+                } elseif (isset($_POST['country_id']) && $_POST['country_id'] !== '' && $_POST['country_id'] !== '0') {
+                    $country_id_value = intval($_POST['country_id']);
+                }
+                
+                if ($country_id_value !== null && $country_id_value > 0) {
+                    $update_data['country_id'] = $country_id_value;
+                }
+                
+                $city_id_value = null;
+                if (isset($_POST['origin_city']) && $_POST['origin_city'] !== '' && $_POST['origin_city'] !== '0') {
+                    $city_id_value = intval($_POST['origin_city']);
+                } elseif (isset($_POST['city_id']) && $_POST['city_id'] !== '' && $_POST['city_id'] !== '0') {
+                    $city_id_value = intval($_POST['city_id']);
+                }
+                
+                if ($city_id_value !== null && $city_id_value > 0) {
+                    $update_data['city_id'] = $city_id_value;
+                }
 
                 $updated = $wpdb->update(
                     $wpdb->prefix . 'kit_customers',
@@ -617,7 +901,11 @@ class KIT_Customers
 
         // Show success message if customer was just added
         if (isset($_GET['customer_added']) && $_GET['customer_added'] == '1') {
-            echo '<div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">Customer added successfully! 🎉</div>';
+            if (!class_exists('KIT_Toast')) {
+                require_once plugin_dir_path(__FILE__) . '../components/toast.php';
+            }
+            KIT_Toast::ensure_toast_loads();
+            echo KIT_Toast::success('Customer added successfully!', 'Customer Added');
         }
 
         // Overview
@@ -635,40 +923,47 @@ class KIT_Customers
         // UI Shell
 
 
-?>
+    ?>
         <div class="wrap" style="max-width: 100vw; overflow-x: hidden;">
-            <?php if (isset($_GET['deleted']) && $_GET['deleted'] == '1'): ?>
-                <div class="notice notice-success is-dismissible">
-                    <p>
-                        Customer deleted successfully!
-                        <?php if (isset($_GET['waybills_deleted']) && $_GET['waybills_deleted'] > 0): ?>
-                            Also deleted <?php echo intval($_GET['waybills_deleted']); ?> waybill(s) and their associated items.
-                        <?php endif; ?>
-                    </p>
-                </div>
-            <?php endif; ?>
             <?php
+            // Include modal component
+            require_once plugin_dir_path(__FILE__) . '../components/modal.php';
+
+            // Render customer form for modal
+            $customer_form_content = self::render_customer_form();
+
+            // Render Add Customer Modal
+            $add_customer_modal = KIT_Modal::render(
+                'add-customer-modal',
+                'Add New Customer',
+                $customer_form_content,
+                '3xl',
+                true,
+                'Add Customer'
+            );
+
             echo KIT_Commons::showingHeader([
                 'title' => 'Customers Dashboard',
-                'desc'  => KIT_Commons::renderButton('Add Customer', 'primary', 'md', ['href' => admin_url('admin.php?page=08600-add-customer'), 'gradient' => true]),
+                'desc'  => '',
+                'content' => $add_customer_modal,
                 'icon' => KIT_Commons::icon('user-group'),
             ]);
-            
+
             // Sort customers by name A-Z by default (only if no sort parameter is set)
             if (!isset($_GET['orderby']) || empty($_GET['orderby'])) {
-                usort($customers, function($a, $b) {
+                usort($customers, function ($a, $b) {
                     // Handle both customer_name/customer_surname and name/surname formats
                     $name_a = trim(($a->customer_name ?? $a->name ?? '') . ' ' . ($a->customer_surname ?? $a->surname ?? ''));
                     $name_b = trim(($b->customer_name ?? $b->name ?? '') . ' ' . ($b->customer_surname ?? $b->surname ?? ''));
                     return strcasecmp($name_a, $name_b);
                 });
             }
-            
+
             // Get current page and items per page for pagination
             $current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
             $items_per_page = isset($_GET['items_per_page']) ? max(5, min(100, intval($_GET['items_per_page']))) : 10;
 
-            // Define columns - Name first, then Company, then Country (styled like waybills table)
+            // Define columns - Name first, then Company, then Country, then Total Waybills (styled like waybills table)
             $columns = [
                 'customer_name' => [
                     'label' => 'Name',
@@ -705,13 +1000,28 @@ class KIT_Customers
                     'header_class' => 'w-32 text-left max-w-32',
                     'cell_class' => 'text-left w-32 max-w-32 text-xs',
                 ],
+                'total_waybills' => [
+                    'label' => 'Total Waybills',
+                    'sortable' => true,
+                    'searchable' => false,
+                    'header_class' => 'w-24 text-center max-w-24',
+                    'cell_class' => 'text-center w-24 max-w-24 text-xs',
+                    'callback' => function ($value, $row, $rowIndex) {
+                        $count = 0;
+                        if (is_object($row)) {
+                            $count = intval($row->total_waybills ?? 0);
+                        } elseif (is_array($row)) {
+                            $count = intval($row['total_waybills'] ?? 0);
+                        }
+                        return '<span class="font-semibold">' . esc_html($count) . '</span>';
+                    }
+                ],
             ];
 
             // Render table with fallback if unified table class is not available
             if (class_exists('KIT_Unified_Table')) {
 
                 echo KIT_Unified_Table::infinite($customers, $columns, [
-                    'title' => 'Customers',
                     'actions' => [
                         [
                             'label' => '<span class="sr-only">Edit</span>' . KIT_Icon::svg('edit', 16),
@@ -797,79 +1107,167 @@ function zamazama($customer = null)
 
 function theForm($customer = null)
 {
+    // Icon SVG definitions - Following brand guidelines: stroke-width="2", text-gray-500 for input icons
+    // Brand colors: Primary #2563eb, Secondary #111827, Accent #10b981
+    // Icons use currentColor to inherit text color class
+    $icon_company = '<svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-12 18h12" /></svg>';
+    $icon_globe = '<svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.944 11.944 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m-2.284 0A17.919 17.919 0 0112 15.75c-3.314 0-6.288-.815-8.432-2.497M15.432 14.25A17.919 17.919 0 0112 15.75" /></svg>';
+    $icon_user = '<svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" /></svg>';
+    $icon_phone = '<svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" /></svg>';
+    $icon_email = '<svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" /></svg>';
+    $icon_map = '<svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" /></svg>';
 
 ?>
-    <div class="grid grid-cols-1 gap-4">
-        <input type="hidden" name="cust_id" id="cust_id" value="<?= esc_attr($customer['cust_id'] ?? '') ?>">
-        <div>
-            <?= KIT_Commons::Linput([
-                'label' => 'Company Name',
-                'name'  => 'company_name',
-                'id'    => 'company_name',
-                'type'  => 'text',
-                'value' => $customer['company_name'] ?? '',
-                'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500',
-                'special' => ''
-            ]); ?>
-        </div>
-        <div>
-            <?php require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/selectsOrigin.php'); ?>
-            <?= KIT_Commons::Linput([
-                'label' => 'Customer Name',
-                'name'  => 'name',
-                'id'    => 'customer_name',
-                'type'  => 'text',
-                'value' => $customer['name'] ?? '',
-                'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500',
-                'special' => ''
-            ]); ?>
-        </div>
-        <div>
-            <?= KIT_Commons::Linput([
-                'label' => 'Customer Surname',
-                'name'  => 'surname',
-                'id'    => 'customer_surname',
-                'type'  => 'text',
-                'value' => $customer['surname'] ?? '',
-                'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500',
-                'special' => ''
-            ]); ?>
-        </div>
-        <div>
-            <?= KIT_Commons::Linput([
-                'label' => 'Cell',
-                'name'  => 'cell',
-                'id'    => 'cell',
-                'type'  => 'text',
-                'value' => $customer['cell'] ?? '',
-                'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500',
-                'special' => ''
-            ]); ?>
-        </div>
-        <div>
-            <?= KIT_Commons::Linput([
-                'label' => 'Address',
-                'name'  => 'address',
-                'id'    => 'address',
-                'type'  => 'text',
-                'value' => $customer['address'] ?? '',
-                'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500',
-                'special' => ''
-            ]); ?>
-        </div>
-        <div>
-            <?= KIT_Commons::Linput([
-                'label' => 'Email',
-                'name'  => 'email_address',
-                'id'    => 'email_address',
-                'type'  => 'text',
-                'value' => $customer['email_address'] ?? '',
-                'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500',
-                'special' => ''
-            ]); ?>
-
+    <input type="hidden" name="cust_id" id="cust_id" value="<?= esc_attr($customer['cust_id'] ?? '') ?>">
+    
+    <div class="space-y-6">
+        <!-- Company Information Section -->
+        <div class="bg-gray-50 rounded-xl p-6 border border-gray-200 transition-all duration-200 hover:shadow-md hover:border-gray-300">
+            <div class="flex items-center gap-2 mb-5 pb-3 border-b border-gray-200">
+                <div class="text-blue-600"><?php echo $icon_company; ?></div>
+                <h2 class="text-lg font-semibold text-gray-800">Company Information</h2>
+            </div>
+            <div class="space-y-4">
+                <?= KIT_Commons::Linput([
+                    'label' => 'Company Name',
+                    'name'  => 'company_name',
+                    'id'    => 'company_name',
+                    'type'  => 'text',
+                    'value' => $customer['company_name'] ?? '',
+                    'class' => 'w-full pr-4 py-3 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 hover:border-gray-400',
+                    'icon' => $icon_company,
+                    'special' => ''
+                ]); ?>
+            </div>
         </div>
 
+        <!-- Location Section -->
+        <div class="bg-gray-50 rounded-xl p-6 border border-gray-200 transition-all duration-200 hover:shadow-md hover:border-gray-300">
+            <div class="flex items-center gap-2 mb-5 pb-3 border-b border-gray-200">
+                <div class="text-blue-600"><?php echo $icon_globe; ?></div>
+                <h2 class="text-lg font-semibold text-gray-800">Location</h2>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <?php
+                // Get customer location data
+                $defaultCountryId = isset($customer['country_id']) && !empty($customer['country_id']) ? intval($customer['country_id']) : 1;
+                $defaultCityId = isset($customer['city_id']) && !empty($customer['city_id']) ? intval($customer['city_id']) : 1;
+                
+                // Country Select
+                ?>
+                <div class="relative">
+                    <label for="origin_country_select" class="<?= KIT_Commons::labelClass() ?>">Origin Country</label>
+                    <?php
+                    $country_select = KIT_Deliveries::selectAllCountries('origin_country', 'origin_country_select', $defaultCountryId, "required", 'origin', []);
+                    // Enhance the select styling
+                    $country_select = str_replace(
+                        'class="' . KIT_Commons::selectClass() . '"',
+                        'class="' . KIT_Commons::selectClass() . ' pl-12 pr-4 py-3 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 hover:border-gray-400"',
+                        $country_select
+                    );
+                    echo $country_select;
+                    ?>
+                    <div class="absolute left-3 flex items-center pointer-events-none z-10" style="top: calc(1.5rem + 0.25rem); height: 3rem;">
+                        <?php echo $icon_globe; ?>
+                    </div>
+                </div>
+                
+                <?php
+                // City Select
+                ?>
+                <div class="relative">
+                    <label for="origin_city_select" class="<?= KIT_Commons::labelClass() ?>">Origin City</label>
+                    <?php
+                    $city_select = KIT_Deliveries::selectAllCitiesByCountry('origin_city', 'origin_city_select', $defaultCountryId, $defaultCityId);
+                    // Enhance the select styling
+                    $city_select = str_replace(
+                        'class="' . KIT_Commons::selectClass() . '"',
+                        'class="' . KIT_Commons::selectClass() . ' pl-12 pr-4 py-3 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 hover:border-gray-400"',
+                        $city_select
+                    );
+                    echo $city_select;
+                    ?>
+                    <div class="absolute left-3 flex items-center pointer-events-none z-10" style="top: calc(1.5rem + 0.25rem); height: 3rem;">
+                        <?php echo $icon_globe; ?>
+                    </div>
+                </div>
+                
+                <input type="hidden" id="origin_country_initial" value="<?= esc_attr($defaultCountryId); ?>">
+                <input type="hidden" id="origin_city_initial" value="<?= esc_attr($defaultCityId); ?>">
+            </div>
+        </div>
+
+        <!-- Personal Information Section -->
+        <div class="bg-gray-50 rounded-xl p-6 border border-gray-200 transition-all duration-200 hover:shadow-md hover:border-gray-300">
+            <div class="flex items-center gap-2 mb-5 pb-3 border-b border-gray-200">
+                <div class="text-blue-600"><?php echo $icon_user; ?></div>
+                <h2 class="text-lg font-semibold text-gray-800">Personal Information</h2>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <?= KIT_Commons::Linput([
+                    'label' => 'Customer Name',
+                    'name'  => 'name',
+                    'id'    => 'customer_name',
+                    'type'  => 'text',
+                    'value' => $customer['name'] ?? '',
+                    'class' => 'w-full pr-4 py-3 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 hover:border-gray-400',
+                    'icon' => $icon_user,
+                    'special' => ''
+                ]); ?>
+                <?= KIT_Commons::Linput([
+                    'label' => 'Customer Surname',
+                    'name'  => 'surname',
+                    'id'    => 'customer_surname',
+                    'type'  => 'text',
+                    'value' => $customer['surname'] ?? '',
+                    'class' => 'w-full pr-4 py-3 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 hover:border-gray-400',
+                    'icon' => $icon_user,
+                    'special' => ''
+                ]); ?>
+            </div>
+        </div>
+
+        <!-- Contact Information Section -->
+        <div class="bg-gray-50 rounded-xl p-6 border border-gray-200 transition-all duration-200 hover:shadow-md hover:border-gray-300">
+            <div class="flex items-center gap-2 mb-5 pb-3 border-b border-gray-200">
+                <div class="text-blue-600"><?php echo $icon_phone; ?></div>
+                <h2 class="text-lg font-semibold text-gray-800">Contact Information</h2>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <?= KIT_Commons::Linput([
+                    'label' => 'Cell',
+                    'name'  => 'cell',
+                    'id'    => 'cell',
+                    'type'  => 'text',
+                    'value' => $customer['cell'] ?? '',
+                    'class' => 'w-full pr-4 py-3 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 hover:border-gray-400',
+                    'icon' => $icon_phone,
+                    'special' => ''
+                ]); ?>
+                <?= KIT_Commons::Linput([
+                    'label' => 'Email',
+                    'name'  => 'email_address',
+                    'id'    => 'email_address',
+                    'type'  => 'email',
+                    'value' => $customer['email_address'] ?? '',
+                    'class' => 'w-full pr-4 py-3 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 hover:border-gray-400',
+                    'icon' => $icon_email,
+                    'special' => ''
+                ]); ?>
+                <div class="md:col-span-2">
+                    <?= KIT_Commons::Linput([
+                        'label' => 'Address',
+                        'name'  => 'address',
+                        'id'    => 'address',
+                        'type'  => 'text',
+                        'value' => $customer['address'] ?? '',
+                        'class' => 'w-full pr-4 py-3 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 hover:border-gray-400',
+                        'icon' => $icon_map,
+                        'special' => ''
+                    ]); ?>
+                </div>
+            </div>
+        </div>
     </div>
 <?php
 }
@@ -1066,15 +1464,20 @@ function save_customer()
     $inserted = $wpdb->insert($table_name, $cust_data);
 
     if ($inserted) {
-        echo '<div class="bg-green-100 text-green-800 p-4 rounded mb-4">Customer saved successfully. 🎉</div>';
+        if (!class_exists('KIT_Toast')) {
+            require_once plugin_dir_path(__FILE__) . '../components/toast.php';
+        }
+        KIT_Toast::ensure_toast_loads();
+        echo KIT_Toast::success('Customer saved successfully.', 'Customer Saved');
         wp_redirect(admin_url('admin.php?page=customers-dashboard'));
         exit;
     } else {
-        echo '<div class="bg-red-100 text-red-800 p-4 rounded mb-4">Failed to save customer. 😢</div>';
-        // Debug information
-        if ($wpdb->last_error) {
-            echo '<div class="bg-red-100 text-red-800 p-4 rounded mb-4">Database Error: ' . esc_html($wpdb->last_error) . '</div>';
+        if (!class_exists('KIT_Toast')) {
+            require_once plugin_dir_path(__FILE__) . '../components/toast.php';
         }
+        KIT_Toast::ensure_toast_loads();
+        $error_msg = $wpdb->last_error ? 'Database Error: ' . esc_html($wpdb->last_error) : 'Failed to save customer.';
+        echo KIT_Toast::error($error_msg, 'Error');
     }
 }
 
@@ -1083,20 +1486,83 @@ function customer_detail_view($customer_id)
     global $wpdb;
     $customer_id = intval($customer_id);
 
+    // Handle bulk actions
+    if (isset($_POST['bulk_action']) && isset($_POST['bulk_ids']) && !empty($_POST['bulk_ids'])) {
+        if (!current_user_can('kit_view_waybills')) {
+            wp_die('Unauthorized');
+        }
+
+        $bulk_action = sanitize_text_field($_POST['bulk_action']);
+        $bulk_ids = sanitize_text_field($_POST['bulk_ids']);
+        $waybill_nos = array_map('trim', explode(',', $bulk_ids));
+        $waybill_nos = array_filter($waybill_nos);
+
+        if (!empty($waybill_nos)) {
+            $deleted_count = 0;
+            $export_count = 0;
+
+            if ($bulk_action === 'delete') {
+                // Verify nonce if provided
+                if (isset($_POST['bulk_nonce'])) {
+                    if (!wp_verify_nonce($_POST['bulk_nonce'], 'bulk_waybill_nonce')) {
+                        wp_die('Security check failed');
+                    }
+                }
+
+                // Delete selected waybills
+                if (class_exists('KIT_Waybills')) {
+                    foreach ($waybill_nos as $waybill_no) {
+                        if (KIT_Waybills::delete_waybill($waybill_no)) {
+                            $deleted_count++;
+                        }
+                    }
+                }
+
+                if ($deleted_count > 0) {
+                    if (class_exists('KIT_Toast')) {
+                        KIT_Toast::ensure_toast_loads();
+                        echo KIT_Toast::success("Successfully deleted {$deleted_count} waybill(s).", 'Bulk Delete');
+                    }
+                    // Redirect to avoid resubmission
+                    wp_safe_redirect(admin_url('admin.php?page=08600-customers&view_customer=' . $customer_id . '&bulk_deleted=' . $deleted_count));
+                    exit;
+                }
+            } elseif ($bulk_action === 'export') {
+                // Handle bulk export - generate concatenated invoice PDF using pdf-customer-bulk.php
+                // Go up 2 levels from includes/customers/ to plugin root
+                $plugin_url = dirname(dirname(plugin_dir_url(__FILE__)));
+                // Use pdf-customer-bulk.php for bulk customer invoices
+                $pdf_url = add_query_arg([
+                    'selected_ids' => implode(',', $waybill_nos),
+                    'customer_id' => $customer_id
+                ], $plugin_url . '/pdf-customer-bulk.php');
+
+                // Redirect to PDF generator which will stream the PDF
+                wp_redirect($pdf_url);
+                exit;
+            }
+        }
+    }
+
     // Handle success/error messages
     if (isset($_GET['updated']) && $_GET['updated'] == '1') {
         if (class_exists('KIT_Toast')) {
+            KIT_Toast::ensure_toast_loads();
             echo KIT_Toast::success('Customer updated successfully!', 'Customer Update');
-        } else {
-            echo '<div class="notice notice-success"><p>Customer updated successfully.</p></div>';
         }
     }
 
     if (isset($_GET['error']) && $_GET['error'] == '1') {
         if (class_exists('KIT_Toast')) {
+            KIT_Toast::ensure_toast_loads();
             echo KIT_Toast::error('Failed to update customer. Please try again.', 'Customer Update');
-        } else {
-            echo '<div class="notice notice-error"><p>Failed to update customer. Please try again.</p></div>';
+        }
+    }
+
+    if (isset($_GET['bulk_deleted'])) {
+        if (class_exists('KIT_Toast')) {
+            KIT_Toast::ensure_toast_loads();
+            echo KIT_Toast::success('Waybill(s) deleted successfully!', 'Bulk Delete');
         }
     }
 
@@ -1105,19 +1571,22 @@ function customer_detail_view($customer_id)
 
     if (!$customer) {
         if (class_exists('KIT_Toast')) {
+            KIT_Toast::ensure_toast_loads();
             echo KIT_Toast::error('Customer not found.', 'Customer Details');
-        } else {
-            echo '<div class="notice notice-error"><p>Customer not found.</p></div>';
         }
         return;
     }
 
-    // Get waybills for this customer
-    $waybills_table = $wpdb->prefix . 'kit_waybills';
-    $waybills = $wpdb->get_results($wpdb->prepare(
-        "SELECT * FROM $waybills_table WHERE customer_id = %d ORDER BY created_at DESC",
-        $customer_id
-    ));
+    // Get waybills for this customer, enriched with delivery and city info
+    $waybills = [];
+    if (class_exists('KIT_Waybills')) {
+        $all_waybills = KIT_Waybills::getAllWaybills();
+        foreach ($all_waybills as $wb) {
+            if ((int)($wb->customer_id ?? 0) === (int)$customer_id) {
+                $waybills[] = $wb;
+            }
+        }
+    }
 
 ?>
     <div class="wrap">
@@ -1137,9 +1606,7 @@ function customer_detail_view($customer_id)
             <div class="col-span-2 bg-white shadow rounded-lg p-6 mb-6">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-xl font-semibold text-gray-900">Customer Information</h2>
-                    <div class="flex gap-2">
-                        <?php echo KIT_Commons::renderButton('Edit Customer', 'primary', 'md', ['href' => '?page=08600-customers&edit_customer=' . $customer_id, 'gradient' => true]); ?>
-                    </div>
+
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
@@ -1181,62 +1648,192 @@ function customer_detail_view($customer_id)
                         </div>
                     </div>
                 </div>
-            </div>
-            <div class="col-span-3 bg-white shadow rounded-lg p-6">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-xl font-semibold text-gray-900">Waybills (<?php echo count($waybills); ?>)</h2>
-                    <?php echo KIT_Commons::renderButton('View All Waybills', 'primary', 'md', ['href' => '?page=08600-waybill-manage&customer_id=' . $customer_id, 'gradient' => true]); ?>
-                </div>
+                <hr>
+                <div class="flex justify-end gap-2">
+                    <!-- Download PDF customer summary, like waybill summary pdf -->
+                    <?php
+                    // Get all waybill numbers for this customer to generate PDF URL directly
+                    global $wpdb;
+                    $waybills_table = $wpdb->prefix . 'kit_waybills';
+                    $waybill_nos = $wpdb->get_col($wpdb->prepare(
+                        "SELECT waybill_no FROM $waybills_table WHERE customer_id = %d ORDER BY waybill_no ASC",
+                        $customer_id
+                    ));
 
-                <?php if (!empty($waybills)): ?>
-                    <div class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-gray-200">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Waybill #</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody class="bg-white divide-y divide-gray-200">
-                                <?php foreach (array_slice($waybills, 0, 5) as $waybill): ?>
-                                    <tr>
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <div class="text-sm font-medium text-gray-900">#<?php echo esc_html($waybill->waybill_no); ?></div>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                                            <?php echo $waybill->status === 'completed' ? 'bg-green-100 text-green-800' : ($waybill->status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-800'); ?>">
-                                                <?php echo ucfirst(esc_html($waybill->status)); ?>
-                                            </span>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                            R<?php echo number_format($waybill->product_invoice_amount, 2); ?>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            <?php echo date('M j, Y', strtotime($waybill->created_at)); ?>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                            <a href="?page=08600-Waybill-view&waybill_id=<?php echo $waybill->id; ?>" class="text-blue-600 hover:text-blue-900">View</a>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                    <?php if (count($waybills) > 5): ?>
-                        <div class="mt-4 text-center">
-                            <p class="text-sm text-gray-500">Showing 5 of <?php echo count($waybills); ?> waybills</p>
-                        </div>
-                    <?php endif; ?>
-                <?php else: ?>
-                    <div class="text-center py-8">
-                        <p class="text-gray-500">No waybills found for this customer.</p>
-                        <?php echo KIT_Commons::renderButton('Create First Waybill', 'primary', 'md', ['href' => '?page=08600-waybill-create&customer_id=' . $customer_id, 'classes' => 'mt-2', 'gradient' => true]); ?>
-                    </div>
-                <?php endif; ?>
+                    $pdf_url = '';
+                    if (!empty($waybill_nos)) {
+                        // Generate PDF URL directly (go up 2 levels from includes/customers/ to plugin root)
+                        $plugin_url = dirname(dirname(plugin_dir_url(__FILE__)));
+                        $pdf_url = add_query_arg([
+                            'selected_ids' => implode(',', $waybill_nos),
+                            'customer_id' => $customer_id
+                        ], $plugin_url . '/pdf-customer-bulk.php');
+                    }
+
+                    $pdf_icon = '<svg class="inline-block ml-1 -mt-0.5 w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 20 20"><path d="M12 16v-4m0 4l-2-2m2 2l2-2M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V6.828a2 2 0 00-.586-1.414l-3.828-3.828A2 2 0 0012.172 2H6z"></path></svg>';
+
+                    if (!empty($pdf_url)) {
+                        echo KIT_Commons::renderButton('PDF', 'primary', 'md', [
+                            'href' => $pdf_url,
+                            'gradient' => true,
+                            'icon' => $pdf_icon,
+                            'target' => '_blank',
+                            'rel' => 'noopener'
+                        ]);
+                    } else {
+                        echo KIT_Commons::renderButton('PDF', 'primary', 'md', [
+                            'href' => '#',
+                            'gradient' => true,
+                            'icon' => $pdf_icon,
+                            'disabled' => true,
+                            'title' => 'No waybills available for this customer'
+                        ]);
+                    }
+                    ?>
+                    <?php echo KIT_Commons::renderButton('Edit Cusstomer', 'primary', 'md', ['href' => '?page=08600-customers&edit_customer=' . $customer_id, 'gradient' => true]); ?>
+                </div>
+            </div>
+            <div class="col-span-3">
+                <?php
+                // Define actions for the unified table
+                $summary_url = plugins_url('pdf-summary.php', dirname(dirname(__FILE__)));
+                $actions = [
+                    [
+                        'label' => 'Download',
+                        'title' => 'Download PDF invoice',
+                        'target' => '_blank',
+                        'href' => $summary_url . '?waybill_no={waybill_no}',
+                        'class' => 'text-xs font-medium text-green-600 hover:text-green-800 hover:underline',
+                        'condition' => function ($row) {
+                            $product_invoice_number = is_object($row) 
+                                ? (isset($row->product_invoice_number) ? trim((string) $row->product_invoice_number) : '')
+                                : (isset($row['product_invoice_number']) ? trim((string) $row['product_invoice_number']) : '');
+                            return !empty($product_invoice_number);
+                        }
+                    ],
+                    [
+                        'label' => 'Delete',
+                        'title' => 'Delete waybill',
+                        'href' => '?page=08600-waybill-manage&delete_waybill={waybill_no}',
+                        'class' => 'text-xs font-medium text-red-600 hover:text-red-800 hover:underline',
+                        'onclick' => 'return confirm("Are you sure you want to delete this waybill?")'
+                    ]
+                ];
+
+                // Use standardized column definitions from KIT_Commons for consistency
+                // #region agent log
+                $log_data = [
+                    'sessionId' => 'debug-session',
+                    'runId' => 'post-fix',
+                    'hypothesisId' => 'FIXED',
+                    'location' => 'customers-functions.php:' . __LINE__,
+                    'message' => 'Using standardized KIT_Commons::getColumns for waybill_no',
+                    'data' => [
+                        'using_standardized_columns' => true,
+                        'waybill_no_source' => 'KIT_Commons::getColumns'
+                    ],
+                    'timestamp' => time() * 1000
+                ];
+                file_put_contents('/Applications/MAMP/htdocs/08600/wp-content/plugins/courier-finance-plugin/.cursor/debug.log', json_encode($log_data) . "\n", FILE_APPEND);
+                // #endregion
+                
+                $columns = KIT_Commons::getColumns([
+                    'waybill_no',
+                    'customer_city' => [
+                        'label' => 'City',
+                        'callback' => function ($value, $row, $rowIndex) {
+                            return esc_html($value ?: '—');
+                        }
+                    ],
+                    'truck_details' => [
+                        'label' => 'Truck Details',
+                        'callback' => function ($value, $row, $rowIndex) {
+                            $row = is_object($row) ? (array) $row : $row;
+                            $truck_number = $row['truck_number'] ?? '';
+                            $delivery_reference = $row['delivery_reference'] ?? '';
+                            $dispatch_date = $row['dispatch_date'] ?? '';
+
+                            if ($truck_number === '' && $delivery_reference === '' && $dispatch_date === '') {
+                                return '<span class="text-gray-400">No truck info</span>';
+                            }
+
+                            $html = '<div class="space-y-0.5">';
+
+                            if ($truck_number !== '') {
+                                $truck_display = mb_strlen($truck_number) > 10 ? mb_substr($truck_number, 0, 8) . '..' : $truck_number;
+                                $html .= '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium" title="Truck: ' . esc_attr($truck_number) . '">';
+                                $html .= '<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"/><path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1V8a1 1 0 00-1-1h-3z"/></svg>';
+                                $html .= esc_html($truck_display) . '</span>';
+                            }
+
+                            if ($delivery_reference !== '') {
+                                $ref_display = mb_strlen($delivery_reference) > 12 ? mb_substr($delivery_reference, 0, 10) . '..' : $delivery_reference;
+                                $html .= ' <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-50 text-green-700 font-medium" title="Ref: ' . esc_attr($delivery_reference) . '">';
+                                $html .= '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>';
+                                $html .= esc_html($ref_display) . '</span>';
+                            }
+
+                            if ($dispatch_date !== '') {
+                                $formatted = function_exists('date_i18n') ? date_i18n('M j, Y', strtotime($dispatch_date)) : date('M j, Y', strtotime($dispatch_date));
+                                $html .= '<div class="text-[10px] text-gray-500 truncate">' . esc_html($formatted) . '</div>';
+                            }
+
+                            $html .= '</div>';
+                            return $html;
+                        }
+                    ],
+                    'created_at' => [
+                        'label' => 'Created',
+                        'callback' => function ($value, $row, $rowIndex) {
+                            if (empty($value)) {
+                                return '—';
+                            }
+                            $timestamp = strtotime($value);
+                            if ($timestamp) {
+                                return esc_html(function_exists('date_i18n') ? date_i18n('M j, Y', $timestamp) : date('M j, Y', $timestamp));
+                            }
+                            return esc_html($value);
+                        }
+                    ]
+                ]);
+
+                // #region agent log
+                $table_options = [
+                    'title' => 'Waybills (' . count($waybills) . ')',
+                    'primary_action' => [
+                        'label' => 'View All Waybills',
+                        'href' => '?page=08600-waybill-manage&customer_id=' . $customer_id,
+                        'class' => 'px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-md hover:from-blue-700 hover:to-indigo-700 transition'
+                    ],
+                    'actions' => $actions,
+                    'searchable' => true,
+                    'sortable' => true,
+                    'bulk_management' => true,
+                    'bulk_actions_list' => ['export', 'delete'],
+                    'empty_message' => 'No waybills found for this customer',
+                    'preserve_order' => false
+                ];
+                $log_data = [
+                    'sessionId' => 'debug-session',
+                    'runId' => 'run1',
+                    'hypothesisId' => 'B',
+                    'location' => 'customers-functions.php:' . __LINE__,
+                    'message' => 'Customer details table options before render',
+                    'data' => [
+                        'options' => $table_options,
+                        'columns_count' => count($columns),
+                        'has_custom_header_classes' => array_reduce($columns, function($carry, $col) {
+                            return $carry || (is_array($col) && !empty($col['header_class']));
+                        }, false)
+                    ],
+                    'timestamp' => time() * 1000
+                ];
+                file_put_contents('/Applications/MAMP/htdocs/08600/wp-content/plugins/courier-finance-plugin/.cursor/debug.log', json_encode($log_data) . "\n", FILE_APPEND);
+                // #endregion
+                
+                // Render the unified table with standard styling to match main waybill table
+                echo KIT_Unified_Table::infinite($waybills, $columns, $table_options);
+                ?>
             </div>
         </div>
 
@@ -1255,6 +1852,89 @@ function customer_detail_view($customer_id)
                     alert('Toast system not loaded. Please refresh the page.');
                 }
             }
+
+            // Initialize bulk management handlers for unified table
+            (function() {
+                document.addEventListener('DOMContentLoaded', function() {
+                    <?php if (!empty($waybills)): ?>
+                        const customerId = <?php echo intval($customer_id); ?>;
+                        const pluginUrl = '<?php echo esc_js(dirname(dirname(plugin_dir_url(__FILE__)))); ?>';
+
+                        // Find all unified tables on the page and attach export handlers
+                        document.querySelectorAll('[id^="kit-infinite-table-"]').forEach(function(table) {
+                            const tableId = table.id;
+                            const containerId = tableId.replace('kit-infinite-table-', 'kit-infinite-wrap-');
+                            const container = document.querySelector('[id^="kit-infinite-wrap-"]');
+                            
+                            if (!container) return;
+
+                            // Find the export button within this table's bulk actions bar
+                            const exportBtn = container.querySelector('[data-bulk-action="export"]');
+                            if (exportBtn) {
+                                exportBtn.addEventListener('click', function(e) {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+
+                                    const checkboxes = table.querySelectorAll('.bulk-row-checkbox:checked');
+                                    const waybillNos = Array.from(checkboxes).map(cb => cb.value).filter(v => v);
+
+                                    if (waybillNos.length === 0) {
+                                        alert('Please select at least one waybill to generate invoice.');
+                                        return;
+                                    }
+
+                                    // Generate concatenated invoice PDF using pdf-customer-bulk.php
+                                    const pdfUrl = pluginUrl + '/pdf-customer-bulk.php?selected_ids=' + encodeURIComponent(waybillNos.join(',')) + '&customer_id=' + customerId;
+
+                                    // Open PDF in new window/tab
+                                    window.open(pdfUrl, '_blank');
+                                });
+                            }
+
+                            // Find the delete button within this table's bulk actions bar
+                            const deleteBtn = container.querySelector('[data-bulk-action="delete"]');
+                                if (deleteBtn) {
+                                    deleteBtn.addEventListener('click', function(e) {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+
+                                        const checkboxes = table.querySelectorAll('.bulk-row-checkbox:checked');
+                                        const waybillNos = Array.from(checkboxes).map(cb => cb.value).filter(v => v);
+
+                                        if (waybillNos.length === 0) {
+                                            alert('Please select at least one waybill.');
+                                            return;
+                                        }
+
+                                        if (!confirm('Are you sure you want to delete ' + waybillNos.length + ' selected waybill(s)? This action cannot be undone.')) {
+                                            return;
+                                        }
+
+                                        // Create and submit form
+                                        const form = document.createElement('form');
+                                        form.method = 'POST';
+                                        form.action = window.location.href;
+
+                                        const actionInput = document.createElement('input');
+                                        actionInput.type = 'hidden';
+                                        actionInput.name = 'bulk_action';
+                                        actionInput.value = 'delete';
+                                        form.appendChild(actionInput);
+
+                                        const idsInput = document.createElement('input');
+                                        idsInput.type = 'hidden';
+                                        idsInput.name = 'bulk_ids';
+                                        idsInput.value = waybillNos.join(',');
+                                        form.appendChild(idsInput);
+
+                                        document.body.appendChild(form);
+                                        form.submit();
+                                    });
+                                }
+                        });
+                    <?php endif; ?>
+                });
+            })();
         </script>
     <?php
 }
@@ -1319,6 +1999,7 @@ function tholaMaCustomer()
 {
     global $wpdb;
     $table_name = $wpdb->prefix . 'kit_customers';
+    $waybills_table = $wpdb->prefix . 'kit_waybills';
     return $wpdb->get_results("
     SELECT 
         c.id, 
@@ -1332,10 +2013,13 @@ function tholaMaCustomer()
         c.city_id,
         country.country_name,
         city.city_name,
-        c.company_name
+        c.company_name,
+        COUNT(w.id) as total_waybills
     FROM $table_name c
     LEFT JOIN {$wpdb->prefix}kit_operating_countries country ON c.country_id = country.id
     LEFT JOIN {$wpdb->prefix}kit_operating_cities city ON c.city_id = city.id
+    LEFT JOIN $waybills_table w ON w.customer_id = c.cust_id
+    GROUP BY c.id, c.cust_id, c.name, c.surname, c.email_address, c.cell, c.address, c.country_id, c.city_id, country.country_name, city.city_name, c.company_name
 ");
 }
 
@@ -1427,31 +2111,88 @@ function edit_customer_form($customer_id)
     }
 
     ?>
-        <div class="wrap">
+        <div class="wrap flex flex-col h-screen">
             <?php
             echo KIT_Commons::showingHeader([
-                'title' => 'Edit Cusqewrtomer',
+                'title' => 'Edit Customer',
+                'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />',
                 'desc'  => KIT_Commons::kitButton([
                     'color' => 'green',
                     'href'  => admin_url('admin.php?page=08600-customers&view_customer=' . $customer_id)
                 ], 'Back'),
             ]);
             ?>
-            <div class="max-w-7xl mx-auto bg-white rounded-xl shadow-lg overflow-hidden p-6 mt-7">
-                <h1 class="text-xl font-bold mb-4">Edit Customer</h1>
-                <form method="POST" action="<?php echo admin_url('admin-post.php'); ?>" class="space-y-4">
+            <div class="flex-1 flex flex-col max-w-7xl mx-auto w-full bg-white rounded-2xl shadow-xl border border-gray-100 mt-7 mb-7 overflow-hidden">
+                <div class="flex-shrink-0 p-6 border-b border-gray-200">
+                    <h1 class="text-2xl font-bold text-gray-900">Edit Customer</h1>
+                </div>
+                <div class="flex-1 overflow-y-auto">
+                    <div class="p-6">
+                        <form method="POST" action="<?php echo admin_url('admin-post.php'); ?>" class="space-y-6">
                     <?php wp_nonce_field('update_customer_nonce', 'cust_update_nonce'); ?>
                     <input type="hidden" name="action" value="update_customer" />
                     <input type="hidden" name="customer_id" value="<?php echo $customer_id; ?>" />
                     <?php
                     theForm($customer); ?>
-                    <div class="flex justify-end gap-2">
-                        <?php echo KIT_Commons::renderButton('Cancel', 'secondary', 'md', ['href' => admin_url('admin.php?page=08600-customers&view_customer=' . $customer_id)]); ?>
-                        <?php echo KIT_Commons::renderButton('Update Customer', 'primary', 'md', ['type' => 'submit', 'name' => 'customer_submit', 'gradient' => true]); ?>
+                            <div class="flex flex-col sm:flex-row justify-end gap-3 pt-6 border-t border-gray-200">
+                                <?php 
+                                $back_icon = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>';
+                                echo KIT_Commons::renderButton('Back', 'secondary', 'md', [
+                                    'href' => admin_url('admin.php?page=08600-customers&view_customer=' . $customer_id),
+                                    'icon' => $back_icon
+                                ]); 
+                                $save_icon = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>';
+                                echo KIT_Commons::renderButton('Update Customer', 'primary', 'md', [
+                                    'type' => 'submit', 
+                                    'name' => 'customer_submit', 
+                                    'gradient' => true,
+                                    'icon' => $save_icon
+                                ]); 
+                                ?>
+                            </div>
+                        </form>
                     </div>
-                </form>
+                </div>
             </div>
         </div>
+        <script>
+        (function() {
+            function alignInputIcons() {
+                document.querySelectorAll('.input-with-icon-container').forEach(function(container) {
+                    const input = container.querySelector('input, select');
+                    const icon = container.querySelector('.input-icon');
+                    
+                    if (!input || !icon) return;
+                    
+                    const label = document.querySelector('label[for="' + input.id + '"]');
+                    if (!label) return;
+                    
+                    // Get actual positions
+                    const containerRect = container.getBoundingClientRect();
+                    const labelRect = label.getBoundingClientRect();
+                    const inputRect = input.getBoundingClientRect();
+                    
+                    // Calculate where input starts relative to container
+                    const inputTop = inputRect.top - containerRect.top;
+                    const inputHeight = inputRect.height;
+                    
+                    // Position icon to match input top and height, center vertically
+                    icon.style.top = inputTop + 'px';
+                    icon.style.height = inputHeight + 'px';
+                });
+            }
+            
+            // Run on load and after any dynamic changes
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', alignInputIcons);
+            } else {
+                alignInputIcons();
+            }
+            
+            // Re-align on window resize
+            window.addEventListener('resize', alignInputIcons);
+        })();
+        </script>
         <?php
     }
 
@@ -1656,7 +2397,7 @@ function edit_customer_form($customer_id)
                                     'is_existing_customer' => '',
                                     'customer'             => $customers
                                 ]),
-                                '3xl'
+                                '6xl'
                             );
                             ?>
 
@@ -1674,16 +2415,15 @@ function edit_customer_form($customer_id)
                             ];
 
                             $columns = [
-                                'waybill_no' => ['label' => 'Waybill #', 'align' => 'text-left'],
-                                'customer_name' => ['label' => 'Name', 'align' => 'text-left'],
-                                'approval' => ['label' => 'Approval', 'align' => 'text-left'],
-                                'total' => ['label' => 'Total', 'align' => 'text-right'],
-                                'actions' => ['label' => 'Actions', 'align' => 'text-center'],
+                                'waybill_no'     => ['label' => 'Waybill #', 'align' => 'text-left'],
+                                'customer_name'  => ['label' => 'Name', 'align' => 'text-left'],
+                                'approval'       => ['label' => 'Approval', 'align' => 'text-left'],
+                                'total'          => ['label' => 'Total', 'align' => 'text-right'],
                             ];
                             $cell_callback = function ($key, $row) {
                                 if ($key === 'waybill_no') {
-                                    //Return a link to the waybill view page example href="?page=08600-Waybill-view&waybill_id=7&waybill_atts=view_waybill"
-                                    return '<a target="_blank" href="?page=08600-Waybill-view&waybill_id=' . $row->waybill_id . '&waybill_atts=view_waybill" class="text-blue-600 hover:underline">' . $row->waybill_no . '</a>';
+                                    // Return a link to the waybill view page
+                                    return '<a target="_blank" href="?page=08600-Waybill-view&waybill_id=' . $row->waybill_id . '&waybill_atts=view_waybill" class="text-blue-600 hover:underline">#' . $row->waybill_no . '</a>';
                                 }
                                 if ($key === 'total') {
                                     //total is the sum of the product_invoice_amount and the miscellaneous
@@ -1696,23 +2436,11 @@ function edit_customer_form($customer_id)
                                 if ($key === 'approval') {
                                     return $row->approval;
                                 }
-                                if ($key === 'actions') {
-
-                                    return '<a href="?page=08600-Waybill-view=' . $row->waybill_id . '&waybill_atts=view_waybill" class="text-red-600 hover:underline" onclick="return confirm(\'Are you sure you want to delete this customer?\');">Delete</a>';
-                                    return $html;
-                                }
                                 return htmlspecialchars(($row->$key ?? '') ?: '');
                             };
 
                             echo KIT_Unified_Table::infinite($waybills, $columns, [
                                 'title' => 'Customer Waybills',
-                                'actions' => [
-                                    [
-                                        'label' => 'View',
-                                        'href' => '?page=08600-Waybill-view&waybill_id={waybill_id}',
-                                        'class' => 'text-blue-600 hover:text-blue-800'
-                                    ]
-                                ]
                             ]);
                         ?>
                         <?php else : ?>

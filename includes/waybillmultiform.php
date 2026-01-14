@@ -123,22 +123,35 @@ function kit_render_waybill_multiform($atts)
             </div>
         </div>
 
-        <!-- Step 1: Waybill Header -->
+        <!-- Step 1: Waybill Header & Customer Information (combined) -->
         <div class="step step-1 active" id="step-1">
             <?php require __DIR__ . '/waybill/steps/step1.php'; ?>
         </div>
         
-        <!-- Step 3: Items -->
+        <!-- Step 2: Customer Information (removed - now part of Step 1) -->
+        <!-- Hidden - kept for backward compatibility but navigation skips it -->
+        <div class="step step-2 hidden" id="step-2" style="display: none !important;">
+            <!-- Step 2 content is now part of Step 1 -->
+        </div>
+        
+        <!-- Step 3: Parcels (moved to end, repeatable per waybill) -->
         <div class="step step-3 hidden" id="step-3">
             <?php require __DIR__ . '/waybill/steps/step3.php'; ?>
         </div>
-        <!-- Step 4: Item Section -->
+        
+        <!-- Step 4: Delivery/Destination Section -->
         <div class="step step-4 hidden" id="step-4">
             <?php require __DIR__ . '/waybill/steps/step4.php'; ?>
         </div>
-        <!-- Step 5: Charge Basis Section -->
+        
+        <!-- Step 5: Waybill Details (Charges & Fees - repeatable) -->
         <div class="step step-5 hidden" id="step-5">
             <?php require __DIR__ . '/waybill/steps/step5.php'; ?>
+        </div>
+        
+        <!-- Step 6: Miscellaneous Items -->
+        <div class="step step-6 hidden" id="step-6">
+            <?php require __DIR__ . '/waybill/steps/step6.php'; ?>
         </div>
     </form>
 
@@ -191,7 +204,21 @@ function kit_render_waybill_multiform($atts)
             }
         }
 
-        document.addEventListener('DOMContentLoaded', function() {
+        // Initialize waybill form JavaScript (works for both regular pages and modals)
+        function initializeWaybillForm() {
+            // Prevent double initialization
+            if (window.waybillFormInitialized) {
+                return;
+            }
+            
+            // Check if form exists in DOM
+            const form = document.getElementById('multi-step-waybill-form');
+            if (!form) {
+                return;
+            }
+            
+            window.waybillFormInitialized = true;
+            
             // Capture original page URL for modal redirects
             const originalPageUrlField = document.getElementById('original_page_url');
             if (originalPageUrlField && document.referrer) {
@@ -200,7 +227,6 @@ function kit_render_waybill_multiform($atts)
             }
             
             // Error handling and validation system
-            const form = document.getElementById('multi-step-waybill-form');
             const errorContainer = document.getElementById('form-errors');
             const errorList = document.getElementById('error-list');
             const successContainer = document.getElementById('form-success');
@@ -274,8 +300,8 @@ function kit_render_waybill_multiform($atts)
                     message: 'Address is required'
                 },
                 'email_address': {
-                    required: true,
-                    message: 'Email address is required'
+                    required: false,
+                    message: 'Email address is optional'
                 },
                 'origin_country': {
                     required: function() {
@@ -310,9 +336,18 @@ function kit_render_waybill_multiform($atts)
                 'direction_id': {
                     required: function() {
                         // Check if a delivery is selected OR warehouse is checked
+                        // PRIMARY: Check field value (works even when step 4 is hidden)
+                        const directionIdField = document.getElementById('direction_id');
+                        const directionIdValue = directionIdField ? directionIdField.value.trim() : '';
+                        const hasDirectionId = directionIdValue && directionIdValue !== '' && directionIdValue !== '0';
+                        
+                        // SECONDARY: Check visual selection (for UI feedback)
                         const hasDeliverySelected = document.querySelector('.delivery-card.selected') !== null;
                         const isWarehoused = document.getElementById('pending_option')?.checked || false;
-                        return !isWarehoused; // Only required if not pending
+                        
+                        // If warehouse is checked, direction_id is not required (will be set to 1)
+                        // Otherwise, require either field value OR visual selection
+                        return !isWarehoused && !hasDirectionId && !hasDeliverySelected;
                     },
                     message: 'Please select a delivery or check the warehouse option'
                 }
@@ -406,17 +441,48 @@ function kit_render_waybill_multiform($atts)
                 const errors = [];
 
                 // Special validation for step 4 - delivery selection or warehouse
+                // PRIMARY CHECK: Use direction_id field value as primary indicator
+                const directionIdField = document.getElementById('direction_id');
+                const directionIdValue = directionIdField ? directionIdField.value.trim() : '';
+                
+                // Also check selected_delivery_id as additional confirmation
+                const selectedDeliveryIdField = document.getElementById('selected_delivery_id');
+                const selectedDeliveryIdValue = selectedDeliveryIdField ? selectedDeliveryIdField.value.trim() : '';
+                
+                // SECONDARY CHECK: Check for visually selected delivery card (for UI feedback, but not required)
                 const hasDeliverySelected = document.querySelector('.delivery-card.selected') !== null;
                 const isWarehoused = document.getElementById('pending_option')?.checked || false;
-                const destinationCountry = document.getElementById('stepDestinationSelect')?.value || '';
+                
+                // Determine if delivery is actually selected (primary: direction_id field value)
+                // If direction_id has a value, consider delivery as selected even if card class isn't visible
+                const deliveryIsSelected = directionIdValue && directionIdValue !== '' && directionIdValue !== '0';
+                
+                // Get destination country from multiple possible sources
+                let destinationCountry = document.getElementById('stepDestinationSelect')?.value || '';
+                // Check backup field if main field is empty (for delivery card selections)
+                if (!destinationCountry) {
+                    const backupField = document.getElementById('destination_country_backup');
+                    destinationCountry = backupField ? backupField.value : '';
+                }
+                // Also check the regular destination_country field
+                if (!destinationCountry) {
+                    const regularField = document.getElementById('destination_country');
+                    destinationCountry = regularField ? regularField.value : '';
+                }
                 
                 console.log('📋 Step 4 validation:', {
+                    directionIdValue: directionIdValue || 'MISSING',
+                    selectedDeliveryIdValue: selectedDeliveryIdValue || 'MISSING',
+                    deliveryIsSelected,
                     hasDeliverySelected,
                     isWarehoused,
-                    destinationCountry
+                    destinationCountry: destinationCountry || 'MISSING',
+                    step4Visible: document.getElementById('step-4')?.classList.contains('hidden') === false
                 });
                 
-                if (!hasDeliverySelected && !isWarehoused) {
+                // Primary validation: check direction_id field value OR warehouse option
+                // IMPORTANT: Check field value, not visual indicators (step 4 may be hidden)
+                if (!deliveryIsSelected && !isWarehoused) {
                     isValid = false;
                     errors.push({
                         message: 'Please select a delivery or check the warehouse option',
@@ -424,35 +490,35 @@ function kit_render_waybill_multiform($atts)
                     });
                 }
                 
-                // Additional check: if delivery is selected, ensure direction_id is set
-                if (hasDeliverySelected) {
-                    const directionIdField = document.getElementById('direction_id');
-                    const directionIdValue = directionIdField ? directionIdField.value.trim() : '';
-                    if (!directionIdValue) {
-                        isValid = false;
-                        errors.push({
-                            message: 'Delivery selection is incomplete - please try selecting again',
-                            fieldId: 'direction_id'
-                        });
-                    }
+                // Additional check: if direction_id is set, ensure it's valid
+                if (deliveryIsSelected && (!directionIdValue || directionIdValue === '0')) {
+                    isValid = false;
+                    errors.push({
+                        message: 'Delivery selection is incomplete - please try selecting again',
+                        fieldId: 'direction_id'
+                    });
                 }
                 
                 // For warehouse items, ensure we have direction_id = 1 for South Africa rates
                 if (isWarehoused) {
-                    const directionIdField = document.getElementById('direction_id');
-                    const directionIdValue = directionIdField ? directionIdField.value.trim() : '';
                     if (!directionIdValue || directionIdValue !== '1') {
-                        isValid = false;
-                        errors.push({
-                            message: 'Warehouse rate calculation requires South Africa direction ID',
-                            fieldId: 'direction_id'
-                        });
+                        // Auto-set direction_id to 1 for warehouse items if not set
+                        if (directionIdField && !directionIdValue) {
+                            directionIdField.value = '1';
+                            console.log('🔧 Auto-set direction_id to 1 for warehouse item');
+                        } else if (directionIdValue !== '1') {
+                            isValid = false;
+                            errors.push({
+                                message: 'Warehouse rate calculation requires South Africa direction ID',
+                                fieldId: 'direction_id'
+                            });
+                        }
                     }
                 }
                 
                 // Only require destination fields if NOT pending
                 if (!isWarehoused) {
-                    if (!destinationCountry) {
+                    if (!destinationCountry || destinationCountry === '' || destinationCountry === '0') {
                         isValid = false;
                         errors.push({
                             message: 'Destination country is required for non-pending items',
@@ -460,8 +526,19 @@ function kit_render_waybill_multiform($atts)
                         });
                     }
                     
-                    const destinationCity = document.getElementById('destination_city')?.value || '';
-                    if (!destinationCity) {
+                    // Check destination_city field value (not just if field exists)
+                    const destinationCityField = document.getElementById('destination_city');
+                    const destinationCity = destinationCityField ? destinationCityField.value.trim() : '';
+                    
+                    console.log('📋 Destination city validation:', {
+                        fieldExists: !!destinationCityField,
+                        cityValue: destinationCity || 'MISSING',
+                        optionsCount: destinationCityField ? destinationCityField.options.length : 0,
+                        hasValidValue: destinationCity && destinationCity !== '' && destinationCity !== '0'
+                    });
+                    
+                    // Validate city value - must be set and not empty/zero
+                    if (!destinationCity || destinationCity === '' || destinationCity === '0') {
                         isValid = false;
                         errors.push({
                             message: 'Destination city is required for non-pending items',
@@ -470,7 +547,7 @@ function kit_render_waybill_multiform($atts)
                     }
                 }
                 
-                // Special validation for VAT - if VAT is enabled, waybill items are required
+                // Special validation for VAT - if VAT is enabled, parcels are required
                 const vatCheckbox = document.getElementById('vat_include2') || document.getElementById('vat_include');
                 const waybillItemsContainer = document.getElementById('custom-waybill-items');
                 const isVatEnabled = vatCheckbox && vatCheckbox.checked;
@@ -658,12 +735,156 @@ function kit_render_waybill_multiform($atts)
             // Add event listeners to country selectors
             const originCountrySelect = document.getElementById('origin_country');
             const destinationCountrySelect = document.getElementById('destination_country');
+            const stepDestinationSelect = document.getElementById('stepDestinationSelect');
             
+            // Function to load cities for destination country (global for modal compatibility)
+            window.loadDestinationCities = function(countryId, cityIdToSelect = null) {
+                if (!countryId) return;
+                
+                console.log('🔄 Loading cities for country:', countryId, cityIdToSelect ? 'with city ID:' + cityIdToSelect : '');
+                
+                const citySelect = document.getElementById('destination_city');
+                if (!citySelect) {
+                    console.warn('❌ destination_city select not found');
+                    return;
+                }
+                
+                // Try preloaded map first (fastest)
+                const citiesMap = (window.myPluginAjax && window.myPluginAjax.countryCities) || {};
+                const cities = citiesMap && citiesMap[String(countryId)] ? citiesMap[String(countryId)] : [];
+                
+                if (Array.isArray(cities) && cities.length) {
+                    citySelect.innerHTML = '<option value="">Select City</option>';
+                    cities.forEach(function(city) {
+                        const option = document.createElement('option');
+                        option.value = city.id;
+                        option.textContent = city.city_name;
+                        // Auto-select if cityIdToSelect matches
+                        if (cityIdToSelect && String(city.id) === String(cityIdToSelect)) {
+                            option.selected = true;
+                        }
+                        citySelect.appendChild(option);
+                    });
+                    citySelect.disabled = false;
+                    
+                    // Set the value if cityIdToSelect is provided (in case it wasn't in the options)
+                    if (cityIdToSelect && citySelect.value !== String(cityIdToSelect)) {
+                        citySelect.value = cityIdToSelect;
+                        // Trigger change event
+                        const changeEvent = new Event('change', { bubbles: true });
+                        citySelect.dispatchEvent(changeEvent);
+                    }
+                    
+                    console.log('✅ Cities loaded from preloaded map:', cities.length, cityIdToSelect ? '- City auto-selected: ' + cityIdToSelect : '');
+                } else {
+                    // Fallback: use handleCountryChange if available
+                    if (typeof handleCountryChange === 'function') {
+                        handleCountryChange(countryId, 'destination');
+                        console.log('✅ Using handleCountryChange function');
+                    } else {
+                        // Last resort: AJAX call
+                        const ajaxUrl = (window.myPluginAjax && window.myPluginAjax.ajax_url) || window.ajaxurl || '/wp-admin/admin-ajax.php';
+                        const nonce = (window.myPluginAjax && window.myPluginAjax.nonces && window.myPluginAjax.nonces.get_waybills_nonce) || '';
+                        
+                        citySelect.innerHTML = '<option value="">Loading cities...</option>';
+                        citySelect.disabled = true;
+                        
+                        fetch(ajaxUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                            },
+                            body: new URLSearchParams({
+                                action: 'handle_get_cities_for_country',
+                                country_id: countryId,
+                                nonce: nonce
+                            })
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success && Array.isArray(data.data) && data.data.length) {
+                                citySelect.innerHTML = '<option value="">Select City</option>';
+                                data.data.forEach(function(city) {
+                                    const option = document.createElement('option');
+                                    option.value = city.id;
+                                    option.textContent = city.city_name;
+                                    // Auto-select if cityIdToSelect matches
+                                    if (cityIdToSelect && String(city.id) === String(cityIdToSelect)) {
+                                        option.selected = true;
+                                    }
+                                    citySelect.appendChild(option);
+                                });
+                                citySelect.disabled = false;
+                                
+                                // Set the value if cityIdToSelect is provided
+                                if (cityIdToSelect && citySelect.value !== String(cityIdToSelect)) {
+                                    citySelect.value = cityIdToSelect;
+                                    // Trigger change event
+                                    const changeEvent = new Event('change', { bubbles: true });
+                                    citySelect.dispatchEvent(changeEvent);
+                                }
+                                
+                                console.log('✅ Cities loaded via AJAX:', data.data.length, cityIdToSelect ? '- City auto-selected: ' + cityIdToSelect : '');
+                            } else {
+                                citySelect.innerHTML = '<option value="">No cities found</option>';
+                                citySelect.disabled = false;
+                                console.warn('⚠️ No cities found for country:', countryId);
+                            }
+                        })
+                        .catch(error => {
+                            console.error('❌ Error loading cities:', error);
+                            citySelect.innerHTML = '<option value="">Error loading cities</option>';
+                            citySelect.disabled = false;
+                        });
+                    }
+                }
+            };
+            
+            // Add event listeners for country changes
             if (originCountrySelect) {
                 originCountrySelect.addEventListener('change', calculateDirectionId);
             }
             if (destinationCountrySelect) {
-                destinationCountrySelect.addEventListener('change', calculateDirectionId);
+                destinationCountrySelect.addEventListener('change', function() {
+                    calculateDirectionId();
+                    loadDestinationCities(this.value);
+                });
+            }
+            
+            // CRITICAL: Add event listener for stepDestinationSelect (used in modal)
+            if (stepDestinationSelect) {
+                stepDestinationSelect.addEventListener('change', function() {
+                    const countryId = this.value;
+                    console.log('📍 stepDestinationSelect changed to:', countryId);
+                    
+                    // Update backup field
+                    const backupField = document.getElementById('destination_country_backup');
+                    if (backupField) {
+                        backupField.value = countryId;
+                    }
+                    
+                    // Load cities
+                    loadDestinationCities(countryId);
+                    
+                    // Also trigger handleCountryChange if available (for compatibility)
+                    if (typeof handleCountryChange === 'function') {
+                        handleCountryChange(countryId, 'destination');
+                    }
+                    
+                    // Check button conditions for step 4
+                    if (typeof checkButtonConditions === 'function') {
+                        setTimeout(() => checkButtonConditions(), 100);
+                    }
+                });
+                
+                // If country is already selected on load, load cities immediately
+                if (stepDestinationSelect.value) {
+                    setTimeout(() => {
+                        loadDestinationCities(stepDestinationSelect.value);
+                    }, 100);
+                }
+            } else {
+                console.warn('⚠️ stepDestinationSelect not found in DOM');
             }
 
             // Accordion toggle
@@ -770,6 +991,13 @@ function kit_render_waybill_multiform($atts)
 
                     if (validateStep(currentStep)) {
                         switchStep(currentStep, targetStep);
+                        
+                        // If navigating to step 4, auto-select recently created delivery
+                        if (targetId === 'step-4' || targetId === '4') {
+                            setTimeout(() => {
+                                autoSelectRecentDelivery();
+                            }, 300);
+                        }
                     }
                 });
             });
@@ -819,12 +1047,18 @@ function kit_render_waybill_multiform($atts)
 
             // Progress bar / Step indicators
             function updateStepIndicator(activeStep) {
+                if (!activeStep) return; // Guard against null
+                
                 const stepMatch = activeStep.className.match(/step-(\d)/);
                 const stepNumber = stepMatch ? parseInt(stepMatch[1]) : -1;
 
                 stepIndicators.forEach((indicator, index) => {
+                    if (!indicator) return; // Guard against null
+                    
                     const circle = indicator.querySelector('div');
                     const label = indicator.querySelector('span');
+                    
+                    if (!circle || !label) return; // Guard against null elements
 
                     if (index + 1 === stepNumber) {
                         circle.className = 'bg-blue-600 text-white';
@@ -868,6 +1102,75 @@ function kit_render_waybill_multiform($atts)
                 });
             });
 
+        }
+        
+        // Initialize on DOMContentLoaded (for regular pages)
+        document.addEventListener('DOMContentLoaded', initializeWaybillForm);
+        
+        // Also initialize immediately if DOM is already loaded (for dynamically loaded modals)
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeWaybillForm);
+        } else {
+            // DOM already loaded, initialize immediately
+            initializeWaybillForm();
+        }
+        
+        // Initialize when modal opens (for modals loaded in DOM but hidden)
+        jQuery(document).ready(function($) {
+            // Listen for custom modal opened event
+            $(document).on('modal:opened', function(e, modal) {
+                if (modal && modal.attr('id') === 'create-waybill-modal') {
+                    setTimeout(function() {
+                        if (!window.waybillFormInitialized) {
+                            initializeWaybillForm();
+                        }
+                    }, 100);
+                }
+            });
+            
+            // Also listen for clicks on the modal trigger button
+            $(document).on('click', '[data-modal="create-waybill-modal"]', function() {
+                setTimeout(function() {
+                    if (!window.waybillFormInitialized) {
+                        initializeWaybillForm();
+                    }
+                }, 150);
+            });
+            
+            // Also check if modal is visible on page load
+            const modal = $('#create-waybill-modal');
+            if (modal.length && modal.hasClass('flex')) {
+                setTimeout(function() {
+                    if (!window.waybillFormInitialized) {
+                        initializeWaybillForm();
+                    }
+                }, 100);
+            }
+            
+            // Use MutationObserver to watch for modal visibility changes
+            const modalElement = document.getElementById('create-waybill-modal');
+            if (modalElement) {
+                const observer = new MutationObserver(function(mutations) {
+                    mutations.forEach(function(mutation) {
+                        if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+                            const target = mutation.target;
+                            if (target.classList.contains('flex') && !target.classList.contains('hidden')) {
+                                // Modal just became visible
+                                setTimeout(function() {
+                                    if (!window.waybillFormInitialized) {
+                                        initializeWaybillForm();
+                                    }
+                                }, 100);
+                            }
+                        }
+                    });
+                });
+                
+                observer.observe(modalElement, {
+                    attributes: true,
+                    attributeFilter: ['class']
+                });
+            }
         });
 
         <?php if (isset($atts['ajaxform']) && $atts['ajaxform']): ?>
@@ -971,11 +1274,22 @@ function kit_render_waybill_multiform($atts)
                                     window.location.href = redirectUrl;
                                 } else {
                                     // Regular waybill creation - go to viewWaybill.php
-                                    const waybillId = response.data.waybill_id || '';
-                                    if (waybillId) {
+                                    let waybillId = response.data.waybill_id || '';
+                                    
+                                    // Ensure waybillId is a string/number, not an object
+                                    if (typeof waybillId === 'object' && waybillId !== null) {
+                                        // If it's an object, try to extract the ID
+                                        waybillId = waybillId.id || waybillId.waybill_id || waybillId.toString() || '';
+                                    }
+                                    
+                                    // Convert to string and ensure it's a valid ID
+                                    waybillId = String(waybillId).trim();
+                                    
+                                    if (waybillId && waybillId !== 'undefined' && waybillId !== 'null' && waybillId !== '[object Object]') {
                                         console.log('🔄 Redirecting to waybill view:', waybillId);
-                                        window.location.href = '<?php echo admin_url('admin.php?page=08600-Waybill-view&waybill_id='); ?>' + waybillId + '&waybill_atts=view_waybill';
+                                        window.location.href = '<?php echo admin_url('admin.php?page=08600-Waybill-view&waybill_id='); ?>' + encodeURIComponent(waybillId) + '&waybill_atts=view_waybill';
                                     } else {
+                                        console.warn('⚠️ Invalid waybill_id in response:', response.data);
                                         showSuccess(response.data.message || 'Waybill created successfully!');
                                     }
                                 }

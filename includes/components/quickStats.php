@@ -12,28 +12,63 @@ class KIT_QuickStats {
      * @param string $title Optional section title
      * @return string HTML output
      */
-    public static function render($stats = [], $title = '') {
-        $html = '<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">';
+    public static function render($stats = [], $title = '', $options = []) {
+        $grid_cols = $options['grid_cols'] ?? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4';
+        $show_icons = $options['show_icons'] ?? true;
+        $gap = $options['gap'] ?? 'gap-6';
+        
+        $html = '<div class="mb-8">';
         
         if ($title) {
-            $html .= '<h3 class="text-sm font-medium text-gray-700 mb-4">' . esc_html($title) . '</h3>';
+            $html .= '<div class="flex items-center justify-between mb-4">';
+            $html .= '<h3 class="text-lg font-semibold text-gray-900">' . esc_html($title) . '</h3>';
+            $html .= '</div>';
         }
         
-        $html .= '<div class="grid grid-cols-2 md:grid-cols-4 gap-4">';
+        $html .= '<div class="grid ' . esc_attr($grid_cols) . ' ' . esc_attr($gap) . '">';
         foreach ($stats as $stat) {
+            $has_icon = $show_icons && isset($stat['icon']);
             $color = $stat['color'] ?? 'blue';
             $colorClasses = self::getColorClasses($color);
             
-            $html .= '<div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">';
-            $html .= '<div class="' . $colorClasses['icon'] . ' p-2 rounded-lg">';
-            $html .= '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">';
-            $html .= '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="' . $stat['icon'] . '"></path>';
-            $html .= '</svg>';
-            $html .= '</div>';
-            $html .= '<div>';
-            $html .= '<div class="text-xs font-medium text-gray-500">' . esc_html($stat['title']) . '</div>';
-            $html .= '<div class="text-lg font-bold text-gray-900">' . esc_html($stat['value']) . '</div>';
-            $html .= '</div>';
+            // Check if stat is clickable
+            $clickable = isset($stat['clickable']) && $stat['clickable'];
+            $onclick = isset($stat['onclick']) ? ' onclick="' . esc_js($stat['onclick']) . '"' : '';
+            $dataFilter = isset($stat['filter']) ? ' data-filter="' . esc_attr($stat['filter']) . '"' : '';
+            $cardClasses = 'bg-white rounded-xl shadow-sm border border-gray-200 p-6 transition-all duration-200';
+            if ($clickable) {
+                $cardClasses .= ' hover:shadow-md hover:border-blue-300 cursor-pointer';
+            } else {
+                $cardClasses .= ' hover:shadow-md';
+            }
+            $html .= '<div class="' . $cardClasses . '"' . ($clickable ? $onclick . $dataFilter : '') . '>';
+            
+            if ($has_icon) {
+                // Delivery Management layout: icon on left, text on right
+                $html .= '<div class="flex items-center">';
+                $html .= '<div class="flex-shrink-0">';
+                $html .= '<div class="w-8 h-8 ' . $colorClasses['icon'] . ' rounded-lg flex items-center justify-center">';
+                $html .= '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">';
+                $html .= '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="' . esc_attr($stat['icon']) . '"></path>';
+                $html .= '</svg>';
+                $html .= '</div>';
+                $html .= '</div>';
+                $html .= '<div class="ml-4">';
+                $html .= '<p class="text-sm font-medium text-gray-600">' . esc_html($stat['title']) . '</p>';
+                $value_class = isset($stat['class']) ? esc_attr($stat['class']) : '';
+                $html .= '<p class="text-2xl font-bold text-gray-900 ' . $value_class . '">' . esc_html($stat['value']) . '</p>';
+                $html .= '</div>';
+                $html .= '</div>';
+            } else {
+                // No icon layout: title on top, value below
+                $html .= '<h3 class="text-sm font-medium text-gray-600 mb-2">' . esc_html($stat['title']) . '</h3>';
+                $value_class = isset($stat['class']) ? esc_attr($stat['class']) : '';
+                $html .= '<p class="text-2xl font-bold text-gray-900 ' . $value_class . '">' . esc_html($stat['value']) . '</p>';
+            }
+            
+            if (isset($stat['subtitle'])) {
+                $html .= '<p class="text-xs text-gray-500 mt-2">' . esc_html($stat['subtitle']) . '</p>';
+            }
             $html .= '</div>';
         }
         

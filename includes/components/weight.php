@@ -3,13 +3,30 @@
 // Include user roles for permission checking
 require_once COURIER_FINANCE_PLUGIN_PATH . 'includes/user-roles.php';
 ?>
-<input type="hidden" name="origin_country_id" value="2" id="countrydestination_id" />
-<input type="hidden" name="direction_id" id="direction_id" value="<?= esc_attr($direction_id ?? (isset($waybill) && isset($waybill['direction_id']) ? $waybill['direction_id'] : '') ?? '') ?>" />
+<?php
+// Get origin_country_id from waybill (should be 1 for South Africa)
+$origin_country_id_value = 1; // Default to South Africa
+if (isset($waybill) && isset($waybill['origin_country_id']) && !empty($waybill['origin_country_id'])) {
+    $origin_country_id_value = $waybill['origin_country_id'];
+} elseif (isset($origin_country_id) && !empty($origin_country_id)) {
+    $origin_country_id_value = $origin_country_id;
+}
+?>
+<input type="hidden" name="origin_country_id" value="<?= esc_attr($origin_country_id_value) ?>" id="countrydestination_id" />
+<?php
+// Get direction_id from waybill or passed variable
+$direction_id_value = '';
+if (isset($direction_id) && !empty($direction_id)) {
+    $direction_id_value = $direction_id;
+} elseif (isset($waybill) && isset($waybill['direction_id']) && !empty($waybill['direction_id'])) {
+    $direction_id_value = $waybill['direction_id'];
+}
+?>
+<input type="hidden" name="direction_id" id="direction_id" value="<?= esc_attr($direction_id_value) ?>" />
 <input type="hidden" name="current_rate" id="current_rate" value="<?= isset($waybill) && isset($waybill['miscellaneous']) && isset($waybill['miscellaneous']['others']) && isset($waybill['miscellaneous']['others']['mass_rate']) ? $waybill['miscellaneous']['others']['mass_rate'] : '' ?>">
 <input type="hidden" name="base_rate" id="base_rate" value="<?= esc_attr((isset($waybill) && isset($waybill['miscellaneous']) && isset($waybill['miscellaneous']['others']) && isset($waybill['miscellaneous']['others']['mass_rate']) ? $waybill['miscellaneous']['others']['mass_rate'] : '') ?? (isset($waybill) && isset($waybill['mass_rate']) ? $waybill['mass_rate'] : '') ?? '') ?>">
-<div class="bg-slate-100">
-    <?= KIT_Commons::h2tag(['title' => 'Mass', 'class' => '']) ?>
-    
+<div class="">
+    <?= KIT_Commons::prettyHeading(['words' => 'Mass', 'icon' => '<path d="M16 7a4 4 0 1 0-8 0v2a4 4 0 0 0 8 0V7z" /><path d="M12 19v-2m0 0a7 7 0 0 1-7-7V7a7 7 0 0 1 14 0v3a7 7 0 0 1-7 7z" />', 'classes' => 'mb-6']) ?>
     <!-- ✅ BULLETPROOF: Loading indicator styles -->
     <style>
         .loading {
@@ -565,7 +582,7 @@ require_once COURIER_FINANCE_PLUGIN_PATH . 'includes/user-roles.php';
                             });
                             
                             if (initialMass > 0 && initialRate <= 0 && directionId) {
-                                console.log('Auto-triggering rate fetch...');
+                                console.log('Auto-triggering rate fetch from DB...');
                                 if (typeof fetchRatePerKg === 'function') {
                                     try {
                                         fetchRatePerKg();

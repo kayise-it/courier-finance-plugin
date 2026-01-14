@@ -321,7 +321,13 @@ function edit_customer_page() {
     $customer_id = isset($_GET['edit_customer']) ? intval($_GET['edit_customer']) : 0;
     
     if (!$customer_id) {
-        echo '<div class="wrap"><div class="notice notice-error"><p>Invalid customer ID.</p></div></div>';
+        if (!class_exists('KIT_Toast')) {
+            require_once plugin_dir_path(__FILE__) . 'components/toast.php';
+        }
+        KIT_Toast::ensure_toast_loads();
+        echo '<div class="wrap">';
+        echo KIT_Toast::error('Invalid customer ID.', 'Error');
+        echo '</div>';
         return;
     }
     

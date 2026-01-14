@@ -49,6 +49,15 @@ rsync -a --delete \
   --exclude "*.xlsx" \
   --exclude "test-data.json" \
   --exclude "hook-registered.txt" \
+  --exclude "bin" \
+  --exclude "*.py" \
+  --exclude "*.ps1" \
+  --exclude "*.sh" \
+  --exclude "agent-sessions-recovery.txt" \
+  --exclude "waybill_dimension_updates.txt" \
+  --exclude "COMPARISON.txt" \
+  --exclude "*.csv" \
+  --exclude "customer-summary.php" \
   "$ROOT_DIR/" "$STAGE_DIR/"
 
 echo "🧼 Removing stray .DS_Store files..."
@@ -57,8 +66,11 @@ find "$STAGE_DIR" -name ".DS_Store" -delete || true
 echo "🎨 Compiling Tailwind CSS for production..."
 # Compile Tailwind CSS to include all responsive grid classes
 if command -v npx >/dev/null 2>&1; then
-  npx tailwindcss -i assets/css/tailwind.css -o assets/css/tailwind-full.css --minify
-  echo "✅ Tailwind CSS compiled successfully"
+  if npx tailwindcss -i assets/css/tailwind.css -o "$STAGE_DIR/assets/css/tailwind-full.css" --minify 2>/dev/null; then
+    echo "✅ Tailwind CSS compiled successfully"
+  else
+    echo "⚠️  Tailwind compilation failed; continuing without minification"
+  fi
 else
   echo "⚠️  npx not found; Tailwind compilation skipped"
 fi
@@ -84,12 +96,32 @@ for file in "${CRITICAL_FILES[@]}"; do
   fi
 done
 
-echo "📦 Installing production dependencies (vendor/)..."
+echo "📦 Optimizing vendor/ directory for production..."
 if [ -d "$ROOT_DIR/vendor" ]; then
-  echo "✅ vendor/ directory included for production"
-  # Ensure dev dependencies are excluded
-  if command -v composer >/dev/null 2>&1; then
-    echo "⚠️  Note: Run 'composer install --no-dev --optimize-autoloader' before packaging for smaller size"
+  # Copy vendor to staging
+  echo "➕ Copying vendor/ directory..."
+  
+  # Clean up vendor in staging: remove unnecessary files
+  if [ -d "$STAGE_DIR/vendor" ]; then
+    echo "🧹 Removing unnecessary files from vendor/..."
+    find "$STAGE_DIR/vendor" -type f \( \
+      -name "*.md" -o \
+      -name "*.txt" -o \
+      -name "CHANGELOG*" -o \
+      -name "LICENSE*" -o \
+      -name "AUTHORS*" -o \
+      -name "CONTRIBUTING*" -o \
+      -name "phpunit.xml*" -o \
+      -name ".gitignore" -o \
+      -name ".gitattributes" \
+    \) -delete
+    
+    # Remove test directories if they exist
+    find "$STAGE_DIR/vendor" -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
+    find "$STAGE_DIR/vendor" -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
+    find "$STAGE_DIR/vendor" -type d -name "Tests" -exec rm -rf {} + 2>/dev/null || true
+    
+    echo "✅ vendor/ optimized"
   fi
 else
   echo "⚠️  WARNING: vendor/ directory not found. PDF generation will fail!"
@@ -99,10 +131,24 @@ echo "🧾 Creating ZIP..."
 rm -f "$ZIP_PATH"
 (
   cd "$BUILD_DIR"
-  zip -qr "$ZIP_PATH" "$PLUGIN_SLUG" -x "**/.DS_Store"
+  zip -qr "$ZIP_PATH" "$PLUGIN_SLUG" -x "**/.DS_Store" -x "**/.git*"
 )
 
+ZIP_SIZE=$(du -sh "$ZIP_PATH" | cut -f1)
+ZIP_SIZE_BYTES=$(stat -f%z "$ZIP_PATH" 2>/dev/null || stat -c%s "$ZIP_PATH" 2>/dev/null)
+ZIP_SIZE_MB=$(echo "scale=2; $ZIP_SIZE_BYTES / 1024 / 1024" | bc)
+
 echo "✅ Done: $ZIP_PATH"
-du -sh "$ZIP_PATH" || true
+echo "📊 ZIP size: $ZIP_SIZE ($ZIP_SIZE_MB MB)"
+
+if (( $(echo "$ZIP_SIZE_MB > 10" | bc -l) )); then
+  echo "⚠️  WARNING: ZIP is over 10MB! WordPress.org limit is 10MB."
+  echo "💡 Suggestions:"
+  echo "   1. Run 'composer install --no-dev --optimize-autoloader' before packaging"
+  echo "   2. Check for large files: find . -size +1M -type f"
+  echo "   3. Consider excluding unused vendor packages"
+else
+  echo "✅ ZIP is under 10MB - ready for WordPress.org!"
+fi
 
 

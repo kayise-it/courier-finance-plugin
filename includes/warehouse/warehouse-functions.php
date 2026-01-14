@@ -47,22 +47,26 @@ class KIT_Warehouse
         $waybills_table = $wpdb->prefix . 'kit_waybills';
         $customers_table = $wpdb->prefix . 'kit_customers';
         
-        $where_conditions = ["w.warehouse IS NOT NULL AND w.warehouse != ''"];
-        $params = [];
+        // Get waybills in warehouse (warehouse = 1)
+        $where_conditions = ["w.warehouse = 1"];
         
         if ($warehouse_location) {
-            $where_conditions[] = "w.warehouse = %s";
-            $params[] = $warehouse_location;
+            $where_conditions[] = $wpdb->prepare("w.warehouse = %s", $warehouse_location);
         }
         
         $where_clause = " WHERE " . implode(" AND ", $where_conditions);
         
+        // Build waybills query
         $query = "
             SELECT 
-                w.*,
+                w.id,
                 w.id as waybill_id,
+                w.waybill_no,
                 w.product_invoice_amount,
                 w.total_mass_kg,
+                w.item_length,
+                w.item_width,
+                w.item_height,
                 w.status,
                 w.created_at,
                 w.last_updated_at,
@@ -77,8 +81,8 @@ class KIT_Warehouse
             ORDER BY w.created_at DESC
         ";
         
-        if (!empty($params)) {
-            return $wpdb->get_results($wpdb->prepare($query, $params));
+        if ($warehouse_location) {
+            return $wpdb->get_results($wpdb->prepare($query, $warehouse_location));
         } else {
             return $wpdb->get_results($query);
         }
@@ -95,10 +99,13 @@ class KIT_Warehouse
         
         $where_conditions = [];
         
+        // Only show waybills where warehouse = 1 (actual warehouse waybills)
+        // warehouse is BOOLEAN (TINYINT(1)): 1 = in warehouse, 0/NULL = not in warehouse
         if ($status) {
             $where_conditions[] = $wpdb->prepare("w.status = %s", $status);
+            $where_conditions[] = "w.warehouse = 1";
         } else {
-            $where_conditions[] = "w.warehouse IS NOT NULL AND w.warehouse != ''";
+            $where_conditions[] = "w.warehouse = 1";
         }
         
         if ($warehouse_location) {
@@ -107,8 +114,9 @@ class KIT_Warehouse
         
         $where_clause = " WHERE " . implode(" AND ", $where_conditions);
         
-        return $wpdb->get_results(
-            "SELECT 
+        // Get individual waybills
+        $individual_query = "
+            SELECT 
                 w.*,
                 w.id,
                 w.id as waybill_id,
@@ -128,8 +136,10 @@ class KIT_Warehouse
              LEFT JOIN {$customers_table} c ON w.customer_id = c.cust_id
              LEFT JOIN {$wpdb->prefix}kit_deliveries d ON w.delivery_id = d.id
              $where_clause
-             ORDER BY w.created_at DESC"
-        );
+             ORDER BY w.created_at DESC
+        ";
+        
+        return $wpdb->get_results($individual_query);
     }
     
     
@@ -145,18 +155,19 @@ class KIT_Warehouse
             $assigned_by = get_current_user_id();
         }
         
-        // Update waybill status to assigned and clear warehouse flag
+        // Update waybill status to assigned and set warehouse to 0 (not in warehouse)
+        // warehouse is BOOLEAN (TINYINT(1)): 1 = in warehouse, 0 = not in warehouse
         $result = $wpdb->update(
             $waybills_table,
             [
                 'status' => 'assigned',
                 'delivery_id' => $delivery_id,
-                'warehouse' => '', // Clear warehouse field since it's no longer in warehouse
+                'warehouse' => 0, // Set to 0 to indicate it's no longer in warehouse
                 'last_updated_by' => $assigned_by,
                 'last_updated_at' => current_time('mysql')
             ],
             ['id' => $waybill_id],
-            ['%s', '%d', '%s', '%d', '%s'],
+            ['%s', '%d', '%d', '%d', '%s'],
             ['%d']
         );
         
@@ -279,15 +290,16 @@ class KIT_Warehouse
         global $wpdb;
         $waybills_table = $wpdb->prefix . 'kit_waybills';
         
+        // Only count waybills where warehouse = 1 as "in_warehouse"
+        // warehouse is BOOLEAN (TINYINT(1)): 1 = in warehouse, 0/NULL = not in warehouse
         $stats = $wpdb->get_row(
             "SELECT 
                 COUNT(*) as total_items,
-                SUM(CASE WHEN warehouse IS NOT NULL AND warehouse != '' THEN 1 ELSE 0 END) as in_warehouse,
+                SUM(CASE WHEN warehouse = 1 THEN 1 ELSE 0 END) as in_warehouse,
                 SUM(CASE WHEN status = 'assigned' THEN 1 ELSE 0 END) as assigned,
                 SUM(CASE WHEN status = 'shipped' THEN 1 ELSE 0 END) as shipped,
                 SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) as delivered
-             FROM {$waybills_table}
-             WHERE warehouse IS NOT NULL AND warehouse != '' OR status IN ('assigned', 'shipped', 'delivered')"
+             FROM {$waybills_table}"
         );
         
         return $stats;
@@ -302,12 +314,13 @@ class KIT_Warehouse
         $waybills_table = $wpdb->prefix . 'kit_waybills';
         $customers_table = $wpdb->prefix . 'kit_customers';
         
+        // Only return waybills where warehouse = 1 (actual warehouse waybills)
         return $wpdb->get_row($wpdb->prepare(
             "SELECT w.*, c.name as customer_name, c.surname as customer_surname
              FROM $waybills_table w
              LEFT JOIN $customers_table c ON w.customer_id = c.cust_id
              WHERE w.waybill_no = %d
-             AND w.warehouse IS NOT NULL AND w.warehouse != ''",
+             AND w.warehouse = 1",
             $waybill_no
         ));
     }

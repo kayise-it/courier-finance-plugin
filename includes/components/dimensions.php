@@ -1,4 +1,6 @@
-<?php if (!defined('ABSPATH')) { exit; } ?>
+<?php if (!defined('ABSPATH')) {
+    exit;
+} ?>
 <?php
 // Include user roles for permission checking
 require_once plugin_dir_path(__FILE__) . '../user-roles.php';
@@ -10,6 +12,11 @@ $waybill = isset($dimensions_waybill) ? $dimensions_waybill : (isset($GLOBALS['w
 KIT_Commons::enqueueComponentScripts(['kitscript']);
 ?>
 <div class="">
+    <?php echo KIT_Commons::prettyHeading([
+        'icon' => '<path d="M16 7a4 4 0 1 0-8 0v2a4 4 0 0 0 8 0V7z" /><path d="M12 19v-2m0 0a7 7 0 0 1-7-7V7a7 7 0 0 1 14 0v3a7 7 0 0 1-7 7z" />',
+        'words' => 'Volume',
+        'classes' => 'mb-6'
+    ]); ?>
     <div class="grid grid-cols-3 gap-4 mb-4">
         <?php
         $dimensions = [
@@ -38,88 +45,111 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
 
     </div>
     <?php if (KIT_User_Roles::can_see_prices()): ?>
-    <div class="grid grid-cols-2 gap-4">
-        <div>
-            <?= KIT_Commons::Linput([
-                'label' => "Total Volume (m³)",
-                'name'  => 'total_volume',
-                'id'  => 'total_volume',
-                'type'  => 'number',
-                'value' => esc_attr($waybill['total_volume'] ?? null),
-                'class' => 'bg-green-50',
-                'special' => 'readonly',
-            ]); ?>
-            <!-- Auto-calculated Volume -->
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <?= KIT_Commons::Linput([
+                    'label' => "Total Volume (m³)",
+                    'name'  => 'total_volume',
+                    'id'  => 'total_volume',
+                    'type'  => 'number',
+                    'value' => esc_attr($waybill['total_volume'] ?? null),
+                    'class' => 'bg-green-50',
+                    'special' => 'readonly',
+                ]); ?>
+                <!-- Auto-calculated Volume -->
+            </div>
+            <div>
+                <?php
+                // Support both array and object $waybill when prefilling
+                $prefill_volume_charge = 0;
+                if (isset($waybill)) {
+                    if (is_array($waybill) && isset($waybill['volume_charge'])) {
+                        $prefill_volume_charge = $waybill['volume_charge'];
+                    } elseif (is_object($waybill) && isset($waybill->volume_charge)) {
+                        $prefill_volume_charge = $waybill->volume_charge;
+                    }
+                }
+                ?>
+                <?= KIT_Commons::Linput([
+                    'label' => 'Total Volume Charge (R)',
+                    'name'  => 'volume_charge',
+                    'id'  => 'volume_charge',
+                    'type'  => 'text',
+                    'value' => esc_attr($prefill_volume_charge),
+                    'class' => '',
+                    'special' => 'readonly',
+                ]); ?>
+            </div>
         </div>
-        <div>
+        <!-- Dimension Manipulator (Admin only) -->
+        <div class="mt-4">
             <?php
-            // Support both array and object $waybill when prefilling
-            $prefill_volume_charge = 0;
+            // Prefill from stored snapshot if available
+            $prefill_use_custom = false;
+            $prefill_custom_rate = '';
+            $prefill_volume_rate_used = null;
+            
+            // Handle both array and object waybill formats
+            $misc_data = null;
             if (isset($waybill)) {
-                if (is_array($waybill) && isset($waybill['volume_charge'])) {
-                    $prefill_volume_charge = $waybill['volume_charge'];
-                } elseif (is_object($waybill) && isset($waybill->volume_charge)) {
-                    $prefill_volume_charge = $waybill->volume_charge;
+                if (is_array($waybill) && isset($waybill['miscellaneous']) && !empty($waybill['miscellaneous'])) {
+                    $misc_data = maybe_unserialize($waybill['miscellaneous']);
+                } elseif (is_object($waybill) && isset($waybill->miscellaneous) && !empty($waybill->miscellaneous)) {
+                    $misc_data = maybe_unserialize($waybill->miscellaneous);
+                }
+            }
+            
+            if (is_array($misc_data) && isset($misc_data['others'])) {
+                $prefill_use_custom = !empty($misc_data['others']['use_custom_volume_rate']);
+                if (isset($misc_data['others']['custom_volume_rate_per_m3'])) {
+                    $prefill_custom_rate = $misc_data['others']['custom_volume_rate_per_m3'];
+                }
+                if (isset($misc_data['others']['volume_rate_used'])) {
+                    $prefill_volume_rate_used = floatval($misc_data['others']['volume_rate_used']);
                 }
             }
             ?>
-            <?= KIT_Commons::Linput([
-                'label' => 'Total Volume Charge (R)',
-                'name'  => 'volume_charge',
-                'id'  => 'volume_charge',
-                'type'  => 'text',
-                'value' => esc_attr($prefill_volume_charge),
-                'class' => '',
-                'special' => 'readonly',
-            ]); ?>
+            <label class="inline-flex items-center">
+                <input type="checkbox" id="enable_volume_price_manipulator" name="use_custom_volume_rate" class="form-checkbox h-4 w-4 text-blue-600" <?= $prefill_use_custom ? 'checked' : ''; ?>>
+                <span class="ml-2 text-sm text-gray-700">Custom Volume Rate</span>
+            </label>
+            <div id="dimension_manipulator_input_container" style="display: <?= $prefill_use_custom ? 'block' : 'none'; ?>; margin-top: 1rem;">
+                <?= KIT_Commons::Linput([
+                    'label' => 'Volume Rate Manipulator (R)',
+                    'name'  => 'custom_volume_rate_per_m3',
+                    'id'    => 'custom_volume_rate_per_m3',
+                    'type'  => 'number',
+                    'min'   => '0',
+                    'step'  => '0.01',
+                    'value' => esc_attr($prefill_custom_rate),
+                    'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 focus:ring-1 focus:ring-blue-500',
+                ]); ?>
+            </div>
         </div>
-    </div>
-    <!-- Dimension Manipulator (Admin only) -->
-    <div class="mt-4">
         <?php
-        // Prefill from stored snapshot if available
-        $prefill_use_custom = false;
-        $prefill_custom_rate = '';
-        if (isset($waybill) && isset($waybill->miscellaneous) && !empty($waybill->miscellaneous)) {
-            $__misc = maybe_unserialize($waybill->miscellaneous);
-            if (is_array($__misc) && isset($__misc['others'])) {
-                $prefill_use_custom = !empty($__misc['others']['use_custom_volume_rate']);
-                if (isset($__misc['others']['custom_volume_rate_per_m3'])) {
-                    $prefill_custom_rate = $__misc['others']['custom_volume_rate_per_m3'];
-                }
+        // Get the rate per m³ from miscellaneous data, not the total charge
+        $prefill_volume_rate_display = '0.00';
+        if ($prefill_volume_rate_used !== null && $prefill_volume_rate_used > 0) {
+            $prefill_volume_rate_display = number_format($prefill_volume_rate_used, 2, '.', '');
+        } elseif (isset($waybill)) {
+            // Fallback: calculate rate from volume_charge / total_volume if available
+            $volume_charge = 0;
+            $total_volume = 0;
+            if (is_array($waybill)) {
+                $volume_charge = floatval($waybill['volume_charge'] ?? 0);
+                $total_volume = floatval($waybill['total_volume'] ?? 0);
+            } elseif (is_object($waybill)) {
+                $volume_charge = floatval($waybill->volume_charge ?? 0);
+                $total_volume = floatval($waybill->total_volume ?? 0);
+            }
+            if ($total_volume > 0 && $volume_charge > 0) {
+                $prefill_volume_rate_display = number_format($volume_charge / $total_volume, 2, '.', '');
             }
         }
         ?>
-        <label class="inline-flex items-center">
-            <input type="checkbox" id="enable_volume_price_manipulator" name="use_custom_volume_rate" class="form-checkbox h-4 w-4 text-blue-600" <?= $prefill_use_custom ? 'checked' : ''; ?>>
-            <span class="ml-2 text-sm text-gray-700">Custom Volume Rate</span>
-        </label>
-        <div id="dimension_manipulator_input_container" style="display: <?= $prefill_use_custom ? 'block' : 'none'; ?>; margin-top: 1rem;">
-            <?= KIT_Commons::Linput([
-                'label' => 'Volume Rate Manipulator (R)',
-                'name'  => 'custom_volume_rate_per_m3',
-                'id'    => 'custom_volume_rate_per_m3',
-                'type'  => 'number',
-                'min'   => '0',
-                'step'  => '0.01',
-                'value' => esc_attr($prefill_custom_rate),
-                'class' => 'w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 focus:ring-1 focus:ring-blue-500',
-            ]); ?>
+        <div id="ttt" class="text-sm text-gray-700 col-span-2">
+            = R<span id="volume_charge_display"><?= htmlspecialchars($prefill_volume_rate_display); ?></span> per m3
         </div>
-    </div>
-    <?php
-    $prefill_volume_rate_display = '0.00';
-    if (isset($waybill)) {
-        if (is_array($waybill) && isset($waybill['volume_charge'])) {
-            $prefill_volume_rate_display = $waybill['volume_charge'];
-        } elseif (is_object($waybill) && isset($waybill->volume_charge)) {
-            $prefill_volume_rate_display = $waybill->volume_charge;
-        }
-    }
-    ?>
-    <div id="ttt" class="text-sm text-gray-700 col-span-2">
-        = R<span id="volume_charge_display"><?= htmlspecialchars($prefill_volume_rate_display); ?></span> per m3
-    </div>
     <?php endif; ?>
 </div>
 
@@ -146,8 +176,11 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
 
         let ajaxAbortController = null;
         let debounceTimer = null;
-        let baseRate = null; // for manipulation
-        let lastBaseRate = null; // to restore when unchecking manipulator
+        // Initialize with stored rate from database if available (for editing existing waybills)
+        // But we'll always fetch from table when direction_id or volume changes
+        let baseRate = <?php echo $prefill_volume_rate_used !== null && $prefill_volume_rate_used > 0 ? $prefill_volume_rate_used : 'null'; ?>;
+        let lastBaseRate = <?php echo $prefill_volume_rate_used !== null && $prefill_volume_rate_used > 0 ? $prefill_volume_rate_used : 'null'; ?>;
+        let lastDirectionId = null; // Track direction_id changes
 
         function validateDimension(value) {
             // Handle both comma and dot decimal separators
@@ -178,15 +211,37 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
             }
 
             const volume = (length * width * height) / CUBIC_CM_TO_CUBIC_M;
-            if (elements.volumeField) {
+            
+            // CRITICAL: Don't overwrite saved volume if we have a saved volume_charge
+            // This preserves the database values when editing existing waybills
+            const hasSavedVolumeCharge = elements.volumeCharge && parseFloat(elements.volumeCharge.value.replace(',', '.')) > 0;
+            if (elements.volumeField && !hasSavedVolumeCharge) {
                 elements.volumeField.value = volume.toFixed(6);
             }
 
-            if (immediate) {
-                fetchVolumeRate(volume);
+            // Check if direction_id has changed - if so, always fetch from table
+            const directionField = document.getElementById('direction_id') || document.querySelector('input[name="direction_id"]');
+            const currentDirectionId = directionField ? directionField.value : '';
+            const directionChanged = lastDirectionId !== null && lastDirectionId !== currentDirectionId;
+            
+            // Always fetch from table if:
+            // 1. No stored rate exists
+            // 2. Direction_id changed (rates may differ by direction)
+            // 3. Volume changed significantly (might be in different tier)
+            const shouldFetchFromTable = baseRate === null || baseRate <= 0 || directionChanged;
+            
+            if (shouldFetchFromTable) {
+                // Always fetch from wp_kit_shipping_rates_volume table using direction_id
+                if (immediate) {
+                    fetchVolumeRate(volume);
+                } else {
+                    clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(() => fetchVolumeRate(volume), DEBOUNCE_DELAY_MS);
+                }
+                lastDirectionId = currentDirectionId;
             } else {
-                clearTimeout(debounceTimer);
-                debounceTimer = setTimeout(() => fetchVolumeRate(volume), DEBOUNCE_DELAY_MS);
+                // Use stored rate only if direction hasn't changed
+                updateVolumeChargeUI(volume, baseRate);
             }
         }
 
@@ -206,13 +261,21 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
             }
             ajaxAbortController = new AbortController();
 
-            // Use ComponentUtils for AJAX call
+            // Get direction_id - this is critical for querying wp_kit_shipping_rates_volume table
             const directionField = document.getElementById('direction_id') || document.querySelector('input[name="direction_id"]');
             const directionId = directionField ? directionField.value : '';
 
+            if (!directionId) {
+                console.warn('dimensions.php: direction_id is required to fetch volume rate from table');
+                elements.inputs.forEach(input => ComponentUtils.hideSpinner(input));
+                return;
+            }
+
+            // Fetch from wp_kit_shipping_rates_volume table using direction_id
+            // The handler queries: WHERE direction_id = %d AND volume BETWEEN min_volume AND max_volume
             ComponentUtils.ajaxCall('handle_get_price_per_m3', {
                 'origin_country_id': elements.countrySelect?.value || '',
-                'direction_id': directionId || '',
+                'direction_id': directionId, // Required: used to query kit_shipping_rates_volume table
                 'total_volume_m3': volume
             }, function(data) {
                 // Handle response
@@ -220,25 +283,51 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
                     const rate = parseFloat(data.data.rate_per_m3);
                     baseRate = rate;
                     lastBaseRate = rate;
+                    lastDirectionId = directionId; // Update tracked direction_id
                     updateVolumeChargeUI(volume, rate);
                 } else {
                     console.error('Server reported error:', data.data.message);
-                    clearForm();
+                    // If fetch fails, fall back to stored rate if available
+                    if (baseRate !== null && baseRate > 0) {
+                        updateVolumeChargeUI(volume, baseRate);
+                    } else {
+                        clearForm();
+                    }
                 }
-                
+
                 // Hide spinners
                 elements.inputs.forEach(input => ComponentUtils.hideSpinner(input));
             });
         }
 
         function updateVolumeChargeUI(volume, fetchedRate) {
+            // CRITICAL: Don't overwrite saved volume_charge if it exists
+            // This preserves database values when editing existing waybills
+            const savedVolumeCharge = elements.volumeCharge ? parseFloat(elements.volumeCharge.value.replace(',', '.')) || 0 : 0;
+            const savedVolume = elements.volumeField ? parseFloat(elements.volumeField.value.replace(',', '.')) || 0 : 0;
+            
+            if (savedVolumeCharge > 0 && savedVolume > 0) {
+                // Use saved volume from database, not calculated volume
+                const savedRate = savedVolumeCharge / savedVolume;
+                if (elements.volumeChargeDisplay) {
+                    elements.volumeChargeDisplay.textContent = savedRate.toFixed(2);
+                }
+                return; // Don't update the volume_charge field - preserve saved value
+            }
+            
             let rate = fetchedRate;
-            // If manipulator is enabled, add manip value
-            if (elements.manipCheckbox && elements.manipCheckbox.checked) {
+            // If custom rate is enabled, use it as the full rate (not an addition)
+            if (elements.manipCheckbox && elements.manipCheckbox.checked && elements.manipInput) {
                 // Handle both comma and dot decimal separators
                 const normalizedManipValue = String(elements.manipInput.value).replace(',', '.');
-                const manip = parseFloat(normalizedManipValue) || 0;
-                rate = (baseRate !== null ? baseRate : rate) + manip;
+                const customRate = parseFloat(normalizedManipValue);
+                if (!isNaN(customRate) && customRate > 0) {
+                    // Use custom rate as full replacement rate
+                    rate = customRate;
+                } else {
+                    // If no custom rate value, fall back to base rate
+                    rate = baseRate !== null ? baseRate : fetchedRate;
+                }
             }
             if (elements.volumeChargeDisplay) {
                 elements.volumeChargeDisplay.textContent = rate.toFixed(2);
@@ -282,7 +371,7 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
             // Manipulator input changes
             elements.manipInput.addEventListener('input', function() {
                 if (!elements.manipCheckbox.checked) return;
-                
+
                 // Normalize the manipulator input value (handle comma/dot separators)
                 const normalizedManipValue = String(this.value).replace(',', '.');
                 this.value = normalizedManipValue;
@@ -291,7 +380,7 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
                 if (isNaN(parsed)) {
                     this.value = '0';
                 }
-                
+
                 const length = validateDimension(elements.lengthInput.value);
                 const width = validateDimension(elements.widthInput.value);
                 const height = validateDimension(elements.heightInput.value);
@@ -302,9 +391,29 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
 
             // If editing and value exists, show input and check the box
             <?php if (isset($prefill_use_custom) && $prefill_use_custom) : ?>
-            elements.manipCheckbox.checked = true;
-            elements.manipInputContainer.style.display = 'block';
+                elements.manipCheckbox.checked = true;
+                elements.manipInputContainer.style.display = 'block';
             <?php endif; ?>
+        }
+
+        // Listen for direction_id changes - re-fetch rate from table when direction changes
+        const directionField = document.getElementById('direction_id') || document.querySelector('input[name="direction_id"]');
+        if (directionField) {
+            directionField.addEventListener('change', function() {
+                // When direction_id changes, we need to fetch new rate from wp_kit_shipping_rates_volume table
+                const length = validateDimension(elements.lengthInput.value);
+                const width = validateDimension(elements.widthInput.value);
+                const height = validateDimension(elements.heightInput.value);
+                
+                if (length && width && height) {
+                    const volume = (length * width * height) / CUBIC_CM_TO_CUBIC_M;
+                    // Reset baseRate to force fetch from table
+                    baseRate = null;
+                    fetchVolumeRate(volume);
+                }
+            });
+            // Initialize lastDirectionId on page load
+            lastDirectionId = directionField.value || null;
         }
 
         // Set up event listeners
@@ -335,7 +444,44 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
         // Detach charge-basis from dimension recalculation to avoid unintended clears
         // (preferred select no longer affects calculation choice)
 
-        // Initial calculation
-        calculateVolume(true);
+        // Initial calculation - only if dimensions are filled
+        const hasDimensions = elements.lengthInput.value && elements.widthInput.value && elements.heightInput.value;
+        
+        // Check if we're editing an existing waybill with saved volume_charge
+        // CRITICAL: Don't recalculate if we have a saved volume_charge from the database
+        const volumeChargeField = elements.volumeCharge;
+        const savedVolumeCharge = volumeChargeField ? parseFloat(volumeChargeField.value.replace(',', '.')) || 0 : 0;
+        const volumeField = elements.volumeField;
+        const savedVolume = volumeField ? parseFloat(volumeField.value.replace(',', '.')) || 0 : 0;
+        
+        // If we have saved volume_charge and volume, preserve them (don't recalculate)
+        if (savedVolumeCharge > 0 && savedVolume > 0) {
+            // Calculate the saved rate from saved volume_charge / saved volume
+            const savedRate = savedVolumeCharge / savedVolume;
+            
+            // Only set baseRate if it's not already set from miscellaneous data
+            if (baseRate === null || baseRate <= 0) {
+                baseRate = savedRate;
+                lastBaseRate = savedRate;
+            }
+            
+            // Update UI with saved rate display
+            if (elements.volumeChargeDisplay) {
+                elements.volumeChargeDisplay.textContent = savedRate.toFixed(2);
+            }
+            
+            // Don't recalculate - preserve the saved volume_charge
+            // The volumeCharge field already has the saved value from PHP
+            console.log('Preserving saved volume_charge:', savedVolumeCharge, 'with volume:', savedVolume, 'rate:', savedRate);
+        } else if (hasDimensions) {
+            // Only recalculate if dimensions are filled and we don't have saved values
+            calculateVolume(true);
+        } else if (baseRate !== null && baseRate > 0 && elements.volumeField && elements.volumeField.value) {
+            // If we have a stored rate and volume, calculate charge without fetching
+            const volume = parseFloat(elements.volumeField.value.replace(',', '.')) || 0;
+            if (volume > 0) {
+                updateVolumeChargeUI(volume, baseRate);
+            }
+        }
     });
 </script>

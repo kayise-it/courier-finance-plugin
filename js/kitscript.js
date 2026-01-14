@@ -202,11 +202,17 @@ document.addEventListener('DOMContentLoaded', function () {
                 fetchRatePerKg();
             } else if (massValue > 0 && rateValue <= 0 && !directionId) {
                 console.warn('kitscript.js: Cannot auto-trigger - direction_id missing');
-                // Try to find direction_id from form
-                var formDirectionId = jQuery('input[name="direction_id"]').val();
+                // Try to find direction_id from form (check both inputs)
+                var formDirectionId = jQuery('#direction_id').val() || jQuery('input[name="direction_id"]').val();
                 if (formDirectionId) {
-                    jQuery('#direction_id').val(formDirectionId);
+                    // Update the #direction_id field if it's empty
+                    if (!jQuery('#direction_id').val()) {
+                        jQuery('#direction_id').val(formDirectionId);
+                    }
+                    directionId = formDirectionId;
                     fetchRatePerKg();
+                } else {
+                    console.warn('direction_id not found in form');
                 }
             }
         }, 1000); // 1 second delay to ensure all elements are loaded
@@ -231,6 +237,10 @@ document.addEventListener('DOMContentLoaded', function () {
     var addWaybillItemBtn = document.getElementById('add-waybill-item-btn');
 
     function toggleVatDisabled() {
+        if (!vatCheckbox2) {
+            return; // Exit early if vatCheckbox2 doesn't exist
+        }
+        
         if (SADC && SADC.checked) {
             vatCheckbox2.checked = false;
             vatCheckbox2.disabled = true;
@@ -1262,4 +1272,762 @@ function showRateFetchError(message) {
             jQuery(this).remove();
         });
     }, 5000);
+}
+
+// Bulk Management functionality for KIT Unified Table
+function initBulkManagement(tableId, bulkNonce) {
+    if (!tableId) {
+        console.warn('initBulkManagement: tableId is required');
+        return;
+    }
+
+    const table = document.getElementById(tableId);
+    if (!table) {
+        console.warn('initBulkManagement: Table not found:', tableId);
+        return;
+    }
+
+    // Get elements
+    const bulkSelectAll = document.getElementById('bulk-select-all-' + tableId);
+    const bulkActionsBar = document.getElementById('bulk-actions-bar-' + tableId);
+    const bulkSelectedCount = document.getElementById('bulk-selected-count-' + tableId);
+    const bulkClearBtn = document.getElementById('bulk-clear-selection-' + tableId);
+
+    // Function to get checkboxes (will be called dynamically)
+    const getBulkRowCheckboxes = function() {
+        return table.querySelectorAll('.bulk-row-checkbox');
+    };
+
+    // Function to get bulk action buttons
+    const getBulkActionButtons = function() {
+        return bulkActionsBar ? bulkActionsBar.querySelectorAll('[data-bulk-action]') : [];
+    };
+
+    // Debug: Log if elements are found
+    if (!bulkActionsBar) {
+        console.warn('Bulk actions bar not found:', 'bulk-actions-bar-' + tableId);
+    }
+    const initialCheckboxes = getBulkRowCheckboxes();
+    if (initialCheckboxes.length === 0) {
+        console.warn('No bulk row checkboxes found initially');
+    } else {
+        console.log('Found', initialCheckboxes.length, 'bulk row checkboxes');
+    }
+
+    const updateBulkUI = function() {
+        // Get fresh checkboxes list in case DOM changed
+        const bulkRowCheckboxes = getBulkRowCheckboxes();
+        const bulkActionButtonsList = getBulkActionButtons();
+
+        const visibleCheckboxes = Array.from(bulkRowCheckboxes).filter(function(cb) {
+            const row = cb.closest('tr');
+            return row && row.style.display !== 'none' && !row.dataset.groupRow;
+        });
+        const checkedBoxes = visibleCheckboxes.filter(function(cb) {
+            return cb.checked;
+        });
+        const count = checkedBoxes.length;
+
+        console.log('updateBulkUI called - count:', count, 'bulkActionsBar:', bulkActionsBar, 'checkboxes found:', bulkRowCheckboxes.length);
+
+        // Update count
+        if (bulkSelectedCount) {
+            bulkSelectedCount.textContent = count + ' selected';
+        }
+
+        // Show/hide bulk actions bar
+        if (bulkActionsBar) {
+            if (count > 0) {
+                console.log('Showing bulk actions bar');
+                bulkActionsBar.style.display = 'block';
+                bulkActionsBar.style.visibility = 'visible';
+                bulkActionsBar.classList.remove('hidden');
+            } else {
+                console.log('Hiding bulk actions bar');
+                bulkActionsBar.style.display = 'none';
+                bulkActionsBar.style.visibility = 'hidden';
+                bulkActionsBar.classList.add('hidden');
+            }
+        } else {
+            console.error('bulkActionsBar element not found!');
+        }
+
+        // Enable/disable bulk action buttons
+        bulkActionButtonsList.forEach(function(btn) {
+            btn.disabled = count === 0;
+        });
+
+        // Update select all checkbox state
+        if (bulkSelectAll && visibleCheckboxes.length > 0) {
+            if (count === 0) {
+                bulkSelectAll.checked = false;
+                bulkSelectAll.indeterminate = false;
+            } else if (count === visibleCheckboxes.length) {
+                bulkSelectAll.checked = true;
+                bulkSelectAll.indeterminate = false;
+            } else {
+                bulkSelectAll.checked = false;
+                bulkSelectAll.indeterminate = true;
+            }
+        }
+    };
+
+    // Select all checkbox
+    if (bulkSelectAll) {
+        bulkSelectAll.addEventListener('change', function() {
+            console.log('Select all checkbox changed:', this.checked);
+            const checked = this.checked;
+            const bulkRowCheckboxes = getBulkRowCheckboxes();
+            bulkRowCheckboxes.forEach(function(checkbox) {
+                const row = checkbox.closest('tr');
+                if (row && row.style.display !== 'none' && !row.dataset.groupRow) {
+                    checkbox.checked = checked;
+                }
+            });
+            updateBulkUI();
+        });
+    }
+
+    // Individual row checkboxes - use event delegation for dynamic checkboxes
+    // This works even if checkboxes are added/removed dynamically
+    if (table) {
+        table.addEventListener('change', function(e) {
+            if (e.target && e.target.classList.contains('bulk-row-checkbox')) {
+                console.log('Row checkbox changed:', e.target.checked, e.target.value);
+                updateBulkUI();
+            }
+        });
+
+        // Also handle click events in case change doesn't fire
+        table.addEventListener('click', function(e) {
+            if (e.target && e.target.classList.contains('bulk-row-checkbox')) {
+                console.log('Row checkbox clicked:', e.target.checked, e.target.value);
+                // Small delay to let the checkbox state update
+                setTimeout(function() {
+                    updateBulkUI();
+                }, 10);
+            }
+        });
+    }
+
+    // Clear selection button
+    if (bulkClearBtn) {
+        bulkClearBtn.addEventListener('click', function() {
+            const bulkRowCheckboxes = getBulkRowCheckboxes();
+            bulkRowCheckboxes.forEach(function(cb) {
+                cb.checked = false;
+            });
+            if (bulkSelectAll) {
+                bulkSelectAll.checked = false;
+                bulkSelectAll.indeterminate = false;
+            }
+            updateBulkUI();
+        });
+    }
+
+    // Bulk action buttons - use event delegation
+    if (bulkActionsBar) {
+        bulkActionsBar.addEventListener('click', function(e) {
+            const btn = e.target.closest('[data-bulk-action]');
+            if (!btn || btn.disabled) return;
+
+            const action = btn.dataset.bulkAction;
+            const bulkRowCheckboxes = getBulkRowCheckboxes();
+            const checkedBoxes = Array.from(bulkRowCheckboxes).filter(function(cb) {
+                const row = cb.closest('tr');
+                return cb.checked && row && row.style.display !== 'none' && !row.dataset.groupRow;
+            });
+            const selectedIds = checkedBoxes.map(function(cb) {
+                return cb.value;
+            }).filter(function(id) {
+                return id;
+            });
+
+            if (selectedIds.length === 0) {
+                alert('Please select at least one item.');
+                return;
+            }
+
+            // Use default handler (custom handlers can be added via window events)
+            handleBulkAction(action, selectedIds, bulkNonce);
+
+            // Dispatch custom event for external handlers
+            const event = new CustomEvent('kit-bulk-action', {
+                detail: { action: action, selectedIds: selectedIds, tableId: tableId }
+            });
+            window.dispatchEvent(event);
+        });
+    }
+
+    // Default bulk action handler
+    function handleBulkAction(action, selectedIds, nonce) {
+        const ids = selectedIds.join(',');
+
+        switch(action) {
+            case 'delete':
+                if (!confirm('Are you sure you want to delete ' + selectedIds.length + ' selected item(s)? This action cannot be undone.')) {
+                    return;
+                }
+                // Submit form or make AJAX call
+                const deleteForm = document.createElement('form');
+                deleteForm.method = 'POST';
+                deleteForm.action = window.location.href;
+
+                const actionInput = document.createElement('input');
+                actionInput.type = 'hidden';
+                actionInput.name = 'bulk_action';
+                actionInput.value = 'delete';
+                deleteForm.appendChild(actionInput);
+
+                const idsInput = document.createElement('input');
+                idsInput.type = 'hidden';
+                idsInput.name = 'bulk_ids';
+                idsInput.value = ids;
+                deleteForm.appendChild(idsInput);
+
+                if (nonce) {
+                    const nonceInput = document.createElement('input');
+                    nonceInput.type = 'hidden';
+                    nonceInput.name = 'bulk_nonce';
+                    nonceInput.value = nonce;
+                    deleteForm.appendChild(nonceInput);
+                }
+
+                document.body.appendChild(deleteForm);
+                deleteForm.submit();
+                break;
+
+            case 'export':
+                // Export to PDF - preserve page parameter and add export_selected
+                const currentUrl = new URL(window.location.href);
+                currentUrl.searchParams.set('export_selected', ids);
+                // Ensure page parameter is preserved (should be 08600-waybill-manage)
+                if (!currentUrl.searchParams.has('page')) {
+                    currentUrl.searchParams.set('page', '08600-waybill-manage');
+                }
+                window.open(currentUrl.toString(), '_blank');
+                break;
+
+            case 'status_active':
+            case 'status_inactive':
+                const status = action === 'status_active' ? '1' : '0';
+                const statusForm = document.createElement('form');
+                statusForm.method = 'POST';
+                statusForm.action = window.location.href;
+
+                const statusActionInput = document.createElement('input');
+                statusActionInput.type = 'hidden';
+                statusActionInput.name = 'bulk_action';
+                statusActionInput.value = 'update_status';
+                statusForm.appendChild(statusActionInput);
+
+                const statusIdsInput = document.createElement('input');
+                statusIdsInput.type = 'hidden';
+                statusIdsInput.name = 'bulk_ids';
+                statusIdsInput.value = ids;
+                statusForm.appendChild(statusIdsInput);
+
+                const statusValueInput = document.createElement('input');
+                statusValueInput.type = 'hidden';
+                statusValueInput.name = 'status_value';
+                statusValueInput.value = status;
+                statusForm.appendChild(statusValueInput);
+
+                if (nonce) {
+                    const statusNonceInput = document.createElement('input');
+                    statusNonceInput.type = 'hidden';
+                    statusNonceInput.name = 'bulk_nonce';
+                    statusNonceInput.value = nonce;
+                    statusForm.appendChild(statusNonceInput);
+                }
+
+                document.body.appendChild(statusForm);
+                statusForm.submit();
+                break;
+        }
+    }
+
+    // Store updateBulkUI function for external access if needed
+    if (typeof window.kitBulkManagement === 'undefined') {
+        window.kitBulkManagement = {};
+    }
+    window.kitBulkManagement[tableId] = {
+        updateUI: updateBulkUI,
+        getCheckboxes: getBulkRowCheckboxes,
+        getActionButtons: getBulkActionButtons
+    };
+
+    // Initial update
+    updateBulkUI();
+}
+
+// ============================================================================
+// Charge Basis Update Handler (from editWaybill.php)
+// Updates invoice amount display based on charge basis selection
+// ============================================================================
+(function initChargeBasisUpdate() {
+    document.addEventListener('DOMContentLoaded', function() {
+        const chargeBasisRadios = document.querySelectorAll('.charge-basis-radio');
+        const waybilltotalMockup = document.getElementById('waybilltotalMockup');
+        
+        // Only run if required elements exist (edit waybill page check)
+        if (chargeBasisRadios.length === 0 || !waybilltotalMockup) return;
+        
+        const massChargeInput = document.getElementById('mass_charge');
+        const volumeChargeInput = document.getElementById('volume_charge');
+        
+        function updateInvoiceAmount() {
+            if (!waybilltotalMockup) return;
+            
+            // Get current charge basis selection
+            const selectedBasis = document.querySelector('input[name="charge_basis"]:checked')?.value || 'auto';
+            
+            // Get mass and volume charges
+            const massCharge = parseFloat(massChargeInput?.value?.replace(/,/g, '') || '0') || 0;
+            const volumeCharge = parseFloat(volumeChargeInput?.value?.replace(/,/g, '') || '0') || 0;
+            
+            let displayAmount = 0;
+            
+            if (selectedBasis === 'mass') {
+                displayAmount = massCharge;
+            } else if (selectedBasis === 'volume') {
+                displayAmount = volumeCharge;
+            } else if (selectedBasis === 'auto') {
+                // Show the highest of the two
+                displayAmount = Math.max(massCharge, volumeCharge);
+            }
+            
+            // Update the display
+            waybilltotalMockup.textContent = displayAmount.toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        }
+        
+        // Listen for charge basis changes
+        chargeBasisRadios.forEach(radio => {
+            radio.addEventListener('change', updateInvoiceAmount);
+        });
+        
+        // Also listen for changes in mass/volume charges (in case they update)
+        if (massChargeInput) {
+            massChargeInput.addEventListener('input', updateInvoiceAmount);
+            massChargeInput.addEventListener('change', updateInvoiceAmount);
+        }
+        if (volumeChargeInput) {
+            volumeChargeInput.addEventListener('input', updateInvoiceAmount);
+            volumeChargeInput.addEventListener('change', updateInvoiceAmount);
+        }
+        
+        // Initial update
+        updateInvoiceAmount();
+    });
+})();
+
+// ============================================================================
+// Total Override Handler (from totalOverride.php)
+// Allows superadmins to override calculated totals
+// ============================================================================
+(function initTotalOverride() {
+    document.addEventListener('DOMContentLoaded', function() {
+        const enableOverrideCheckbox = document.getElementById('enable_total_override');
+        
+        // Only run if override checkbox exists (total override component check)
+        if (!enableOverrideCheckbox) return;
+        
+        const overrideInputContainer = document.getElementById('total-override-input');
+        const calculatedTotalInput = document.getElementById('calculated_total');
+        const overrideTotalInput = document.getElementById('override_total');
+        
+        // Calculate current total from form fields (excluding override adjustment row)
+        function calculateCurrentTotal() {
+            let total = 0;
+            
+            const massCharge = parseFloat(document.getElementById('mass_charge')?.value || '0');
+            total += massCharge;
+            
+            const volumeCharge = parseFloat(document.getElementById('volume_charge')?.value || '0');
+            total += volumeCharge;
+            
+            const waybillSubtotal = parseFloat(document.getElementById('waybill-subtotal')?.textContent?.replace(/[^\d.-]/g, '') || '0');
+            total += waybillSubtotal;
+            
+            // Sum misc items by iterating rows and excluding the override row
+            let miscTotal = 0;
+            document.querySelectorAll('#misc-items .dynamic-item').forEach(function(row){
+                if (row.classList.contains('override-adjustment-row')) return;
+                const priceInput = row.querySelector('input[name*="[misc_price]"]');
+                const qtyInput = row.querySelector('input[name*="[misc_quantity]"]');
+                const price = parseFloat(priceInput ? priceInput.value : '0') || 0;
+                const qty = parseFloat(qtyInput ? qtyInput.value : '0') || 0;
+                miscTotal += price * qty;
+            });
+            total += miscTotal;
+            
+            return total;
+        }
+
+        function detectChargeBasis() {
+            const selector = document.getElementById('override_basis');
+            const choice = selector ? selector.value : 'auto';
+            if (choice === 'mass' || choice === 'volume') return choice;
+            const mass = parseFloat(document.getElementById('mass_charge')?.value || '0');
+            const volume = parseFloat(document.getElementById('volume_charge')?.value || '0');
+            if (mass > 0 && volume <= 0) return 'mass';
+            if (volume > 0 && mass <= 0) return 'volume';
+            // default to mass when ambiguous
+            return 'mass';
+        }
+
+        function clearError() {
+            const err = document.getElementById('override_error');
+            if (err) { err.classList.add('hidden'); err.textContent = ''; }
+        }
+        function showError(msg) {
+            const err = document.getElementById('override_error');
+            if (err) { err.textContent = msg; err.classList.remove('hidden'); }
+        }
+
+        function parseNum(val){
+            if (val === undefined || val === null) return 0;
+            const s = String(val).replace(/\s/g,'').replace(',', '.');
+            const n = parseFloat(s);
+            return Number.isFinite(n) ? n : 0;
+        }
+
+        function restoreMassToBase() {
+            const baseRateField = document.getElementById('base_rate');
+            const totalMassField = document.getElementById('total_mass_kg');
+            const massRateField = document.getElementById('mass_rate');
+            const massChargeField = document.getElementById('mass_charge');
+            const massBaseDisplay = document.getElementById('mass_base_display');
+            const baseRate = parseFloat(baseRateField?.value || '0');
+            const totalMass = parseFloat(totalMassField?.value || '0');
+            if (baseRate > 0) {
+                if (massRateField) massRateField.value = baseRate.toFixed(2);
+                if (massBaseDisplay) massBaseDisplay.textContent = baseRate.toFixed(2);
+                if (massChargeField) massChargeField.value = (Number.isFinite(totalMass) ? totalMass : 0 * baseRate).toFixed(2);
+            }
+            // Clear manipulator numeric value if present
+            const manipInput = document.getElementById('mass_charge_manipulator');
+            if (manipInput) manipInput.value = '0';
+        }
+
+        function clearVolumeManipulator() {
+            const volManipInput = document.getElementById('custom_volume_rate_per_m3');
+            if (volManipInput) volManipInput.value = '';
+            // Do not force-fetch new base here; volume section will recalc on next input/blur
+        }
+
+        // Helper: disable/enable price manipulators when override toggled
+        function setManipulatorsDisabled(disabled) {
+            const massManip = document.getElementById('enable_price_manipulator');
+            const massContainer = document.getElementById('price_manipulator_input_container');
+            if (massManip) {
+                if (disabled) {
+                    massManip.checked = false;
+                    massManip.setAttribute('disabled', 'disabled');
+                    if (massContainer) massContainer.style.display = 'none';
+                    restoreMassToBase();
+                } else {
+                    massManip.removeAttribute('disabled');
+                }
+            }
+            const volManip = document.getElementById('enable_volume_price_manipulator');
+            const volContainer = document.getElementById('dimension_manipulator_input_container');
+            if (volManip) {
+                if (disabled) {
+                    volManip.checked = false;
+                    volManip.setAttribute('disabled', 'disabled');
+                    if (volContainer) volContainer.style.display = 'none';
+                    clearVolumeManipulator();
+                } else {
+                    volManip.removeAttribute('disabled');
+                }
+            }
+        }
+
+        // Apply override by back-calculating the rate for the chosen basis
+        function applyOverrideToBasis() {
+            if (!enableOverrideCheckbox || !enableOverrideCheckbox.checked) return;
+            clearError();
+            const desiredTotal = parseNum(overrideTotalInput?.value || '0');
+            if (!Number.isFinite(desiredTotal) || desiredTotal <= 0) return;
+            const basis = detectChargeBasis();
+            const basisInput = document.getElementById('override_charge_basis');
+            if (basisInput) basisInput.value = basis;
+            
+            if (basis === 'mass') {
+                const massInput = document.getElementById('total_mass_kg');
+                const massRateInput = document.getElementById('mass_rate');
+                const massChargeInput = document.getElementById('mass_charge');
+                const massBaseDisplay = document.getElementById('mass_base_display');
+                const massVal = parseNum(massInput?.value || '0');
+                if (!massVal || massVal <= 0) { showError('Enter Total Mass (Kg) to apply override using Mass'); return; }
+                const newRate = desiredTotal / massVal;
+                if (massRateInput) massRateInput.value = newRate.toFixed(2);
+                if (massBaseDisplay) massBaseDisplay.textContent = newRate.toFixed(2);
+                if (massChargeInput) massChargeInput.value = desiredTotal.toFixed(2);
+            } else {
+                const volInput = document.getElementById('total_volume');
+                const volChargeInput = document.getElementById('volume_charge');
+                const volDisplay = document.getElementById('volume_charge_display');
+                const volVal = parseNum(volInput?.value || '0');
+                if (!volVal || volVal <= 0) { showError('Enter Total Volume (m³) to apply override using Volume'); return; }
+                const newRate = desiredTotal / volVal;
+                if (volDisplay) volDisplay.textContent = newRate.toFixed(2);
+                if (volChargeInput) volChargeInput.value = desiredTotal.toFixed(2);
+            }
+        }
+        
+        // Update calculated total display (basis-specific)
+        function updateCalculatedTotal() {
+            if (enableOverrideCheckbox && enableOverrideCheckbox.checked) {
+                const o = parseNum(overrideTotalInput?.value || '0');
+                if (calculatedTotalInput) calculatedTotalInput.value = o.toFixed(2);
+                return;
+            }
+            const basis = detectChargeBasis();
+            let current = 0;
+            if (basis === 'mass') {
+                current = parseNum(document.getElementById('mass_charge')?.value || '0');
+            } else if (basis === 'volume') {
+                current = parseNum(document.getElementById('volume_charge')?.value || '0');
+            }
+            if (calculatedTotalInput) {
+                calculatedTotalInput.value = current.toFixed(2);
+            }
+        }
+        
+        // Toggle override functionality (global function for inline onclick handlers)
+        window.toggleTotalOverride = function(enabled) {
+            if (enabled) {
+                overrideInputContainer.classList.remove('hidden');
+                setManipulatorsDisabled(true);
+                updateCalculatedTotal();
+                applyOverrideToBasis();
+                
+                // Hide the waybilltotalMockup when override is enabled
+                const waybilltotalMockup = document.getElementById('waybilltotalMockup');
+                if (waybilltotalMockup) {
+                    waybilltotalMockup.style.display = 'none';
+                }
+                
+                // Focus on override input
+                setTimeout(() => {
+                    if (overrideTotalInput) {
+                        overrideTotalInput.focus();
+                    }
+                }, 100);
+            } else {
+                overrideInputContainer.classList.add('hidden');
+                setManipulatorsDisabled(false);
+                if (overrideTotalInput) {
+                    overrideTotalInput.value = '';
+                }
+                const basisInput = document.getElementById('override_charge_basis');
+                if (basisInput) basisInput.value = '';
+                clearError();
+                
+                // Show the waybilltotalMockup when override is disabled
+                const waybilltotalMockup = document.getElementById('waybilltotalMockup');
+                if (waybilltotalMockup) {
+                    waybilltotalMockup.style.display = '';
+                }
+
+                // Restore original calculated values from base rates
+                const baseRateField = document.getElementById('base_rate');
+                const totalMassField = document.getElementById('total_mass_kg');
+                const massRateField = document.getElementById('mass_rate');
+                const massChargeField = document.getElementById('mass_charge');
+                const massBaseDisplay = document.getElementById('mass_base_display');
+
+                const baseRate = parseFloat(baseRateField?.value || '0');
+                const totalMass = parseFloat(totalMassField?.value || '0');
+                if (baseRate > 0) {
+                    if (massRateField) massRateField.value = baseRate.toFixed(2);
+                    if (massBaseDisplay) massBaseDisplay.textContent = baseRate.toFixed(2);
+                    if (massChargeField) {
+                        const charge = (Number.isFinite(totalMass) ? totalMass : 0) * baseRate;
+                        massChargeField.value = charge.toFixed(2);
+                    }
+                }
+            }
+        };
+
+        // Recompute when user manually switches basis
+        const overrideBasisSelect = document.getElementById('override_basis');
+        if (overrideBasisSelect) {
+            overrideBasisSelect.addEventListener('change', function(){
+                if (enableOverrideCheckbox && enableOverrideCheckbox.checked) {
+                    // Start from base before applying on the new basis
+                    restoreMassToBase();
+                    clearVolumeManipulator();
+                    applyOverrideToBasis();
+                    updateCalculatedTotal();
+                }
+            });
+        }
+        
+        // Listen for changes to form fields that affect total calculation
+        const totalAffectingFields = [
+            'mass_charge',
+            'volume_charge'
+        ];
+        
+        totalAffectingFields.forEach(fieldId => {
+            const field = document.getElementById(fieldId);
+            if (field) {
+                field.addEventListener('input', function() {
+                    if (enableOverrideCheckbox && enableOverrideCheckbox.checked) {
+                        updateCalculatedTotal();
+                        applyOverrideToBasis();
+                    }
+                });
+            }
+        });
+        
+        // Listen for waybill and misc items changes
+        const waybillContainer = document.getElementById('custom-waybill-items');
+        const miscContainer = document.getElementById('misc-items');
+        
+        if (waybillContainer) {
+            waybillContainer.addEventListener('input', function() {
+                if (enableOverrideCheckbox && enableOverrideCheckbox.checked) {
+                    setTimeout(function(){
+                        updateCalculatedTotal();
+                        applyOverrideToBasis();
+                    }, 100); // allow other calculations to complete
+                }
+            });
+        }
+        
+        if (miscContainer) {
+            miscContainer.addEventListener('input', function() {
+                if (enableOverrideCheckbox && enableOverrideCheckbox.checked) {
+                    setTimeout(function(){
+                        updateCalculatedTotal();
+                        applyOverrideToBasis();
+                    }, 100);
+                }
+            });
+        }
+        
+        // Validation for override total
+        if (overrideTotalInput) {
+            overrideTotalInput.addEventListener('input', function() {
+                const value = parseFloat(this.value);
+                if (isNaN(value) || value < 0) {
+                    this.setCustomValidity('Please enter a valid positive number');
+                } else {
+                    this.setCustomValidity('');
+                }
+                if (enableOverrideCheckbox && enableOverrideCheckbox.checked) {
+                    updateCalculatedTotal();
+                    applyOverrideToBasis();
+                }
+            });
+            
+            overrideTotalInput.addEventListener('blur', function() {
+                if (this.value && !isNaN(parseFloat(this.value))) {
+                    this.value = parseFloat(this.value).toFixed(2);
+                    if (enableOverrideCheckbox && enableOverrideCheckbox.checked) {
+                        applyOverrideToBasis();
+                    }
+                }
+            });
+        }
+        
+        // Initial calculation if override is already enabled
+        if (enableOverrideCheckbox && enableOverrideCheckbox.checked) {
+            setManipulatorsDisabled(true);
+            updateCalculatedTotal();
+            applyOverrideToBasis();
+        }
+    });
+})();
+
+/**
+ * Auto-select recently created delivery when navigating to step 4
+ * This function is called when clicking next-step button with data-target="step-4"
+ */
+function autoSelectRecentDelivery() {
+    // Get recently created delivery ID from sessionStorage
+    if (typeof Storage === 'undefined') {
+        return;
+    }
+    
+    const recentDeliveryId = sessionStorage.getItem('recentlyCreatedDeliveryId');
+    if (!recentDeliveryId) {
+        console.log('No recently created delivery ID found');
+        return;
+    }
+    
+    console.log('🎯 Auto-selecting recently created delivery:', recentDeliveryId);
+    
+    // Wait for delivery cards to be loaded
+    const waitForCards = (attempts = 0) => {
+        const maxAttempts = 20;
+        const deliveryCards = document.querySelectorAll('.delivery-card');
+        
+        if (deliveryCards.length === 0 && attempts < maxAttempts) {
+            setTimeout(() => waitForCards(attempts + 1), 200);
+            return;
+        }
+        
+        // Find the card matching the delivery ID
+        let cardToSelect = null;
+        let directionId = null;
+        
+        for (let card of deliveryCards) {
+            const cardDeliveryId = card.getAttribute('data-delivery-id');
+            const cardDirectionId = card.getAttribute('data-direction-id');
+            const cardIndex = card.getAttribute('data-index');
+            
+            if (cardDeliveryId === recentDeliveryId || 
+                cardDirectionId === recentDeliveryId || 
+                cardIndex === recentDeliveryId) {
+                cardToSelect = card;
+                directionId = cardDirectionId || cardIndex || cardDeliveryId;
+                console.log('✅ Found matching delivery card:', {
+                    deliveryId: recentDeliveryId,
+                    directionId: directionId,
+                    card: card
+                });
+                break;
+            }
+        }
+        
+        if (cardToSelect && directionId) {
+            // Scroll card into view
+            cardToSelect.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            
+            // Select the card using selectDeliveryCard function
+            setTimeout(() => {
+                if (typeof selectDeliveryCard === 'function') {
+                    selectDeliveryCard(cardToSelect, directionId, true); // true = skipDetailsDisplay
+                    console.log('✅ Auto-selected delivery card via selectDeliveryCard');
+                } else if (typeof window.selectDeliveryCard === 'function') {
+                    window.selectDeliveryCard(cardToSelect, directionId, true);
+                    console.log('✅ Auto-selected delivery card via window.selectDeliveryCard');
+                } else {
+                    // Fallback: manual selection
+                    console.warn('⚠️ selectDeliveryCard not found, doing manual selection');
+                    document.querySelectorAll('.delivery-card').forEach(c => c.classList.remove('selected'));
+                    cardToSelect.classList.add('selected');
+                    const directionIdField = document.getElementById('direction_id');
+                    if (directionIdField) {
+                        directionIdField.value = directionId;
+                    }
+                }
+                
+                // Clear the stored delivery ID after selection
+                sessionStorage.removeItem('recentlyCreatedDeliveryId');
+            }, 300);
+        } else {
+            console.warn('⚠️ Could not find delivery card with ID:', recentDeliveryId);
+        }
+    };
+    
+    waitForCards();
 }

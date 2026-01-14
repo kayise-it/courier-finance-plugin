@@ -166,30 +166,24 @@ $inactive_countries = $total_countries - $active_countries;
     <hr class="wp-header-end">
 
     <!-- Statistics Cards -->
-    <div class="row" style="margin: 20px 0;">
-        <div class="col-md-4">
-            <div class="card" style="background: #fff; border: 1px solid #ccd0d4; border-radius: 4px; padding: 20px; text-align: center;">
-                <h3 style="margin: 0; color: #0073aa; font-size: 2em;"><?php echo $total_countries; ?></h3>
-                <p style="margin: 5px 0 0 0; color: #666;">Total Countries</p>
-            </div>
+    <div class="my-5 grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="bg-white border border-gray-300 rounded p-5 text-center">
+            <h3 class="m-0 text-blue-600 text-3xl"><?php echo $total_countries; ?></h3>
+            <p class="mt-1 mb-0 text-gray-600">Total Countries</p>
         </div>
-        <div class="col-md-4">
-            <div class="card" style="background: #fff; border: 1px solid #ccd0d4; border-radius: 4px; padding: 20px; text-align: center;">
-                <h3 style="margin: 0; color: #00a32a; font-size: 2em;"><?php echo $active_countries; ?></h3>
-                <p style="margin: 5px 0 0 0; color: #666;">Active Countries</p>
-            </div>
+        <div class="bg-white border border-gray-300 rounded p-5 text-center">
+            <h3 class="m-0 text-green-600 text-3xl"><?php echo $active_countries; ?></h3>
+            <p class="mt-1 mb-0 text-gray-600">Active Countries</p>
         </div>
-        <div class="col-md-4">
-            <div class="card" style="background: #fff; border: 1px solid #ccd0d4; border-radius: 4px; padding: 20px; text-align: center;">
-                <h3 style="margin: 0; color: #d63638; font-size: 2em;"><?php echo $inactive_countries; ?></h3>
-                <p style="margin: 5px 0 0 0; color: #666;">Inactive Countries</p>
-            </div>
+        <div class="bg-white border border-gray-300 rounded p-5 text-center">
+            <h3 class="m-0 text-red-600 text-3xl"><?php echo $inactive_countries; ?></h3>
+            <p class="mt-1 mb-0 text-gray-600">Inactive Countries</p>
         </div>
     </div>
 
-    <div style="display: flex; gap: 32px; align-items: flex-start; margin-top: 20px;">
+    <div class="flex gap-8 items-start mt-5">
         <!-- Countries List -->
-        <div style="flex: 2;">
+        <div class="flex-[2]">
             <?php
             // Prepare data for unified table
             $countries_data = [];
@@ -227,7 +221,7 @@ $inactive_countries = $total_countries - $active_countries;
                     'sortable' => true,
                     'searchable' => false,
                     'callback' => function($value, $row) {
-                        return '<span class="badge" style="background: #f0f0f1; color: #50575e; padding: 2px 8px; border-radius: 3px; font-size: 11px;">Group ' . esc_html($value) . '</span>';
+                        return '<span class="inline-block bg-gray-100 text-gray-700 px-2 py-0.5 rounded text-xs">Group ' . esc_html($value) . '</span>';
                     }
                 ],
                 'is_active' => [
@@ -241,14 +235,14 @@ $inactive_countries = $total_countries - $active_countries;
                         $toggle_text = $value ? 'Deactivate' : 'Activate';
                         $new_status = $value ? 0 : 1;
                         
+                        $color_class = $value ? 'text-green-600 border-green-600' : 'text-red-600 border-red-600';
                         return '
                             <div class="flex items-center gap-2">
-                                <span class="' . $status_class . '" style="color: ' . $status_color . '; font-weight: 600;">● ' . $status_text . '</span>
+                                <span class="' . $status_class . ' font-semibold ' . $color_class . '">● ' . $status_text . '</span>
                                 <button type="button" 
-                                        class="quick-toggle-btn text-xs px-2 py-1 rounded border hover:bg-gray-50" 
+                                        class="quick-toggle-btn text-xs px-2 py-1 rounded border hover:bg-gray-50 ' . $color_class . '" 
                                         data-country-id="' . $row['id'] . '" 
-                                        data-new-status="' . $new_status . '"
-                                        style="color: ' . $status_color . '; border-color: ' . $status_color . ';">
+                                        data-new-status="' . $new_status . '">
                                     ' . $toggle_text . '
                                 </button>
                             </div>
@@ -303,9 +297,9 @@ $inactive_countries = $total_countries - $active_countries;
         </div>
 
         <!-- Add/Edit Form -->
-        <div style="flex: 1; min-width: 320px;">
+        <div class="flex-1 min-w-[320px]">
             <?php if ($edit_country): ?>
-                <div class="card" style="background: #fff; border: 1px solid #ccd0d4; border-radius: 4px; padding: 20px;">
+                <div class="bg-white border border-gray-300 rounded p-5">
                     <h3>Edit Country</h3>
                     <form method="post">
                         <?php wp_nonce_field('edit_country_action', 'edit_country_nonce'); ?>
@@ -329,8 +323,7 @@ $inactive_countries = $total_countries - $active_countries;
                                 <td>
                                     <input type="text" id="country_code" name="country_code" 
                                            value="<?php echo esc_attr($edit_country->country_code); ?>" 
-                                           class="regular-text" required 
-                                           style="text-transform: uppercase;">
+                                           class="regular-text uppercase" required>
                                     <p class="description">Use ISO country codes (e.g., US, GB, ZA)</p>
                                 </td>
                             </tr>
@@ -364,7 +357,7 @@ $inactive_countries = $total_countries - $active_countries;
                     </form>
                 </div>
             <?php elseif (isset($_GET['add_new'])): ?>
-                <div class="card" style="background: #fff; border: 1px solid #ccd0d4; border-radius: 4px; padding: 20px;">
+                <div class="bg-white border border-gray-300 rounded p-5">
                     <h3>Add New Country</h3>
                     <form method="post">
                         <?php wp_nonce_field('add_country_action', 'add_country_nonce'); ?>
@@ -386,9 +379,8 @@ $inactive_countries = $total_countries - $active_countries;
                                 </th>
                                 <td>
                                     <input type="text" id="country_code" name="country_code" 
-                                           class="regular-text" required 
-                                           placeholder="e.g., US" 
-                                           style="text-transform: uppercase;">
+                                           class="regular-text uppercase" required 
+                                           placeholder="e.g., US">
                                     <p class="description">Use ISO country codes (e.g., US, GB, ZA)</p>
                                 </td>
                             </tr>
@@ -420,7 +412,7 @@ $inactive_countries = $total_countries - $active_countries;
                     </form>
                 </div>
             <?php else: ?>
-                <div class="card" style="background: #fff; border: 1px solid #ccd0d4; border-radius: 4px; padding: 20px;">
+                <div class="bg-white border border-gray-300 rounded p-5">
                     <h3>Quick Actions</h3>
                     <p>
                         <a href="?page=08600-countries&add_new=1" class="button button-primary">Add New Country</a>

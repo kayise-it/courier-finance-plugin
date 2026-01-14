@@ -1,5 +1,5 @@
 <?php
-$testing = true;
+$testing = 0;
 
 /**
  * PDF Generator for Waybills/Quotations
@@ -36,13 +36,31 @@ if (! defined('ABSPATH')) {
   }
 }
 
-// Color scheme (Settings & Configuration 60/30/10)
+// Color scheme (Settings & Configuration 60/30/10) - Load from dashboard settings
 $primary_color = '#2563eb';
 $secondary_color = '#111827';
 $accent_color = '#10b981';
 $darkBadge = '#043c7d';
 $lightBadge = '#e0e7ef';
 
+// Always try to load from colorSchema.json first
+$schema_path = plugin_dir_path(__FILE__) . 'colorSchema.json';
+if (file_exists($schema_path)) {
+  $schema_data = json_decode(file_get_contents($schema_path), true);
+  if (is_array($schema_data)) {
+    if (!empty($schema_data['primary'])) {
+      $primary_color = $schema_data['primary'];
+    }
+    if (!empty($schema_data['secondary'])) {
+      $secondary_color = $schema_data['secondary'];
+    }
+    if (!empty($schema_data['accent'])) {
+      $accent_color = $schema_data['accent'];
+    }
+  }
+}
+
+// Fallback to KIT_Commons methods if available
 if (class_exists('KIT_Commons')) {
   try {
     if (method_exists('KIT_Commons', 'getPrimaryColor')) {
@@ -76,19 +94,34 @@ if (! $waybill_no) {
   wp_die('Missing waybill_no');
 }
 
+// Ensure user is logged in and has proper session
+if (!function_exists('is_user_logged_in') || !is_user_logged_in()) {
+  wp_die('You must be logged in to access PDFs. Please log in and try again.', 403);
+}
+
 // 🔒 SECURITY: Only authorized administrators (Thando, Mel, Patricia) can access PDFs
 if (!class_exists('KIT_User_Roles') || !KIT_User_Roles::can_see_prices()) {
-  wp_die('Access denied. PDF access is restricted to authorized administrators only.', 403);
+  $current_user = wp_get_current_user();
+  $username = isset($current_user->user_login) ? strtolower($current_user->user_login) : 'not logged in';
+  wp_die('Access denied. PDF access is restricted to authorized administrators only. Current user: ' . $username, 403);
 }
 
 // Autoload dompdf
-require_once __DIR__ . '/vendor/autoload.php';
+$vendor_autoload = __DIR__ . '/vendor/autoload.php';
+if (!file_exists($vendor_autoload)) {
+  wp_die('Error: Vendor autoload file not found. Please run composer install.', 500);
+}
+require_once $vendor_autoload;
 
 // Load waybill with items
+if (!class_exists('KIT_Waybills')) {
+  wp_die('Error: KIT_Waybills class not found.', 500);
+}
+
 $quotation = KIT_Waybills::getFullWaybillWithItems($waybill_no);
 
 if (!$quotation || !isset($quotation->waybill)) {
-  wp_die('Waybill not found');
+  wp_die('Waybill ' . $waybill_no . ' not found in database.', 404);
 }
 
 // Generate QR code for waybill
@@ -119,6 +152,13 @@ $company = $wpdb->get_row("SELECT * FROM {$wpdb->prefix}kit_company_details LIMI
 // Use stored snapshot where possible to ensure PDF matches UI exactly
 $mass_charge = floatval($waybill->mass_charge ?? 0);
 $volume_charge = floatval($waybill->volume_charge ?? 0);
+
+// NEW: Read calculated totals from DB columns first (faster, more reliable)
+$misc_total_from_db = isset($waybill->misc_total) ? floatval($waybill->misc_total) : null;
+$border_clearing_total_from_db = isset($waybill->border_clearing_total) ? floatval($waybill->border_clearing_total) : null;
+$sad500_total_from_db = isset($waybill->sad500_amount) ? floatval($waybill->sad500_amount) : null;
+$sadc_total_from_db = isset($waybill->sadc_amount) ? floatval($waybill->sadc_amount) : null;
+$international_price_from_db = isset($waybill->international_price_rands) ? floatval($waybill->international_price_rands) : null;
 
 $stored_basis = '';
 $stored_volume_rate = 0.0;
@@ -152,95 +192,46 @@ if ($charge_basis == 'mass' || $charge_basis == 'weight') {
 } else {
   $charge = $volume_charge;
 }
-// Calculate misc_total from waybill miscellaneous data
-$misc_total = 0;
-$misc_data = '';
+// Use DB column only (no calculations)
+$misc_total = ($misc_total_from_db !== null) ? floatval($misc_total_from_db) : 0.0;
+$misc_data = [];
 $misc_items = [];
 
+// Only unserialize miscellaneous for display purposes (misc_items array)
 if (!empty($waybill->miscellaneous)) {
   $misc_data = maybe_unserialize($waybill->miscellaneous);
-  if ($misc_data && isset($misc_data['misc_total'])) {
-    $misc_total = floatval($misc_data['misc_total']);
-  } elseif ($misc_data && isset($misc_data['misc_items']) && is_array($misc_data['misc_items'])) {
-    // Calculate total from misc items if misc_total is not directly available
-    foreach ($misc_data['misc_items'] as $item) {
-      if (isset($item['misc_price']) && isset($item['misc_quantity'])) {
-        $misc_total += floatval($item['misc_price']) * intval($item['misc_quantity']);
-      }
-    }
-  }
-
-  // Safely get misc_items
-  if ($misc_data && isset($misc_data['misc_items']) && is_array($misc_data['misc_items'])) {
+  if (is_array($misc_data) && isset($misc_data['misc_items']) && is_array($misc_data['misc_items'])) {
     $misc_items = $misc_data['misc_items'];
   }
 }
 
-// Compute a resilient fallback total in case no snapshot/field exists
-$sad500_total = 0.0;
-$sadc_total = 0.0;
-if (!empty($waybill->miscellaneous)) {
-  $snap = maybe_unserialize($waybill->miscellaneous);
-  if (is_array($snap) && isset($snap['others'])) {
-    if (!empty($waybill->include_sad500) && intval($waybill->include_sad500) === 1) {
-      if (isset($snap['others']['include_sad500'])) {
-        $sad500_total = KIT_Waybills::normalize_amount($snap['others']['include_sad500']);
-      }
-      if ($sad500_total <= 0) {
-        $sad500_total = KIT_Waybills::sadc_certificate();
-      }
-    }
-    if (!empty($waybill->include_sadc) && intval($waybill->include_sadc) === 1) {
-      if (isset($snap['others']['include_sadc'])) {
-        $sadc_total = KIT_Waybills::normalize_amount($snap['others']['include_sadc']);
-      }
-      if ($sadc_total <= 0) {
-        $sadc_total = KIT_Waybills::sad();
-      }
-    }
-  }
-}
-if ($sad500_total === 0.0 && !empty($waybill->include_sad500) && intval($waybill->include_sad500) === 1) {
-  $sad500_total = KIT_Waybills::sadc_certificate();
-}
-if ($sadc_total === 0.0 && !empty($waybill->include_sadc) && intval($waybill->include_sadc) === 1) {
-  $sadc_total = KIT_Waybills::sad();
-}
+// Use DB columns only (no calculations)
+$sad500_total = ($sad500_total_from_db !== null && !empty($waybill->include_sad500)) ? floatval($sad500_total_from_db) : 0.0;
+$sadc_total = ($sadc_total_from_db !== null && !empty($waybill->include_sadc)) ? floatval($sadc_total_from_db) : 0.0;
+$intl_amount_for_total = (empty($waybill->vat_include) && $international_price_from_db !== null) ? floatval($international_price_from_db) : 0.0;
 
-// Prefer stored international amount if VAT is not included
-$intl_amount_for_total = 0.0;
-if (empty($waybill->vat_include) || intval($waybill->vat_include ?? 0) === 0) {
-  $stored_intl_calc = 0.0;
-  if (!empty($waybill->miscellaneous)) {
-    $misc_tmp_calc = maybe_unserialize($waybill->miscellaneous);
-    if (is_array($misc_tmp_calc) && isset($misc_tmp_calc['others']['international_price_rands'])) {
-      $stored_intl_calc = floatval($misc_tmp_calc['others']['international_price_rands']);
-    }
-  }
-  $intl_amount_for_total = $stored_intl_calc > 0
-    ? $stored_intl_calc
-    : floatval(KIT_Waybills::international_price_in_rands());
-}
+// Use DB columns only (no calculations)
+$border_clearing_10_percent_total = ($border_clearing_total_from_db !== null) ? floatval($border_clearing_total_from_db) : 0.0;
+$items_total = floatval($waybill->waybill_items_total ?? 0.0);
 
-$items_total = 0.0;
+// Get items for display only (calculate ten_percent for display)
 if (!empty($waybillItems)) {
-  foreach ($waybillItems as $wi) {
+  foreach ($waybillItems as $key => $wi) {
+    if (is_object($wi)) {
+      $waybillItems[$key] = (array) $wi;
+      $wi = $waybillItems[$key];
+    }
     $qty = isset($wi['quantity']) ? intval($wi['quantity']) : 0;
     $unit = isset($wi['unit_price']) ? floatval($wi['unit_price']) : 0.0;
-    $items_total += ($qty * $unit);
+    $subtotal = $qty * $unit;
+    $waybillItems[$key]['ten_percent'] = $subtotal * 0.10; // For display only
   }
 }
 
-$transport_total = floatval($charge ?? 0);
-$computed_fallback_total = $transport_total + $misc_total + $sad500_total + $sadc_total + $intl_amount_for_total + $items_total;
-
-// Choose the best value to render
-$product_invoice_amount = isset($waybill->product_invoice_amount)
+// Use product_invoice_amount directly from DB (no calculations in PDF)
+$final_total = isset($waybill->product_invoice_amount)
   ? KIT_Waybills::normalize_amount($waybill->product_invoice_amount)
   : 0.0;
-$final_total = $product_invoice_amount > 0
-  ? $product_invoice_amount
-  : $computed_fallback_total;
 
 // Get the image file content and convert it to Base64
 $imagePath = plugin_dir_path(__FILE__) . '/icons/pin.png';
@@ -310,7 +301,7 @@ ob_start();
   }
 
   @page {
-    margin: 8mm 8mm 15mm 8mm;
+    margin: 8mm 8mm 25mm 8mm;
   }
 
   /* Standardized typography for PDF */
@@ -366,6 +357,7 @@ ob_start();
     text-align: left;
     padding: 5px 6px;
     border-bottom: 1px solid #e0e7ef;
+    white-space: nowrap;
   }
 
   td.cellStyle.alignleft {
@@ -388,6 +380,7 @@ ob_start();
     font-size: 12px;
     padding: 8px 6px;
     width: 130px;
+    white-space: nowrap;
   }
 
   th.thr:nth-child(2),
@@ -587,7 +580,7 @@ ob_start();
         <tr>
           <td style="padding:4px 0; border-bottom:1px solid #e9ecef;">
             <h4 style="color: <?= $pTextColor ?> ; margin: 0 0 3px 0; font-size:12px;">Description</h4>
-            <p style="margin: 0; font-size:10px;"><?= $misc_data['others']['waybill_description'] ?></p>
+            <p style="margin: 0; font-size:10px;"><?= !empty($misc_data) && is_array($misc_data) && isset($misc_data['others']['waybill_description']) ? esc_html($misc_data['others']['waybill_description']) : (isset($waybill->description) ? esc_html($waybill->description) : 'No description available') ?></p>
           </td>
         </tr>
       </table>
@@ -628,30 +621,36 @@ ob_start();
         </tr>
       </table>
 
-      <!-- Charges Breakdown - Enhanced UI/UX -->
-      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:5px;">
+      <!-- CHARGES BREAKDOWN - TABLE 1: Transport, Processing, Customs Clearing -->
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:0;">
         <tr>
-          <td colspan="5" style="font-size:12px;font-weight:bold;color:<?= $pTextColor ?> ;padding-bottom:4px;">Charges Breakdown</td>
+          <td colspan="5" style="font-size:12px;font-weight:bold;color:<?= $pTextColor ?>;padding-bottom:4px;">Charges Breakdown</td>
         </tr>
         <tr class="scolor" style="color:#fff;font-size:11px;">
-          <th align="left" class="thr">Description</th>
-          <th class="thr" align="left">Item</th>
-          <th <?= (!empty($waybillItems)) ? 'colspan="2"' : '' ?> class="thr" align="center" style="width: 50px;">Qty</th>
-          <th class="thr" align="right" style="width: 100px;">Price (R)</th>
-          <th class="thr" align="right" style="width: 100px;">Subtotal (R)</th>
+          <th align="left" class="thr" style="width:18%; white-space: nowrap;">Description</th>
+          <th class="thr" align="left" style="width:32%; white-space: nowrap;">Item</th>
+          <th class="thr" align="center" style="width:12%; white-space: nowrap;">Qty</th>
+          <th class="thr" align="right" style="width:19%; white-space: nowrap;">Price (R)</th>
+          <th class="thr" align="right" style="width:19%; white-space: nowrap;">Subtotal (R)</th>
         </tr>
+        
         <?php
         $charge_type = ($charge_basis == 'mass' || $charge_basis == 'weight') ? 'Mass' : 'Volume';
         $charge_amount = ($charge_basis == 'mass' || $charge_basis == 'weight') ? $waybill->mass_charge : $waybill->volume_charge;
+        // #region agent log
+        $charge_type_text = $charge_type . ' Charge';
+        @file_put_contents('/Applications/MAMP/htdocs/08600/wp-content/plugins/courier-finance-plugin/.cursor/debug.log', json_encode(['sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'D', 'location' => 'pdf-generator.php:' . __LINE__, 'message' => 'Checking transport charge text length', 'data' => ['text' => $charge_type_text, 'length' => strlen($charge_type_text), 'column_width' => '32%', 'has_whitespace_nowrap' => true], 'timestamp' => time() * 1000]) . "\n", FILE_APPEND);
+        // #endregion
         ?>
-        <tr style="font-size:13px; background:#f9fafb;">
+        <!-- Transport -->
+        <tr style="font-size:13px; background:#f9fafb; border-bottom:1px solid #e0e7ef;">
           <td class="cellStyle fstCol">
             <span style="display:inline-block;background:<?= $lightBadge ?>; color:<?= $pTextColor ?>; font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600;">Transport</span>
           </td>
-          <td class="cellStyle">
-            <span style="font-weight:600;"><?= $charge_type ?> Charge</span>
+          <td class="cellStyle" style="white-space: nowrap;">
+            <span style="font-weight:600;"><?= $charge_type_text ?></span>
           </td>
-          <td class="cellStyle aligncenter" <?= (!empty($waybillItems)) ? 'colspan="2"' : '' ?>>
+          <td class="cellStyle" style="text-align:center;">
             <?php if ($charge_basis == 'mass' || $charge_basis == 'weight'): ?>
               <?= isset($waybill->total_mass_kg) ? number_format($waybill->total_mass_kg, 2) . ' kg' : '0.00 kg' ?>
             <?php else: ?>
@@ -681,97 +680,126 @@ ob_start();
             }
             ?>
           </td>
-          <td class="cellStyle" style="font-weight:600; text-align:right;"><?= number_format($charge_amount, 2) ?></td>
+          <td class="cellStyle" style="font-weight:700; text-align:right;">R <?= number_format($charge_amount, 2) ?></td>
         </tr>
+        
+        <!-- Miscellaneous Items -->
         <?php if (!empty($misc_items)): ?>
           <?php foreach ($misc_items as $item): ?>
+            <?php 
+            // #region agent log
+            $misc_item_name = htmlspecialchars($item['misc_item'] ?? '');
+            @file_put_contents('/Applications/MAMP/htdocs/08600/wp-content/plugins/courier-finance-plugin/.cursor/debug.log', json_encode(['sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'C', 'location' => 'pdf-generator.php:' . __LINE__, 'message' => 'Checking misc item name length', 'data' => ['misc_item' => $misc_item_name, 'length' => strlen($misc_item_name), 'column_width' => '32%', 'has_whitespace_nowrap' => true], 'timestamp' => time() * 1000]) . "\n", FILE_APPEND);
+            // #endregion
+            ?>
             <tr style="font-size:12px; background:#f9fafb; border-bottom:1px solid #e0e7ef;">
               <td class="cellStyle fstCol">
                 <span style="display:inline-block;background:<?= $lightBadge ?>;color:#64748b;font-size:11px;padding:2px 8px;border-radius:6px;">Miscellaneous</span>
               </td>
-              <td class="cellStyle"><?= htmlspecialchars($item['misc_item']) ?></td>
-              <td class="cellStyle" <?= (!empty($waybillItems)) ? 'colspan="2"' : '' ?> style="text-align:center;"><?= intval($item['misc_quantity']) ?></td>
+              <td class="cellStyle" style="white-space: nowrap;"><?= $misc_item_name ?></td>
+              <td class="cellStyle" style="text-align:center;"><?= intval($item['misc_quantity']) ?></td>
               <td class="cellStyle" style="text-align:right;"><?= number_format($item['misc_price'], 2) ?></td>
-              <td class="cellStyle" style="text-align:right; font-weight: 700;"><?= number_format($item['misc_quantity'] * $item['misc_price'], 2) ?></td>
+              <td class="cellStyle" style="text-align:right; font-weight: 700;">R <?= number_format($item['misc_quantity'] * $item['misc_price'], 2) ?></td>
             </tr>
           <?php endforeach; ?>
         <?php endif; ?>
+        
+        <!-- SAD500 -->
         <?php if (!empty($waybill->include_sad500) && $waybill->include_sad500 == 1): ?>
           <tr style="font-size:13px; background:#f9fafb; border-bottom:1px solid #e0e7ef;">
             <td class="cellStyle fstCol">
               <span style="display:inline-block;background:<?= $lightBadge ?>;color:#64748b;font-size:11px;padding:2px 8px;border-radius:6px;">Processing</span>
             </td>
             <td class="cellStyle">SAD500</td>
-            <td class="cellStyle aligncenter" <?= (!empty($waybillItems)) ? 'colspan="2"' : '' ?>>1</td>
-            <td class="cellStyle alignright "><?= number_format($sad500_total, 2) ?></td>
-            <td class="cellStyle" style="text-align:right; font-weight: 700;"><?= number_format($sad500_total, 2) ?></td>
+            <td class="cellStyle" style="text-align:center;">1</td>
+            <td class="cellStyle" style="text-align:right;"><?= number_format($sad500_total, 2) ?></td>
+            <td class="cellStyle" style="text-align:right; font-weight: 700;">R <?= number_format($sad500_total, 2) ?></td>
           </tr>
-        <?php endif ?>
+        <?php endif; ?>
+        
+        <!-- SADC Certificate -->
         <?php if (!empty($waybill->include_sadc) && $waybill->include_sadc == 1): ?>
           <tr style="font-size:13px; background:#f9fafb; border-bottom:1px solid #e0e7ef;">
             <td class="cellStyle fstCol">
               <span style="display:inline-block;background:<?= $lightBadge ?>;color:#64748b;font-size:11px;padding:2px 8px;border-radius:6px;">Processing</span>
             </td>
             <td class="cellStyle">SADC Certificate</td>
-            <td class="cellStyle aligncenter" <?= (!empty($waybillItems)) ? 'colspan="2"' : '' ?>>1</td>
-            <td class="cellStyle alignright"><?= number_format($sadc_total, 2) ?></td>
-            <td class="cellStyle" style="text-align:right; font-weight: 700;"><?= number_format($sadc_total, 2) ?></td>
+            <td class="cellStyle" style="text-align:center;">1</td>
+            <td class="cellStyle" style="text-align:right;"><?= number_format($sadc_total, 2) ?></td>
+            <td class="cellStyle" style="text-align:right; font-weight: 700;">R <?= number_format($sadc_total, 2) ?></td>
           </tr>
         <?php endif; ?>
-        <?php // Show Agent Clearing & Documentation when VAT is NOT selected, preferring stored snapshot amount 
-        ?>
+        
+        <!-- Agent Clearing & Documentation -->
         <?php if (empty($waybill->vat_include) || intval($waybill->vat_include ?? 0) === 0): ?>
           <?php
-          $stored_intl = 0.0;
-          if (!empty($waybill->miscellaneous)) {
-            $misc_tmp = maybe_unserialize($waybill->miscellaneous);
-            if (is_array($misc_tmp) && isset($misc_tmp['others']['international_price_rands'])) {
-              $stored_intl = floatval($misc_tmp['others']['international_price_rands']);
-            }
-          }
-          $intl_amount = $stored_intl > 0 ? $stored_intl : KIT_Waybills::international_price_in_rands();
+          // Use already calculated intl_amount_for_total (from DB or fallback)
+          $intl_amount = $intl_amount_for_total;
+          // Display rate for reference (calculate from stored value or use default)
+          $intl_display_rate = $intl_amount > 0 ? $intl_amount : KIT_Waybills::international_price_in_rands();
+          // #region agent log
+          $agent_clearing_text = 'Agent Clearing & Documentation';
+          @file_put_contents('/Applications/MAMP/htdocs/08600/wp-content/plugins/courier-finance-plugin/.cursor/debug.log', json_encode(['sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'A', 'location' => 'pdf-generator.php:' . __LINE__, 'message' => 'Checking Agent Clearing text length', 'data' => ['text' => $agent_clearing_text, 'length' => strlen($agent_clearing_text), 'has_whitespace_nowrap' => true], 'timestamp' => time() * 1000]) . "\n", FILE_APPEND);
+          // #endregion
           ?>
           <tr style="font-size:13px; background:#f9fafb; border-bottom:1px solid #e0e7ef;">
             <td class="cellStyle fstCol">
               <span style="display:inline-block;background:<?= $lightBadge ?>;color:#64748b;font-size:11px;padding:2px 8px;border-radius:6px;">Customs Clearing</span>
             </td>
-            <td class="cellStyle">Agent Clearing & Documentation</td>
-            <td class="cellStyle aligncenter" <?= (!empty($waybillItems)) ? 'colspan="2"' : '' ?>>1</td>
-            <td class="cellStyle alignright"><?= KIT_Waybills::international_price_in_rands() ?></td>
-            <td class="cellStyle" style="text-align:right; font-weight: 700;"><?= number_format($intl_amount, 2) ?></td>
+            <td class="cellStyle" style="white-space: nowrap;"><?= $agent_clearing_text ?></td>
+            <td class="cellStyle" style="text-align:center;">1</td>
+            <td class="cellStyle" style="text-align:right;"><?= number_format($intl_display_rate, 2) ?></td>
+            <td class="cellStyle" style="text-align:right; font-weight: 700;">R <?= number_format($intl_amount, 2) ?></td>
           </tr>
         <?php endif; ?>
-        <?php if (!empty($waybillItems)): ?>
-          <tr style="font-size:12px;" class="scolor">
-            <td <?= (!empty($waybillItems)) ? 'colspan="2"' : '' ?> style="text-align:left; padding:9px 6px; border-bottom:1px solid #e0e7ef; width: 120px;">
-              <span style="display:inline-block; background: <?= $darkBadge ?>; color:#fff; font-weight: 700; font-size:11px;padding:2px 8px;border-radius:6px;">Border Clearing</span>
+      </table>
+      
+      <!-- CHARGES BREAKDOWN - TABLE 2: Border Clearing Items -->
+      <?php if (!empty($waybillItems)): ?>
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:5px;">
+        <tr style="font-size:12px;" class="scolor">
+          <td colspan="2" style="text-align:left; padding:9px 6px; border-bottom:1px solid #e0e7ef; width:50%;">
+            <span style="display:inline-block; background: <?= $darkBadge ?>; color:#fff; font-weight: 700; font-size:11px;padding:2px 8px;border-radius:6px;">Border Clearing</span>
+          </td>
+          <td colspan="3" align="right" style="font-weight: 700; padding:9px 6px; border-bottom:1px solid #e0e7ef;"></td>
+          <td align="right" style="font-weight: 700; padding:9px 6px; border-bottom:1px solid #e0e7ef; color:#fff; width:15%;">R <?= number_format($border_clearing_10_percent_total, 2) ?></td>
+        </tr>
+        <?php foreach ($waybillItems as $key => $item): ?>
+          <?php 
+          // Ensure item is an array
+          if (is_object($item)) {
+            $item = (array) $item;
+            $waybillItems[$key] = $item;
+          }
+          $item_subtotal = intval($item['quantity']) * floatval($item['unit_price']);
+          // Use stored value from calculation loop, or recalculate if missing
+          $item_ten_percent = isset($waybillItems[$key]['ten_percent']) 
+            ? floatval($waybillItems[$key]['ten_percent']) 
+            : ($item_subtotal * 0.10);
+          // #region agent log
+          $item_name_clean = htmlspecialchars($item['item_name'] ?? '');
+          @file_put_contents('/Applications/MAMP/htdocs/08600/wp-content/plugins/courier-finance-plugin/.cursor/debug.log', json_encode(['sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'B', 'location' => 'pdf-generator.php:' . __LINE__, 'message' => 'Checking border clearing item name length', 'data' => ['item_name' => $item_name_clean, 'length' => strlen($item_name_clean), 'column_width' => '32%', 'has_whitespace_nowrap' => true], 'timestamp' => time() * 1000]) . "\n", FILE_APPEND);
+          // #endregion
+          ?>
+          <tr style="background:#f9fafb; border-bottom:1px solid #e0e7ef;">
+            <td class="cellStyle" style="width:18%;">
+              <span style="display:inline-block;background:<?= $lightBadge ?>; color:<?= $pTextColor ?>;font-size:11px;padding:2px 8px;border-radius:6px;">Border Clearing</span>
             </td>
-            <td <?= (!empty($waybillItems)) ? 'colspan="4"' : 'colspan="3"' ?> align="right" style="font-weight: 700; padding:9px 6px; border-bottom:1px solid #e0e7ef;">
-              <!-- <?= KIT_Waybills::vatCharge($waybill->waybill_items_total) ?> -->
-            </td>
+            <td class="cellStyle" style="width:32%; white-space: nowrap;"><?= $item_name_clean ?></td>
+            <td class="cellStyle" style="text-align:center; width:12%;"><?= intval($item['quantity']) ?></td>
+            <td class="cellStyle" style="text-align:right; width:12%;"><?= number_format($item['unit_price'], 2) ?></td>
+            <td class="cellStyle" style="text-align:right; font-weight: 700; width:13%;">R <?= number_format($item_subtotal, 2) ?></td>
+            <td class="cellStyle" style="text-align:right; font-weight: 700; width:13%;">R <?= number_format($item_ten_percent, 2) ?></td>
           </tr>
-          <?php $show_vat_column = (!empty($waybill->vat_include) && intval($waybill->vat_include) === 1); ?>
-          <?php foreach ($waybillItems as $item): ?>
-            <tr style="background:#f9fafb; border-bottom:1px solid #e0e7ef;">
-              <td class="CellStyle">
-                <span style="display:inline-block;background:<?= $lightBadge ?>; color:<?= $pTextColor ?>;font-size:11px;padding:2px 8px;border-radius:6px;">Border Clearing</span>
-              </td>
-              <td class="CellStyle"><?= htmlspecialchars($item['item_name']) ?></td>
-              <td class="CellStyle" style="text-align:center;"><?= intval($item['quantity']) ?></td>
-              <td class="CellStyle" style="text-align:right;"><?= number_format($item['unit_price'], 2) ?></td>
-              <td class="CellStyle" style="text-align:right;"><?= number_format($item['quantity'] * $item['unit_price'], 2) ?></td>
-              <?php if ($show_vat_column): ?>
-                <td class="CellStyle" style="text-align:right; font-weight: 700;"><?= number_format(($item['quantity'] * $item['unit_price']) * (KIT_Waybills::vatRate() / 100), 2) ?></td>
-              <?php else: ?>
-                <td class="CellStyle" style="text-align:right; font-weight: 700;"></td>
-              <?php endif; ?>
-            </tr>
-          <?php endforeach; ?>
-        <?php endif; ?>
-        <!-- TOTAL ROW -->
+        <?php endforeach; ?>
+      </table>
+      <?php endif; ?>
+      
+      <!-- TOTAL ROW -->
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:5px;">
         <tr class="rowTotal pcolor">
           <td class="cellStyle" style="font-size:18px; font-weight:700;">TOTAL</td>
-          <td class="cellStyle" <?= (!empty($waybillItems)) ? 'colspan="5"' : 'colspan="4"' ?> style="text-align:right;">R <?= number_format($final_total, 2) ?></td>
+          <td class="cellStyle" style="text-align:right;">R <?= number_format($final_total, 2) ?></td>
         </tr>
       </table>
 
@@ -855,6 +883,23 @@ ob_start();
     </td>
   </tr>
 </table>
+
+<script type="text/php">
+    if (isset($pdf)) {
+        // Add page number and footer text at bottom center
+        // A4 page: width ~595 points, height ~842 points
+        $font = $fontMetrics->getFont("Arial", "normal");
+        $size = 9;
+        $color = array(0.4, 0.4, 0.4); // Gray color
+        $page_text = "Page {PAGE_NUM} of {PAGE_COUNT} | Generated by KAYISE IT";
+        // Use approximate center position (A4 width is 595 points)
+        // Estimate text width for "Page 999 of 999 | Generated by KAYISE IT" (~200 points)
+        $text_width = 200;
+        $x = (595 - $text_width) / 2; // Center on A4 width
+        $y = 820; // Position near bottom (842 is full height)
+        $pdf->page_text($x, $y, $page_text, $font, $size, $color);
+    }
+</script>
 <?php
 $html = ob_get_clean();
 // In testing mode, output raw HTML for visual debugging instead of generating a PDF
@@ -872,11 +917,25 @@ $options->set('isHtml5ParserEnabled', true);
 $options->set('isRemoteEnabled', true);
 $options->set('isFontSubsettingEnabled', true); // Reduce file size
 $options->set('defaultFont', 'CustomFont'); // Fallback font
+$options->set('isPhpEnabled', true); // Enable PHP for footer scripts
 
 $dompdf = new Dompdf($options); // Initialize Dompdf FIRST
 $dompdf->loadHtml($html);
 $dompdf->setPaper('A4', 'portrait');
 $dompdf->render();
+
+// Set security headers before streaming PDF
+if (!headers_sent()) {
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: inline; filename="waybill-' . esc_attr($waybill_no) . '.pdf"');
+    header('Cache-Control: private, max-age=0, must-revalidate');
+    header('Pragma: public');
+    header('X-Content-Type-Options: nosniff');
+    // If site is HTTPS, add additional security headers
+    if (is_ssl() || (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')) {
+        header('Strict-Transport-Security: max-age=31536000');
+    }
+}
 
 // Output PDF
 $dompdf->stream("waybill-{$waybill_no}.pdf", [

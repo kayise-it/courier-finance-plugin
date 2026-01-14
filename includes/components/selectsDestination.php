@@ -5,9 +5,24 @@
 $destination_city_id = 0;
 $destination_country_id = 0;
 
-if (isset($waybill['miscellaneous']) && is_array($waybill['miscellaneous'])) {
-    $misc = maybe_unserialize($waybill['miscellaneous']);
-    if (is_array($misc) && isset($misc['others'])) {
+// Primary source for destination city on waybills: always prefer kit_waybills.city_id
+if (isset($waybill) && is_array($waybill) && !empty($waybill['city_id'])) {
+    $destination_city_id = intval($waybill['city_id']);
+}
+
+// Check for delivery object (used on delivery forms) only if city not already set from waybill
+if (!$destination_city_id && isset($delivery) && is_object($delivery)) {
+    $destination_city_id = isset($delivery->destination_city_id) ? intval($delivery->destination_city_id) : 0;
+    $destination_country_id = isset($delivery->destination_country_id) ? intval($delivery->destination_country_id) : 0;
+}
+
+// Fallback to waybill data if delivery not found
+// Note: $waybill['miscellaneous'] may be a serialized string in edit forms,
+// so we always attempt to maybe_unserialize it instead of requiring an array.
+if (!$destination_city_id && !$destination_country_id && isset($waybill['miscellaneous'])) {
+    $raw_misc = $waybill['miscellaneous'];
+    $misc = is_array($raw_misc) ? $raw_misc : maybe_unserialize($raw_misc);
+    if (is_array($misc) && isset($misc['others']) && is_array($misc['others'])) {
         $destination_city_id = intval($misc['others']['destination_city_id'] ?? 0);
         $destination_country_id = intval($misc['others']['destination_country_id'] ?? 0);
     }

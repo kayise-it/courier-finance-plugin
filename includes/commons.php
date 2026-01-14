@@ -141,7 +141,7 @@ class KIT_Commons
         // Add status as data attribute for filtering
         $dataAttrs .= ' data-status="' . esc_attr($status) . '"';
 
-        return '<span class="inline-flex items-center px-5 py-2 rounded-lg text-xs font-medium ' . $class . '"' . $dataAttrs . '>'
+        return '<span class="inline-flex items-center px-5 py-2 text-xs font-medium ' . $class . '"' . $dataAttrs . '>'
             . $display_text . '</span>';
     }
 
@@ -267,7 +267,7 @@ class KIT_Commons
                     <button type="button"
                         id="quote-button-<?= esc_attr($waybillid) ?>"
                         onclick="toggleDropdownQuote('<?= esc_attr($waybillid) ?>')"
-                        class="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md border shadow-sm bg-white font-medium <?= esc_attr($current_colors) ?> hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                        class="inline-flex items-center justify-center gap-2 px-4 py-2  border shadow-sm bg-white font-medium <?= esc_attr($current_colors) ?> hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                         <span><?= esc_html($current_label2) ?></span>
                         <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                             <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
@@ -275,7 +275,7 @@ class KIT_Commons
                     </button>
                 </div>
 
-                <div class="hidden origin-top-left absolute left-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50"
+                <div class="hidden origin-top-left absolute left-0 mt-2 w-56  shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50"
                     id="quote-dropdown-<?= esc_attr($waybillid) ?>">
                     <div class="py-1" role="menu" aria-orientation="vertical">
                         <?php foreach ($statusesStatus as $key => $label): ?>
@@ -428,7 +428,7 @@ class KIT_Commons
                     <button type="button"
                         id="approval-button-<?= esc_attr($waybillid) ?>"
                         onclick="toggleDropdownApproval('<?= esc_attr($waybillid) ?>')"
-                        class="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md border shadow-sm bg-white font-medium <?= esc_attr($current_colors) ?> hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                        class="inline-flex items-center justify-center gap-2 px-4 py-2  border shadow-sm bg-white font-medium <?= esc_attr($current_colors) ?> hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                         <span><?= esc_html($current_label) ?></span>
                         <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                             <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
@@ -436,7 +436,7 @@ class KIT_Commons
                     </button>
                 </div>
 
-                <div class="hidden origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50"
+                <div class="hidden origin-top-right absolute right-0 mt-2 w-56  shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50"
                     id="approval-dropdown-<?= esc_attr($waybillid) ?>">
                     <div class="py-1" role="menu" aria-orientation="vertical">
                         <?php foreach ($statuses as $key => $label): ?>
@@ -555,7 +555,7 @@ class KIT_Commons
                 if (!empty($assigned_items)) {
                     $first_assigned = reset($assigned_items);
                     ob_start(); ?>
-            <div class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800 border border-blue-300">
+            <div class="inline-flex items-center px-3 py-1  text-sm bg-blue-100 text-blue-800 border border-blue-300">
                 <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
                     <path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
                     <path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1V8a1 1 0 00-1-1h-3z" />
@@ -581,7 +581,7 @@ class KIT_Commons
                     <button type="button"
                         id="delivery-assignment-button-<?= esc_attr($waybill_id) ?>"
                         onclick="toggleDeliveryAssignment('<?= esc_attr($waybill_id) ?>')"
-                        class="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md border shadow-sm font-medium bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500">
+                        class="inline-flex items-center justify-center gap-2 px-4 py-2  border shadow-sm font-medium bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500">
                         <span>Assign to Delivery</span>
                         <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                             <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
@@ -589,7 +589,7 @@ class KIT_Commons
                     </button>
                 </div>
 
-                <div class="hidden origin-top-right absolute right-0 mt-2 w-80 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50"
+                <div class="hidden origin-top-right absolute right-0 mt-2 w-80  shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50"
                     id="delivery-assignment-dropdown-<?= esc_attr($waybill_id) ?>">
                     <div class="py-1" role="menu" aria-orientation="vertical">
                         <?php if (empty($available_deliveries)): ?>
@@ -667,7 +667,7 @@ class KIT_Commons
             public static function tick()
             {
     ?>
-        <span class="w-[13px] h-[13px] rounded-full bg-green-600 text-white flex items-center justify-center text-[10px]">
+        <span class="w-[13px] h-[13px]  bg-green-600 text-white flex items-center justify-center text-[10px]">
             ✓
         </span>
 
@@ -764,7 +764,7 @@ class KIT_Commons
             value="<?php echo esc_attr($atts['direction_id']); ?>"
             class="sr-only peer"
             <?php echo $atts['checked'] ? 'checked' : ''; ?>>
-        <label <?php echo $atts['onclick'] ? 'onclick="' . $atts['onclick'] . '"' : ''; ?> for="<?php echo esc_attr($input_id); ?>" class="<?= $atts['class'] ?>  bg-white w-[100px] h-[100px] rounded-[5px] border-2 border-gray-300 cursor-pointer relative flex items-center justify-center text-center text-[11px] font-medium leading-tight hover:shadow-md transition-all duration-200 peer-checked:border-blue-500 peer-checked:bg-blue-100 peer-checked:shadow-lg">
+        <label <?php echo $atts['onclick'] ? 'onclick="' . $atts['onclick'] . '"' : ''; ?> for="<?php echo esc_attr($input_id); ?>" class="<?= $atts['class'] ?>  bg-white w-[100px] h-[100px]  border-2 border-gray-300 cursor-pointer relative flex items-center justify-center text-center text-[11px] font-medium leading-tight hover:shadow-md transition-all duration-200 peer-checked:border-blue-500 peer-checked:bg-blue-100 peer-checked:shadow-lg">
             <div>
                 <h4><?= esc_html($atts['description']); ?></h4>
                 <div class="font-bold text-[12px]"><?= esc_html(date('d M Y', strtotime($atts['dispatch_date']))); ?></div>
@@ -776,6 +776,11 @@ class KIT_Commons
             }
 
 
+            /**
+             * Outputs a textarea field with custom height functionality.
+             * If 'height' is numeric, uses px unit. You can also pass any CSS unit like '10em', '40vh', etc.
+             * Note: Setting height in % works only if the parent/container of the textarea has an explicit height.
+             */
             public static function TextAreaField($atts = [])
             {
                 $atts = shortcode_atts([
@@ -786,14 +791,40 @@ class KIT_Commons
                     'value' => '',
                     'class' => '',
                     'special' => '',
-                    'is_dynamic' => false, // New parameter for dynamic fields
-                    'dynamic_group' => '', // Group name for dynamic fields
-                    'dynamic_type' => 'text', // Type for dynamic fields (when is_dynamic=true)
-                    'label_class' => '', // Class for the label
+                    'height' => '100', // Accepts number (px) or CSS string.
+                    'is_dynamic' => false,
+                    'dynamic_group' => '',
+                    'dynamic_type' => 'text',
+                    'label_class' => '',
                 ], $atts);
+
+                // Fallbacks for esc_attr/esc_html if not running in WP (for linting/tests)
+                if (!function_exists('esc_attr')) {
+                    function esc_attr($s) { return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
+                }
+                if (!function_exists('esc_html')) {
+                    function esc_html($s) { return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
+                }
 
                 $labelClass = self::labelClass();
                 $inputClass = self::inputClass();
+
+                // Height parsing: allow numeric (px), explicit CSS unit, fallback/default, and warn for %
+                $height = trim($atts['height']);
+                if (is_numeric($height)) {
+                    $height_css = $height . 'px';
+                    $height_is_percent = false;
+                } elseif (preg_match('/^\d+(\.\d+)?(px|em|rem|vh|vw)$/', $height)) {
+                    $height_css = $height;
+                    $height_is_percent = false;
+                } elseif (preg_match('/^\d+(\.\d+)?%$/', $height)) {
+                    // % only works if container has explicit height
+                    $height_css = $height;
+                    $height_is_percent = true;
+                } else {
+                    $height_css = '100px';
+                    $height_is_percent = false;
+                }
 
                 ob_start(); ?>
 
@@ -803,9 +834,13 @@ class KIT_Commons
                     <?php echo esc_html($atts['label']); ?>
                 </label>
             <?php endif; ?>
+            <?php if ($height_is_percent): ?>
+                <!-- Note: Using percentage heights on textarea only works if the parent has an explicit height set! -->
+            <?php endif; ?>
             <textarea
                 name="<?php echo esc_attr($atts['name']); ?>"
                 id="<?php echo esc_attr($atts['id']); ?>"
+                style="height: <?php echo esc_attr($height_css); ?>;"
                 class="<?php echo esc_attr(trim($inputClass . ' ' . $atts['class'])); ?>"
                 <?php echo $atts['special']; ?>><?php echo esc_attr($atts['value']); ?></textarea>
         </div>
@@ -866,6 +901,7 @@ class KIT_Commons
                     'dynamic_group' => '', // Group name for dynamic fields
                     'dynamic_type' => 'text', // Type for dynamic fields (when is_dynamic=true)
                     'label_class' => '', // Class for the label
+                    'icon' => '', // Icon SVG HTML to display inside input field
                 ], $atts);
 
                 $labelClass = self::labelClass();
@@ -873,12 +909,45 @@ class KIT_Commons
 
                 // Standard input
                 if (!$atts['is_dynamic']) {
-                    return '<label for="' . esc_attr($atts['id']) . '" class="' . esc_attr($labelClass) . " " . esc_attr($atts['label_class']) . '">' .
-                        esc_html($atts['label']) . '</label>' .
-                        '<input step="0.01" type="' . esc_attr($atts['type']) . '" name="' . esc_attr($atts['name']) .
-                        '" id="' . esc_attr($atts['id']) . '" value="' . esc_attr($atts['value']) .
+                    $iconHtml = '';
+                    $iconWrapper = '';
+                    $uniqueId = !empty($atts['id']) ? esc_attr($atts['id']) : 'input-' . uniqid();
+                    
+                    // If icon is provided, wrap input in relative container and add icon
+                    if (!empty($atts['icon'])) {
+                        $iconWrapper = '<div class="relative input-with-icon-container">';
+                        // Icon positioned at left-3 (12px from left)
+                        $iconHtml = '<div class="input-icon absolute left-3 flex items-center pointer-events-none" data-input-id="' . $uniqueId . '">' . $atts['icon'] . '</div>';
+                        // Replace px-3 in inputClass with pl-12 pr-4 for proper icon spacing
+                        // Icon is at 12px (left-3), icon width is 20px (w-5), so text should start at 48px (pl-12)
+                        $inputClass = str_replace('px-3', '', $inputClass);
+                        // Remove any conflicting padding classes from custom class
+                        $atts['class'] = preg_replace('/\b(pl-|px-|pr-)\d+\b/', '', $atts['class']);
+                        $atts['class'] = trim($atts['class']);
+                        // Add inline style for padding to ensure it works even if Tailwind classes aren't compiled
+                        // 3rem = 48px (pl-12), 1rem = 16px (pr-4) - creates proper space between icon and text
+                        $paddingStyle = 'style="padding-left: 3rem !important; padding-right: 1rem !important;"';
+                        if (empty($atts['special'])) {
+                            $atts['special'] = $paddingStyle;
+                        } else {
+                            $atts['special'] = $paddingStyle . ' ' . $atts['special'];
+                        }
+                    }
+                    
+                    // Use the unique ID for the input
+                    $inputId = !empty($atts['id']) ? esc_attr($atts['id']) : $uniqueId;
+                    
+                    $inputHtml = '<input step="0.01" type="' . esc_attr($atts['type']) . '" name="' . esc_attr($atts['name']) .
+                        '" id="' . $inputId . '" value="' . esc_attr($atts['value']) .
                         '" class="' . esc_attr($inputClass) . ' ' . esc_attr($atts['class']) . '" ' . ($atts['onclick'] ? 'onclick="' . $atts['onclick'] . '" ' : '') .
                         esc_attr($atts['special']) . ' tabindex="' . esc_attr($atts['tabindex']) . '"/>';
+                    
+                    $closeWrapper = $iconWrapper ? '</div>' : '';
+                    
+                    $labelHtml = '<label for="' . $inputId . '" class="' . esc_attr($labelClass) . " " . esc_attr($atts['label_class']) . '">' .
+                        esc_html($atts['label']) . '</label>';
+                    
+                    return $labelHtml . $iconWrapper . $iconHtml . $inputHtml . $closeWrapper;
                 }
 
                 // Dynamic input field (part of a group)
@@ -1231,11 +1300,11 @@ class KIT_Commons
 
             public static function selectClass()
             {
-                return 'text-xs w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 border border-gray-300 rounded px-3 py-2 bg-white';
+                return 'text-xs w-full px-3 py-2 border border-gray-300  shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 border border-gray-300 rounded px-3 py-2 bg-white';
             }
             public static function inputClass()
             {
-                return 'text-xs w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 border border-gray-300 rounded px-3 py-2 bg-white';
+                return 'text-xs w-full px-3 py-2 border border-gray-300  shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 border border-gray-300 rounded px-3 py-2 bg-white';
             }
             /**
              * 08600 Button Theme System - Tailwind CSS Based
@@ -1245,190 +1314,173 @@ class KIT_Commons
             // Base button classes
             public static function buttonClass()
             {
-                return 'inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg font-medium text-sm transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed';
+                return 'inline-flex items-center gap-2 border rounded';
+            }
+
+            // Size-based padding classes
+            public static function buttonSizePadding($size = 'md')
+            {
+                $sizeClasses = [
+                    'sm' => 'px-2 py-1 text-xs',
+                    'md' => 'px-3 py-1 text-sm',
+                    'lg' => 'px-4 py-2 text-base'
+                ];
+                return $sizeClasses[$size] ?? $sizeClasses['md'];
             }
 
             // Primary button (60% - Main Blue)
-            public static function buttonPrimary($size = 'md', $fullWidth = false, $gradient = false)
+            public static function buttonPrimary($size = 'md', $fullWidth = false, $gradient = false, $plain = false)
             {
-                $sizeClasses = [
-                    'sm' => 'px-4 py-2 text-xs',
-                    'md' => 'px-6 py-3 text-sm',
-                    'lg' => 'px-8 py-4 text-base',
-                    'xl' => 'px-10 py-5 text-lg'
-                ];
-
+                $sizePadding = self::buttonSizePadding($size);
                 $widthClass = $fullWidth ? 'w-full' : '';
 
+                // Gradient takes precedence over plain
                 if ($gradient) {
-                    return 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:from-blue-800 active:to-indigo-800 text-white font-semibold shadow-lg hover:shadow-xl hover:-translate-y-0.5 focus:ring-blue-500 ' . $sizeClasses[$size] . ' ' . $widthClass;
+                    return $sizePadding . ' bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white border-blue-600 ' . $widthClass;
                 }
 
-                return 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white shadow-sm hover:shadow-md hover:-translate-y-0.5 focus:ring-blue-500 ' . $sizeClasses[$size] . ' ' . $widthClass;
+                // Plain style (default)
+                if ($plain) {
+                    return $sizePadding . ' bg-white hover:bg-gray-50 text-black border-gray-300 ' . $widthClass;
+                }
+
+                // Regular colored button (when plain is explicitly false)
+                return $sizePadding . ' bg-blue-600 hover:bg-blue-700 text-white border-blue-600 ' . $widthClass;
             }
 
             // Secondary button (30% - Gray)
-            public static function buttonSecondary($size = 'md', $fullWidth = false, $gradient = false)
+            public static function buttonSecondary($size = 'md', $fullWidth = false, $gradient = false, $plain = false)
             {
-                $sizeClasses = [
-                    'sm' => 'px-4 py-2 text-xs',
-                    'md' => 'px-6 py-3 text-sm',
-                    'lg' => 'px-8 py-4 text-base',
-                    'xl' => 'px-10 py-5 text-lg'
-                ];
-
+                $sizePadding = self::buttonSizePadding($size);
                 $widthClass = $fullWidth ? 'w-full' : '';
 
+                // Gradient takes precedence over plain
                 if ($gradient) {
-                    return 'bg-gradient-to-r from-gray-100 to-gray-200 hover:from-gray-200 hover:to-gray-300 active:from-gray-300 active:to-gray-400 text-gray-700 border border-gray-300 hover:border-gray-400 focus:ring-gray-500 font-semibold shadow-lg hover:shadow-xl hover:-translate-y-0.5 ' . $sizeClasses[$size] . ' ' . $widthClass;
+                    return $sizePadding . ' bg-gradient-to-r from-gray-100 to-gray-200 hover:from-gray-200 hover:to-gray-300 text-gray-700 border-gray-300 ' . $widthClass;
                 }
 
-                return 'bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-700 border border-gray-300 hover:border-gray-400 focus:ring-gray-500 ' . $sizeClasses[$size] . ' ' . $widthClass;
+                // Plain style (default)
+                if ($plain) {
+                    return $sizePadding . ' bg-white hover:bg-gray-50 text-black border-gray-300 ' . $widthClass;
+                }
+
+                // Regular colored button (when plain is explicitly false)
+                return $sizePadding . ' bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-300 ' . $widthClass;
             }
 
             // Success button (10% - Green)
-            public static function buttonSuccess($size = 'md', $fullWidth = false, $gradient = false)
+            public static function buttonSuccess($size = 'md', $fullWidth = false, $gradient = false, $plain = false)
             {
-                $sizeClasses = [
-                    'sm' => 'px-4 py-2 text-xs',
-                    'md' => 'px-6 py-3 text-sm',
-                    'lg' => 'px-8 py-4 text-base',
-                    'xl' => 'px-10 py-5 text-lg'
-                ];
-
+                $sizePadding = self::buttonSizePadding($size);
                 $widthClass = $fullWidth ? 'w-full' : '';
 
+                // Gradient takes precedence over plain
                 if ($gradient) {
-                    return 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 active:from-green-800 active:to-emerald-800 text-white font-semibold shadow-lg hover:shadow-xl hover:-translate-y-0.5 focus:ring-green-500 ' . $sizeClasses[$size] . ' ' . $widthClass;
+                    return $sizePadding . ' bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white border-green-600 ' . $widthClass;
                 }
 
-                return 'bg-green-600 hover:bg-green-700 active:bg-green-800 text-white shadow-sm hover:shadow-md hover:-translate-y-0.5 focus:ring-green-500 ' . $sizeClasses[$size] . ' ' . $widthClass;
+                // Plain style (default)
+                if ($plain) {
+                    return $sizePadding . ' bg-white hover:bg-gray-50 text-black border-gray-300 ' . $widthClass;
+                }
+
+                // Regular colored button (when plain is explicitly false)
+                return $sizePadding . ' bg-green-600 hover:bg-green-700 text-white border-green-600 ' . $widthClass;
             }
 
             // Danger button (10% - Red)
-            public static function buttonDanger($size = 'md', $fullWidth = false, $gradient = false)
+            public static function buttonDanger($size = 'md', $fullWidth = false, $gradient = false, $plain = false)
             {
-                $sizeClasses = [
-                    'sm' => 'px-4 py-2 text-xs',
-                    'md' => 'px-6 py-3 text-sm',
-                    'lg' => 'px-8 py-4 text-base',
-                    'xl' => 'px-10 py-5 text-lg'
-                ];
-
+                $sizePadding = self::buttonSizePadding($size);
                 $widthClass = $fullWidth ? 'w-full' : '';
 
+                // Gradient takes precedence over plain
                 if ($gradient) {
-                    return 'bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 active:from-red-800 active:to-rose-800 text-white font-semibold shadow-lg hover:shadow-xl hover:-translate-y-0.5 focus:ring-red-500 ' . $sizeClasses[$size] . ' ' . $widthClass;
+                    return $sizePadding . ' bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white border-red-600 ' . $widthClass;
                 }
 
-                return 'bg-red-600 hover:bg-red-700 active:bg-red-800 text-white shadow-sm hover:shadow-md hover:-translate-y-0.5 focus:ring-red-500 ' . $sizeClasses[$size] . ' ' . $widthClass;
+                // Plain style (default)
+                if ($plain) {
+                    return $sizePadding . ' bg-white hover:bg-gray-50 text-black border-gray-300 ' . $widthClass;
+                }
+
+                // Regular colored button (when plain is explicitly false)
+                return $sizePadding . ' bg-red-600 hover:bg-red-700 text-white border-red-600 ' . $widthClass;
             }
 
             // Warning button (10% - Orange)
-            public static function buttonWarning($size = 'md', $fullWidth = false, $gradient = false)
+            public static function buttonWarning($size = 'md', $fullWidth = false, $gradient = false, $plain = false)
             {
-                $sizeClasses = [
-                    'sm' => 'px-4 py-2 text-xs',
-                    'md' => 'px-6 py-3 text-sm',
-                    'lg' => 'px-8 py-4 text-base',
-                    'xl' => 'px-10 py-5 text-lg'
-                ];
-
+                $sizePadding = self::buttonSizePadding($size);
                 $widthClass = $fullWidth ? 'w-full' : '';
 
+                // Gradient takes precedence over plain
                 if ($gradient) {
-                    return 'bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 active:from-orange-800 active:to-amber-800 text-white font-semibold shadow-lg hover:shadow-xl hover:-translate-y-0.5 focus:ring-orange-500 ' . $sizeClasses[$size] . ' ' . $widthClass;
+                    return $sizePadding . ' bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white border-orange-600 ' . $widthClass;
                 }
 
-                return 'bg-orange-600 hover:bg-orange-700 active:bg-orange-800 text-white shadow-sm hover:shadow-md hover:-translate-y-0.5 focus:ring-orange-500 ' . $sizeClasses[$size] . ' ' . $widthClass;
+                // Plain style (default)
+                if ($plain) {
+                    return $sizePadding . ' bg-white hover:bg-gray-50 text-black border-gray-300 ' . $widthClass;
+                }
+
+                // Regular colored button (when plain is explicitly false)
+                return $sizePadding . ' bg-orange-600 hover:bg-orange-700 text-white border-orange-600 ' . $widthClass;
             }
 
             // Outline button variants
             public static function buttonOutlinePrimary($size = 'md', $fullWidth = false)
             {
-                $sizeClasses = [
-                    'sm' => 'px-4 py-2 text-xs',
-                    'md' => 'px-6 py-3 text-sm',
-                    'lg' => 'px-8 py-4 text-base',
-                    'xl' => 'px-10 py-5 text-lg'
-                ];
-
+                $sizePadding = self::buttonSizePadding($size);
                 $widthClass = $fullWidth ? 'w-full' : '';
-
-                return 'bg-transparent hover:bg-blue-50 text-blue-600 border-2 border-blue-600 hover:border-blue-700 focus:ring-blue-500 ' . $sizeClasses[$size] . ' ' . $widthClass;
+                return $sizePadding . ' bg-transparent hover:bg-blue-50 text-blue-600 border-blue-600 ' . $widthClass;
             }
 
             public static function buttonOutlineSecondary($size = 'md', $fullWidth = false)
             {
-                $sizeClasses = [
-                    'sm' => 'px-4 py-2 text-xs',
-                    'md' => 'px-6 py-3 text-sm',
-                    'lg' => 'px-8 py-4 text-base',
-                    'xl' => 'px-10 py-5 text-lg'
-                ];
-
+                $sizePadding = self::buttonSizePadding($size);
                 $widthClass = $fullWidth ? 'w-full' : '';
-
-                return 'bg-transparent hover:bg-gray-50 text-gray-600 border-2 border-gray-300 hover:border-gray-400 focus:ring-gray-500 ' . $sizeClasses[$size] . ' ' . $widthClass;
+                return $sizePadding . ' bg-transparent hover:bg-gray-50 text-gray-600 border-gray-300 ' . $widthClass;
             }
 
             // Ghost button variants
             public static function buttonGhost($size = 'md', $fullWidth = false)
             {
-                $sizeClasses = [
-                    'sm' => 'px-4 py-2 text-xs',
-                    'md' => 'px-6 py-3 text-sm',
-                    'lg' => 'px-8 py-4 text-base',
-                    'xl' => 'px-10 py-5 text-lg'
-                ];
-
+                $sizePadding = self::buttonSizePadding($size);
                 $widthClass = $fullWidth ? 'w-full' : '';
-
-                return 'bg-transparent hover:bg-gray-100 text-gray-600 hover:text-gray-800 focus:ring-gray-500 ' . $sizeClasses[$size] . ' ' . $widthClass;
+                return $sizePadding . ' bg-transparent hover:bg-gray-100 text-gray-600 hover:text-gray-800 border-transparent ' . $widthClass;
             }
 
             public static function buttonGhostPrimary($size = 'md', $fullWidth = false)
             {
-                $sizeClasses = [
-                    'sm' => 'px-4 py-2 text-xs',
-                    'md' => 'px-6 py-3 text-sm',
-                    'lg' => 'px-8 py-4 text-base',
-                    'xl' => 'px-10 py-5 text-lg'
-                ];
-
+                $sizePadding = self::buttonSizePadding($size);
                 $widthClass = $fullWidth ? 'w-full' : '';
-
-                return 'bg-transparent hover:bg-blue-50 text-blue-600 hover:text-blue-700 focus:ring-gray-500 ' . $sizeClasses[$size] . ' ' . $widthClass;
+                return $sizePadding . ' bg-transparent hover:bg-blue-50 text-blue-600 hover:text-blue-700 border-transparent ' . $widthClass;
             }
 
             // Tab button styles
             public static function buttonTab($active = false)
             {
                 if ($active) {
-                    return 'bg-white text-gray-900 shadow-sm border border-gray-200 px-6 py-3 rounded-lg font-medium text-sm transition-all duration-200';
+                    return 'bg-white text-gray-900 shadow-sm border border-gray-200 px-6 py-3 font-medium text-sm transition-all duration-200';
                 }
-                return 'bg-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50 px-6 py-3 rounded-lg font-medium text-sm transition-all duration-200';
+                return 'bg-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50 px-6 py-3 font-medium text-sm transition-all duration-200';
             }
 
             // Toggle button styles
             public static function buttonToggle($active = false)
             {
                 if ($active) {
-                    return 'bg-white text-gray-900 shadow-sm border border-gray-200 px-4 py-2 rounded-md font-medium text-sm transition-all duration-200';
+                    return 'bg-white text-gray-900 shadow-sm border border-gray-200 px-4 py-2  font-medium text-sm transition-all duration-200';
                 }
-                return 'bg-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-md font-medium text-sm transition-all duration-200';
+                return 'bg-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50 px-4 py-2  font-medium text-sm transition-all duration-200';
             }
 
             // Link button styles
             public static function buttonLink($size = 'md')
             {
-                $sizeClasses = [
-                    'sm' => 'px-3 py-1 text-xs',
-                    'md' => 'px-4 py-2 text-sm',
-                    'lg' => 'px-6 py-3 text-base'
-                ];
-
-                return 'bg-transparent text-blue-600 hover:text-blue-700 hover:underline focus:ring-blue-500 ' . $sizeClasses[$size];
+                $sizePadding = self::buttonSizePadding($size);
+                return $sizePadding . ' bg-transparent text-blue-600 hover:text-blue-700 hover:underline border-transparent';
             }
 
             // Icon button styles
@@ -1440,7 +1492,7 @@ class KIT_Commons
                     'lg' => 'p-4 w-12 h-12'
                 ];
 
-                return 'inline-flex items-center justify-center rounded-lg transition-all duration-200 ' . $sizeClasses[$size];
+                return 'inline-flex items-center justify-center transition-all duration-200 ' . $sizeClasses[$size];
             }
 
             // Loading state
@@ -1474,34 +1526,44 @@ class KIT_Commons
                     'value' => null,
                     'type' => 'button',
                     'gradient' => false, // Enable gradient for primary buttons
+                    'plain' => true, // Default to plain button style (white bg, gray border, black text). Set to false for colored buttons.
                     'modal' => null, // Modal trigger
                     'data-target' => null, // Data target attribute
                     'target' => null,
                     'rel' => null,
                     'ariaLabel' => null,
+                    'color' => null, // Tailwind color name (e.g., 'blue', 'pink', 'red')
                 ];
 
                 $options = array_merge($defaults, $options);
-                // Get base classes
-                $baseClasses = self::buttonClass();
+                
+                // If color is specified, use custom color styling with sharp design
+                if (!empty($options['color'])) {
+                    $color = sanitize_text_field($options['color']);
+                    // Generate sharp styling with custom color (no base classes needed)
+                    $typeClasses = 'inline-flex items-center px-4 py-2 bg-' . $color . '-600 text-white rounded-md shadow-sm text-sm font-medium hover:bg-' . $color . '-700';
+                    $baseClasses = ''; // No base classes when using custom color
+                } else {
+                    // Get base classes
+                    $baseClasses = self::buttonClass();
 
-                // Get type-specific classes
-                $typeClasses = '';
-                switch ($type) {
+                    // Get type-specific classes
+                    $typeClasses = '';
+                    switch ($type) {
                     case 'primary':
-                        $typeClasses = self::buttonPrimary($size, $options['fullWidth'], $options['gradient']);
+                        $typeClasses = self::buttonPrimary($size, $options['fullWidth'], $options['gradient'], $options['plain']);
                         break;
                     case 'secondary':
-                        $typeClasses = self::buttonSecondary($size, $options['fullWidth'], $options['gradient']);
+                        $typeClasses = self::buttonSecondary($size, $options['fullWidth'], $options['gradient'], $options['plain']);
                         break;
                     case 'success':
-                        $typeClasses = self::buttonSuccess($size, $options['fullWidth'], $options['gradient']);
+                        $typeClasses = self::buttonSuccess($size, $options['fullWidth'], $options['gradient'], $options['plain']);
                         break;
                     case 'danger':
-                        $typeClasses = self::buttonDanger($size, $options['fullWidth'], $options['gradient']);
+                        $typeClasses = self::buttonDanger($size, $options['fullWidth'], $options['gradient'], $options['plain']);
                         break;
                     case 'warning':
-                        $typeClasses = self::buttonWarning($size, $options['fullWidth'], $options['gradient']);
+                        $typeClasses = self::buttonWarning($size, $options['fullWidth'], $options['gradient'], $options['plain']);
                         break;
                     case 'outline-primary':
                         $typeClasses = self::buttonOutlinePrimary($size, $options['fullWidth']);
@@ -1519,7 +1581,11 @@ class KIT_Commons
                         $typeClasses = self::buttonLink($size);
                         break;
                     default:
-                        $typeClasses = self::buttonPrimary($size, $options['fullWidth']);
+                        $typeClasses = self::buttonPrimary($size, $options['fullWidth'], false, $options['plain']);
+                    }
+                    
+                    // Combine base classes with type classes
+                    $typeClasses = trim($baseClasses . ' ' . $typeClasses);
                 }
 
                 // Add loading state
@@ -1532,7 +1598,7 @@ class KIT_Commons
                     $typeClasses .= ' ' . self::buttonDisabled();
                 }
                 // Combine all classes
-                $allClasses = trim($baseClasses . ' ' . $typeClasses . ' ' . $options['classes']);
+                $allClasses = trim($typeClasses . ' ' . $options['classes']);
 
                 // Safety: if not disabled, strip any disabling utility classes that may have been passed in
                 if (empty($options['disabled']) || $options['disabled'] === false || $options['disabled'] === 'false') {
@@ -1575,6 +1641,13 @@ class KIT_Commons
                 }
                 if (!empty($options['ariaLabel'])) {
                     $attributes[] = 'aria-label="' . esc_attr($options['ariaLabel']) . '"';
+                }
+                
+                // Handle data attributes (any option starting with 'data-')
+                foreach ($options as $key => $value) {
+                    if (strpos($key, 'data-') === 0 && !empty($value)) {
+                        $attributes[] = esc_attr($key) . '="' . esc_attr($value) . '"';
+                    }
                 }
 
                 $attributesStr = implode(' ', $attributes);
@@ -1672,7 +1745,7 @@ class KIT_Commons
                 $iconColorClass = isset($iconColorClasses[$args['color']]) ? $iconColorClasses[$args['color']] : $iconColorClasses['blue'];
 
                 // Build classes
-                $allClasses = trim("font-bold {$sizeClass} {$colorClass} mb-6 flex items-center gap-2 leading-none {$args['classes']}");
+                $allClasses = trim("font-bold {$sizeClass} {$colorClass} flex items-center gap-2 leading-none {$args['classes']}");
 
                 // Build icon HTML if provided
                 $iconHtml = '';
@@ -1860,7 +1933,7 @@ class KIT_Commons
             }
             public static function container()
             {
-                return 'max-w-7xl mx-auto';
+                //return 'max-w-7xl mx-auto';
             }
 
 
@@ -1942,16 +2015,16 @@ class KIT_Commons
                 ?>
             </tbody>
             <?php if (class_exists('KIT_User_Roles') && !KIT_User_Roles::can_see_prices()): ?>
-            
+
             <?php else: ?>
-            <tfoot>
-                <tr class="border-t">
-                    <td colspan="3" class="<?= self::tcolClasses() ?> text-right font-semibold">Total</td>
-                    <td class="<?= self::tcolClasses() ?> text-right font-bold"><?= number_format($grand_total, 2) ?></td>
-                </tr>
-            </tfoot>
-            <?php endif; ?> 
-           
+                <tfoot>
+                    <tr class="border-t">
+                        <td colspan="3" class="<?= self::tcolClasses() ?> text-right font-semibold">Total</td>
+                        <td class="<?= self::tcolClasses() ?> text-right font-bold"><?= number_format($grand_total, 2) ?></td>
+                    </tr>
+                </tfoot>
+            <?php endif; ?>
+
         </table>
     <?php
                 return ob_get_clean();
@@ -2007,7 +2080,7 @@ class KIT_Commons
                 }
 
                 ob_start(); ?>
-        <header class="bg-white shadow mb-6 rounded-sm">
+        <header class="bg-white shadow mb-6 ">
             <div class="<?php echo self::container(); ?> mx-auto py-3 px-6 flex justify-between items-center">
                 <?= KIT_Commons::bossText([
                     'icon' => $atts["icon"],
@@ -2134,15 +2207,15 @@ class KIT_Commons
                         'nonces' => [
                             'add'    => wp_create_nonce('add_waybill_nonce'),
                             'delete' => wp_create_nonce('delete_waybill_nonce'),
-                        'update' => wp_create_nonce('update_waybill_nonce'),
-                        'get_waybills_nonce' => wp_create_nonce('get_waybills_nonce'),
-                        'get_cities_nonce'   => wp_create_nonce('get_cities_nonce'),
-                        'kit_waybill_nonce'  => wp_create_nonce('kit_waybill_nonce'),
-                        'pdf_nonce'          => wp_create_nonce('pdf_nonce'),
-                        'wp_debug'           => defined('WP_DEBUG') && WP_DEBUG,
-                    ],
-                ];
-                wp_localize_script('kitscript', 'myPluginAjax', $localize_data);
+                            'update' => wp_create_nonce('update_waybill_nonce'),
+                            'get_waybills_nonce' => wp_create_nonce('get_waybills_nonce'),
+                            'get_cities_nonce'   => wp_create_nonce('get_cities_nonce'),
+                            'kit_waybill_nonce'  => wp_create_nonce('kit_waybill_nonce'),
+                            'pdf_nonce'          => wp_create_nonce('pdf_nonce'),
+                            'wp_debug'           => defined('WP_DEBUG') && WP_DEBUG,
+                        ],
+                    ];
+                    wp_localize_script('kitscript', 'myPluginAjax', $localize_data);
                 }
             }
 
@@ -2155,7 +2228,7 @@ class KIT_Commons
                 // Convert waybill options to dynamic options
                 $dynamicOptions = wp_parse_args($options, [
                     'item_type' => 'waybill',
-                    'title' => 'Waybill Items',
+                    'title' => 'Parcels',
                     'field_mapping' => [
                         'description' => 'item_name',
                         'quantity' => 'quantity',
@@ -2224,12 +2297,13 @@ class KIT_Commons
             <div class="flex items-center justify-between mb-4">
                 <?= KIT_Commons::prettyHeading([
                     'icon' => '<path d="M16 7a4 4 0 1 0-8 0v2a4 4 0 0 0 8 0V7z" /><path d="M12 19v-2m0 0a7 7 0 0 1-7-7V7a7 7 0 0 1 14 0v3a7 7 0 0 1-7 7z" />',
-                    'words' => $options['title']
+                    'words' => $options['title'],
+                    'classes' => 'm-0'
                 ]) ?>
-                <?php echo self::renderButton('Add Item', 'primary', 'sm', [
+                <?php echo self::renderButton('+', 'primary', 'sm', [
                     'id' => $options['button_id'],
                     'type' => 'button',
-                    'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>',
+                    'icon' => '',
                     'iconPosition' => 'left',
                     'gradient' => true
                 ]); ?>
@@ -2237,26 +2311,30 @@ class KIT_Commons
                     echo self::renderButton('Export', 'secondary', 'sm', [
                         'href' => $options['export_href'],
                         'gradient' => false,
-                        'classes' => 'ml-2 px-4 py-2 rounded-md bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-100'
+                        'classes' => 'ml-2 px-4 py-2  bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-100'
                     ]);
                 } ?>
             </div>
 
             <style>
                 .dynamicItemsTable {
-                    border-collapse: collapse;
+                    border-collapse: separate;
+                    border-spacing: 0;
                     border: 1px solid #e2e8f0;
-                    border-radius: 0.5rem;
-                    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+                    border-radius: 0.75rem;
+                    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
                     width: 100%;
-                    table-layout: fixed;
+                    max-width: 100%;
+                    table-layout: auto;
+                    background-color: white;
+                    box-sizing: border-box;
                 }
 
                 .dynamicItemsTable th,
                 .dynamicItemsTable td {
-                    white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
+                    padding: 0.5rem 0.375rem;
+                    vertical-align: middle;
+                    box-sizing: border-box;
                 }
 
                 .th-1,
@@ -2264,61 +2342,70 @@ class KIT_Commons
                 .th-3,
                 .th-4,
                 .th-5 {
-                    /* padding: 0.75rem 0.75rem; */
                     text-align: left;
-                    font-size: 0.75rem;
-                    font-weight: 500;
-                    color: #6b7280;
+                    font-size: 0.8125rem;
+                    font-weight: 600;
+                    color: #374151;
                     text-transform: uppercase;
-                    letter-spacing: 0.05em;
-                    border-bottom: 1px solid #e5e7eb;
+                    letter-spacing: 0.025em;
+                    border-bottom: 2px solid #e5e7eb;
                     background-color: #f9fafb;
+                    padding: 0.5rem 0.375rem;
                 }
 
                 .th-1,
                 .td-1 {
-                    width: <?php echo $options['show_invoices'] ? '30%' : '40%'; ?>;
+                    width: 40%;
                 }
 
                 .th-2,
                 .td-2 {
-                    width: <?php echo $options['show_invoices'] ? '5%' : '20%'; ?>;
+                    width: 12%;
                 }
 
                 .th-3,
                 .td-3 {
-                    width: <?php echo $options['show_invoices'] ? '20%' : '20%'; ?>;
+                    width: 20%;
                 }
 
                 .th-4,
                 .td-4 {
-                    width: <?php echo $options['show_invoices'] ? '20%' : '20%'; ?>;
+                    width: 18%;
                 }
 
                 .th-5,
                 .td-5 {
-                    width: <?php echo $options['show_invoices'] ? '20%' : '15%'; ?>;
+                    width: 10%;
                 }
 
-                .th-6,
-                .td-6 {
-                    width: 10%;
+                .td-1 {
+                    white-space: normal;
+                    word-wrap: break-word;
                 }
 
                 .td-1,
                 .td-2,
                 .td-3,
                 .td-4,
-                .td-5,
-                .td-6 {
-                    padding: 0.75rem 0.3rem;
+                .td-5 {
+                    padding: 0.5rem 0.375rem;
                     text-align: left;
-                    font-size: 0.75rem;
-                    font-weight: 500;
-                    color: #6b7280;
-                    text-transform: capitalize;
-                    letter-spacing: 0.05em;
-                    border-bottom: 1px solid #e5e7eb;
+                    font-size: 0.8125rem;
+                    font-weight: 400;
+                    color: #1f2937;
+                    border-bottom: 1px solid #f3f4f6;
+                }
+
+                .dynamic-item-invoice {
+                    background-color: #fafafa;
+                }
+
+                .dynamic-item-invoice:hover {
+                    background-color: #f3f4f6;
+                }
+
+                .dynamic-item-invoice td {
+                    padding: 0.375rem 0.375rem;
                 }
 
                 .th-2,
@@ -2335,25 +2422,68 @@ class KIT_Commons
                     text-align: right;
                 }
 
+                .td-1 input,
+                .td-2 input,
+                .td-3 input {
+                    font-size: 0.8125rem;
+                    padding: 0.375rem 0.375rem;
+                    min-height: 2rem;
+                    width: 100%;
+                    box-sizing: border-box;
+                }
+
+                .invoice-upload {
+                    font-size: 0.8125rem;
+                    padding: 0.375rem 0.375rem;
+                    width: 100%;
+                    box-sizing: border-box;
+                }
+
+                tbody tr.dynamic-item {
+                    transition: background-color 0.15s ease;
+                }
+
+                tbody tr.dynamic-item:hover {
+                    background-color: #f9fafb;
+                }
+
                 tbody tr.dynamic-item:nth-child(even) {
                     background-color: #fafafa;
+                }
+
+                tbody tr.dynamic-item:nth-child(even):hover {
+                    background-color: #f3f4f6;
+                }
+
+                .empty-state {
+                    display: table-row;
+                }
+
+                .empty-state td[colspan] {
+                    display: table-cell;
+                    width: 100% !important;
+                    padding: 2rem 1rem !important;
+                    box-sizing: border-box;
+                    position: relative;
+                    text-align: center;
+                }
+
+                /* Force the colspan cell to span the full table width */
+                .dynamicItemsTable tbody .empty-state td[colspan] {
+                    width: 100% !important;
                 }
             </style>
 
             <!-- Slim Table -->
-            <div class="bg-white border border-gray-200 rounded-lg overflow-x-auto">
-                <table class="dynamicItemsTable w-full border-collapse table-fixed">
+            <div class="mt-6 bg-white border border-gray-200 overflow-x-auto" style="max-width: 100%; box-sizing: border-box;">
+                <table class="dynamicItemsTable w-full border-collapse">
                     <thead class="bg-gray-50">
                         <tr>
-                            <th class="th-1"><?php echo esc_html($options['title']); ?> Description</th>
+                            <th class="th-1">Description</th>
                             <th class="th-2">QTY</th>
-                            <th class="th-3">Unit Price (<?php echo esc_html($options['currency_symbol']); ?>)</th>
-                            <th class="th-4">Total</th>
-
-                            <?php if ($options['show_invoices']): ?>
-                                <th class="th-5">Invoices</th>
-                            <?php endif; ?>
-                            <th class="th-6">Action</th>
+                            <th class="th-3" style="text-align: right;">Unit Price</th>
+                            <th class="th-4" style="text-align: right;">Total</th>
+                            <th class="th-5">Action</th>
                         </tr>
                     </thead>
                     <tbody id="<?php echo esc_attr($options['container_id']); ?>" class="bg-white">
@@ -2365,14 +2495,14 @@ class KIT_Commons
                                         name="<?php echo esc_attr($options['group_name']); ?>[<?php echo esc_attr($index); ?>][<?php echo esc_attr($options['field_mapping']['description']); ?>]"
                                         value="<?php echo esc_attr($item[$options['field_mapping']['description']] ?? ''); ?>"
                                         placeholder="Item description"
-                                        class="w-full px-1 py-0.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
+                                        class="w-full border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
                                 </td>
                                 <td class="td-2">
                                     <input type="number"
                                         name="<?php echo esc_attr($options['group_name']); ?>[<?php echo esc_attr($index); ?>][<?php echo esc_attr($options['field_mapping']['quantity']); ?>]"
                                         value="<?php echo esc_attr($item[$options['field_mapping']['quantity']] ?? 1); ?>"
                                         min="1"
-                                        class="w-full px-1 py-0.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-center" />
+                                        class="w-full border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-center" />
                                 </td>
                                 <td class="td-3">
                                     <input type="number"
@@ -2380,35 +2510,41 @@ class KIT_Commons
                                         value="<?php echo esc_attr($item[$options['field_mapping']['unit_price']] ?? 0); ?>"
                                         step="0.01"
                                         min="0"
-                                        class="w-full px-1 py-0.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
+                                        class="w-full border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
                                 </td>
-                                <td class="px-2 py-1 text-sm text-gray-900 text-center border-r border-gray-100">
+                                <td class="td-4 text-sm text-gray-900 text-right">
                                     <?php echo esc_html($options['currency_symbol']); ?> <?php echo number_format(($item[$options['field_mapping']['quantity']] ?? 1) * ($item[$options['field_mapping']['unit_price']] ?? 0), 2); ?>
                                 </td>
-                                <td class="px-2 py-1 text-center">
+                                <td class="td-5 text-center">
                                     <?php echo self::renderButton('', 'danger', 'sm', [
                                         'type' => 'button',
-                                        'classes' => 'remove-item inline-flex items-center justify-center w-8 h-8 rounded-md border border-red-300 text-red-600 hover:bg-red-50',
+                                        'classes' => 'remove-item inline-flex items-center justify-center w-8 h-8  border border-red-300 text-red-600 hover:bg-red-50',
                                         'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>',
                                         'gradient' => false
                                     ]); ?>
                                 </td>
-                                <?php if ($options['show_invoices']): ?>
-                                    <td class="td-6 text-center">
+                            </tr>
+                            <?php if ($options['show_invoices']): ?>
+                                <tr class="dynamic-item-invoice border-b border-gray-100">
+                                    <td colspan="5" class="td-1">
                                         <input type="file"
                                             name="invoice[]"
                                             accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                                            class="w-full text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                                            class="invoice-upload w-full border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                                     </td>
-                                <?php endif; ?>
-                            </tr>
+                                </tr>
+                            <?php endif; ?>
                         <?php endforeach; ?>
 
                         <!-- Empty State for Slim Version -->
                         <?php if (empty($options['existing_items'])): ?>
+                            <?php
+                            // Count the actual number of columns in the header
+                            $columnCount = 5; // Description, QTY, Unit Price, Total, Action
+                            ?>
                             <tr id="empty-state-slim" class="empty-state">
-                                <td colspan="<?php echo $options['show_invoices'] ? '6' : '5'; ?>" class="text-center py-8 text-gray-500">
-                                    <p class="text-sm">No items added yet. Clickhj "Add Item" to start.</p>
+                                <td colspan="<?php echo $columnCount; ?>" class="text-center py-8 text-gray-500">
+                                    <p class="text-sm">No items added yet. Click "Add Item" to start.</p>
                                 </td>
                             </tr>
                         <?php endif; ?>
@@ -2419,9 +2555,6 @@ class KIT_Commons
                                 <td class="px-2 py-2" colspan="3" style="border-top: 1px solid #e5e7eb; text-align:right; font-weight:600; color:#374151;">Subtotal</td>
                                 <td class="px-2 py-2 text-right" style="border-top: 1px solid #e5e7eb; font-weight:600; color:#111827;" id="<?php echo esc_attr($options['subtotal_id']); ?>"><?php echo esc_html($options['currency_symbol']); ?> 0.00</td>
                                 <td style="border-top: 1px solid #e5e7eb;"></td>
-                                <?php if ($options['show_invoices']): ?>
-                                    <td style="border-top: 1px solid #e5e7eb;"></td>
-                                <?php endif; ?>
                             </tr>
                         </tfoot>
                     <?php endif; ?>
@@ -2475,7 +2608,7 @@ class KIT_Commons
                     const hasItems = container.querySelectorAll('.dynamic-item').length > 0;
 
                     if (emptyStateSlim) {
-                        emptyStateSlim.style.display = hasItems ? 'none' : 'block';
+                        emptyStateSlim.style.display = hasItems ? 'none' : 'table-row';
                     }
                 }
 
@@ -2484,32 +2617,34 @@ class KIT_Commons
 
 
                 function rowTemplate(idx) {
-                    let invoiceCell = '';
+                    let invoiceRow = '';
 
                     if (invoiceColumn) {
-                        invoiceCell = `
-                                        <td class="td-6 text-center">
+                        invoiceRow = `
+                                    <tr class="dynamic-item-invoice border-b border-gray-100">
+                                        <td colspan="5" class="td-1">
                                             <input type="file" 
                                                 name="invoice[]"
                                                 accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                                                class="w-full text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
-                                        </td>`;
+                                                class="invoice-upload w-full border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                                        </td>
+                                    </tr>`;
                     }
 
                     return `
-                                    <tr class="dynamic-item hover:bg-gray-50">
+                                    <tr class="dynamic-item hover:bg-gray-50 border-b border-gray-100">
                                         <td class="td-1">
                                             <input type="text" 
                                                 name="${groupName}[${idx}][${fieldMapping.description}]" 
                                                 placeholder="Item description" 
-                                                class="w-full px-1 py-0.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
+                                                class="w-full border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
                                         </td>
                                         <td class="td-2">
                                             <input type="number" 
                                                 name="${groupName}[${idx}][${fieldMapping.quantity}]" 
                                                 value="1" 
                                                 min="1"
-                                                class="w-full px-1 py-0.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-center" />
+                                                class="w-full border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-center" />
                                         </td>
                                         <td class="td-3">
                                             <input type="number" 
@@ -2517,21 +2652,20 @@ class KIT_Commons
                                                 value="0" 
                                                 step="0.01"
                                                 min="0"
-                                                class="w-full px-1 py-0.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
+                                                class="w-full border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" />
                                         </td>
-                                        <td class="td-4">
+                                        <td class="td-4 text-sm text-gray-900 text-right">
                                             ${currencySymbol} 0.00
                                         </td>
-                                                    ${invoiceCell}
-                                        <td class="td-5">
-                                            <button type="button" class="remove-item inline-flex items-center justify-center w-8 h-8 rounded-md border border-red-300 text-red-600 hover:bg-red-50">
+                                        <td class="td-5 text-center">
+                                            <button type="button" class="remove-item inline-flex items-center justify-center w-8 h-8  border border-red-300 text-red-600 hover:bg-red-50">
                                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                                                 </svg>
                                             </button>
                                         </td>
-                                                    
-                                    </tr>`;
+                                    </tr>
+                                    ${invoiceRow}`;
                 }
 
                 addBtn.addEventListener('click', function() {
@@ -2550,7 +2684,13 @@ class KIT_Commons
                 // Event delegation for remove buttons
                 document.addEventListener('click', (e) => {
                     if (e.target.closest('.remove-item')) {
-                        e.target.closest('.dynamic-item').remove();
+                        const itemRow = e.target.closest('.dynamic-item');
+                        // Also remove the invoice row if it exists (next sibling)
+                        const invoiceRow = itemRow.nextElementSibling;
+                        if (invoiceRow && invoiceRow.classList.contains('dynamic-item-invoice')) {
+                            invoiceRow.remove();
+                        }
+                        itemRow.remove();
                         updateEmptyState();
                         calculateSubtotal();
                     }
@@ -2569,6 +2709,15 @@ class KIT_Commons
                 // Initial calculation on load
                 calculateSubtotal();
                 updateEmptyState();
+
+                // Recalculate empty state width on window resize (for responsive grid)
+                let resizeTimeout;
+                window.addEventListener('resize', function() {
+                    clearTimeout(resizeTimeout);
+                    resizeTimeout = setTimeout(function() {
+                        updateEmptyState();
+                    }, 100);
+                });
 
             });
         </script>
@@ -2809,5 +2958,528 @@ class KIT_Commons
                 }
                 $user = get_userdata($user_id);
                 return $user ? $user->display_name : 'Unknown User';
+            }
+
+            /**
+             * ============================================================================
+             * STANDARDIZED TABLE COLUMN DEFINITIONS
+             * ============================================================================
+             * 
+             * Use these methods to get pre-configured column definitions for KIT_Unified_Table.
+             * This provides:
+             * - Consistent styling across all tables
+             * - Universal waybill number with status display
+             * - DRY principle - define once, use everywhere
+             * - Better performance - callbacks defined once
+             * 
+             * Usage:
+             *   $columns = KIT_Commons::getColumns(['waybill_no', 'customer_name', 'destination', 'total']);
+             *   echo KIT_Unified_Table::infinite($data, $columns, $options);
+             * 
+             * Or get a single column:
+             *   $columns = [
+             *       'waybill_no' => KIT_Commons::getColumn('waybill_no'),
+             *       'custom_col' => ['label' => 'Custom', 'callback' => function($v) { return $v; }],
+             *   ];
+             */
+
+            /**
+             * Get a single standardized column definition
+             * 
+             * @param string $column_key The column key (e.g., 'waybill_no', 'customer_name')
+             * @param array $overrides Optional overrides for the column config
+             * @return array Column configuration
+             */
+            public static function getColumn($column_key, $overrides = [])
+            {
+                $definitions = self::getColumnDefinitions();
+                $column = $definitions[$column_key] ?? ['label' => ucfirst(str_replace('_', ' ', $column_key))];
+                return array_merge($column, $overrides);
+            }
+
+            /**
+             * Get multiple standardized column definitions
+             * 
+             * @param array $column_keys Array of column keys or ['key' => overrides] pairs
+             * @return array Columns configuration for KIT_Unified_Table
+             */
+            public static function getColumns($column_keys)
+            {
+                $columns = [];
+                foreach ($column_keys as $key => $value) {
+                    if (is_numeric($key)) {
+                        // Simple key: ['waybill_no', 'customer_name']
+                        $columns[$value] = self::getColumn($value);
+                    } else {
+                        // Key with overrides: ['waybill_no' => ['label' => 'WB #']]
+                        $columns[$key] = self::getColumn($key, is_array($value) ? $value : []);
+                    }
+                }
+                return $columns;
+            }
+
+            /**
+             * Master column definitions registry
+             * All column types with their full configuration
+             */
+            private static function getColumnDefinitions()
+            {
+                return [
+                    // ========================================
+                    // WAYBILL NUMBER (with status badge below)
+                    // ========================================
+                    'waybill_no' => [
+                        'label' => 'Waybill #',
+                        'sortable' => true,
+                        'searchable' => true,
+                        'header_class' => 'text-left whitespace-nowrap',
+                        'cell_class' => 'text-left text-xs whitespace-nowrap',
+                        'callback' => function ($value, $row, $rowIndex) {
+                            $waybill_no = $value ?? 'N/A';
+                            $row = is_object($row) ? (array) $row : $row;
+                            $waybill_id = $row['waybill_id'] ?? $row['id'] ?? 0;
+                            $view_page = $row['view_page'] ?? '08600-Waybill-view';
+                            $view_param = $row['view_param'] ?? 'waybill_id';
+
+                            // Build view URL
+                            $view_url = admin_url('admin.php?page=' . $view_page . '&' . $view_param . '=' . $waybill_id);
+
+                            $waybill_link = $waybill_id > 0 
+                                ? '<a href="' . esc_url($view_url) . '" target="_blank" rel="noopener" class="text-blue-600 hover:text-blue-800 hover:underline font-medium">#' . esc_html($waybill_no) . '</a>'
+                                : '#' . esc_html($waybill_no);
+
+                            // UNIVERSAL STATUS: Check both 'status' (primary) and 'approval' (fallback) fields
+                            // Prefer 'status' field as it's more comprehensive, fallback to 'approval'
+                            $raw_status = $row['status'] ?? $row['approval'] ?? 'pending';
+                            $status = strtolower(trim((string)$raw_status));
+                            
+                            // Normalize numeric and boolean values
+                            if ($status === '1' || $status === 'true') {
+                                $status = 'approved';
+                            } elseif ($status === '0' || $status === 'false' || $status === '') {
+                                $status = 'pending';
+                            }
+                            
+                            // Comprehensive status badge configuration (supports all status values)
+                            $config = [
+                                // Approval statuses
+                                'approved' => ['bg' => '#22c55e', 'icon' => '✓', 'text' => 'Approved'],
+                                'pending' => ['bg' => '#eab308', 'icon' => '⏳', 'text' => 'Pending'],
+                                'rejected' => ['bg' => '#ef4444', 'icon' => '✗', 'text' => 'Rejected'],
+                                'cancelled' => ['bg' => '#6b7280', 'icon' => '✗', 'text' => 'Cancelled'],
+                                'completed' => ['bg' => '#3b82f6', 'icon' => '✓', 'text' => 'Completed'],
+                                // Waybill workflow statuses
+                                'quoted' => ['bg' => '#8b5cf6', 'icon' => '📋', 'text' => 'Quoted'],
+                                'paid' => ['bg' => '#10b981', 'icon' => '💰', 'text' => 'Paid'],
+                                'assigned' => ['bg' => '#06b6d4', 'icon' => '🚚', 'text' => 'Assigned'],
+                                'shipped' => ['bg' => '#3b82f6', 'icon' => '📦', 'text' => 'Shipped'],
+                                'delivered' => ['bg' => '#22c55e', 'icon' => '✓', 'text' => 'Delivered'],
+                                'invoiced' => ['bg' => '#6366f1', 'icon' => '🧾', 'text' => 'Invoiced'],
+                            ];
+
+                            $settings = $config[$status] ?? ['bg' => '#6b7280', 'icon' => '?', 'text' => ucfirst($status)];
+
+                            // ALWAYS show status badge below waybill number (universal requirement)
+                            $badge = '<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium mt-1" style="background-color: ' . $settings['bg'] . '; color: #fff;">'
+                                    . '<span>' . $settings['icon'] . '</span>'
+                                    . '<span>' . $settings['text'] . '</span>'
+                                    . '</span>';
+
+                            // Optional: creator name (shown above status badge)
+                            $extra = [];
+                            if (!empty($row['created_by'])) {
+                                $user_data = function_exists('get_userdata') ? get_userdata($row['created_by']) : null;
+                                if ($user_data && $user_data->display_name) {
+                                    $extra[] = '<span class="text-[10px] text-gray-400 mt-0.5">' . esc_html($user_data->display_name) . '</span>';
+                                }
+                            }
+                            // Status badge is always included
+                            $extra[] = $badge;
+
+                            return '<div class="flex flex-col">' . $waybill_link . implode('', $extra) . '</div>';
+                        }
+                    ],
+
+                    // ========================================
+                    // WAYBILL NUMBER (simple, no status)
+                    // ========================================
+                    'waybill_no_simple' => [
+                        'label' => 'Waybill #',
+                        'sortable' => true,
+                        'searchable' => true,
+                        'header_class' => 'text-left whitespace-nowrap',
+                        'cell_class' => 'text-left text-sm text-blue-700 whitespace-nowrap',
+                        'callback' => function ($value, $row, $rowIndex) {
+                            $row = is_object($row) ? (array) $row : $row;
+                            $waybill_id = $row['waybill_id'] ?? $row['id'] ?? 0;
+                            $waybill_no = $value ?? '';
+
+                            if (empty($waybill_no)) {
+                                return '—';
+                            }
+
+                            $view_url = add_query_arg([
+                                'page' => '08600-Waybill-view',
+                                'waybill_id' => $waybill_id,
+                            ], admin_url('admin.php'));
+
+                            return '<a href="' . esc_url($view_url) . '" target="_blank" rel="noopener" class="text-blue-600 hover:text-blue-800 hover:underline font-medium">#' . esc_html($waybill_no) . '</a>';
+                        }
+                    ],
+
+                    // ========================================
+                    // CUSTOMER NAME (with link)
+                    // ========================================
+                    'customer_name' => [
+                        'label' => 'Customer',
+                        'sortable' => true,
+                        'searchable' => true,
+                        'header_class' => 'text-left whitespace-nowrap',
+                        'cell_class' => 'text-left whitespace-nowrap',
+                        'callback' => function ($value, $row, $rowIndex) {
+                            $row = is_object($row) ? (array) $row : $row;
+                            $customer_id = $row['customer_id'] ?? 0;
+                            $name = $value ?? '';
+                            $surname = $row['customer_surname'] ?? $row['surname'] ?? '';
+                            $full_name = trim($name . ' ' . $surname);
+
+                            if (empty($full_name)) {
+                                return '—';
+                            }
+
+                            if ($customer_id > 0) {
+                                return '<a href="?page=08600-customers&view_customer=' . $customer_id . '" target="_blank" rel="noopener" class="text-blue-600 hover:text-blue-800 hover:underline font-medium">' . esc_html($full_name) . '</a>';
+                            }
+                            return esc_html($full_name);
+                        }
+                    ],
+
+                    // ========================================
+                    // CUSTOMER NAME (plain text)
+                    // ========================================
+                    'customer_name_plain' => [
+                        'label' => 'Customer',
+                        'sortable' => true,
+                        'searchable' => true,
+                        'header_class' => 'text-left whitespace-nowrap',
+                        'cell_class' => 'text-left text-sm whitespace-nowrap',
+                        'callback' => function ($value, $row, $rowIndex) {
+                            $row = is_object($row) ? (array) $row : $row;
+                            $name = $row['customer_name'] ?? $row['name'] ?? '';
+                            $surname = $row['customer_surname'] ?? $row['surname'] ?? '';
+                            return esc_html(trim($name . ' ' . $surname) ?: '—');
+                        }
+                    ],
+
+                    // ========================================
+                    // DESTINATION / CITY
+                    // ========================================
+                    'destination' => [
+                        'label' => 'Destination',
+                        'sortable' => true,
+                        'searchable' => true,
+                        'header_class' => 'text-left whitespace-nowrap',
+                        'cell_class' => 'text-left text-xs align-middle',
+                        'callback' => function ($value, $row, $rowIndex) {
+                            $row = is_object($row) ? (array) $row : $row;
+                            $city_name = $row['city'] ?? '';
+                            
+                            if (empty($city_name) && !empty($value)) {
+                                if (strpos($value, ',') !== false) {
+                                    list($country, $city) = array_map('trim', explode(',', $value, 2));
+                                    $city_name = $city;
+                                } else {
+                                    $city_name = $value;
+                                }
+                            }
+                            
+                            $delivery_reference = $row['delivery_reference'] ?? '';
+                            $delivery_id = $row['delivery_id'] ?? 0;
+                            
+                            $html = '<div class="flex flex-col">';
+                            $html .= '<span class="font-medium text-gray-900">' . esc_html($city_name ?: '—') . '</span>';
+                            
+                            if (!empty($delivery_reference) && $delivery_reference !== 'pending') {
+                                $html .= '<span class="text-[10px] text-gray-500">Ref: ' . esc_html($delivery_reference) . '</span>';
+                            }
+                            
+                            $html .= '</div>';
+                            return $html;
+                        }
+                    ],
+
+                    // ========================================
+                    // CITY (simple)
+                    // ========================================
+                    'city' => [
+                        'label' => 'City',
+                        'sortable' => true,
+                        'searchable' => true,
+                        'header_class' => 'text-left whitespace-nowrap',
+                        'cell_class' => 'text-left text-sm whitespace-nowrap',
+                    ],
+
+                    // ========================================
+                    // MASS AND DIMENSIONS
+                    // ========================================
+                    'mass_and_dimensions' => [
+                        'label' => 'Mass & Dims',
+                        'sortable' => true,
+                        'searchable' => false,
+                        'header_class' => 'text-left whitespace-nowrap',
+                        'cell_class' => 'text-left text-xs',
+                        'callback' => function ($value, $row, $rowIndex) {
+                            $row = is_object($row) ? (array) $row : $row;
+                            $mass = $row['total_mass_kg'] ?? 0;
+                            $length = $row['item_length'] ?? 0;
+                            $width = $row['item_width'] ?? 0;
+                            $height = $row['item_height'] ?? 0;
+                            $volume = $row['total_volume'] ?? 0;
+
+                            $mass_display = ($mass > 0) ? number_format($mass, 1) . ' kg' : '0 kg';
+                            $dimensions_display = ($length > 0 && $width > 0 && $height > 0) 
+                                ? number_format($length, 0) . ' × ' . number_format($width, 0) . ' × ' . number_format($height, 0)
+                                : '0 × 0 × 0';
+                            $volume_display = ($volume > 0) ? number_format($volume, 3) . ' m³' : '0 m³';
+
+                            return '<div class="text-xs text-gray-500">' . 
+                                   esc_html($mass_display) . '<br>' . 
+                                   esc_html($dimensions_display) . '<br>' . 
+                                   esc_html($volume_display) . '</div>';
+                        }
+                    ],
+
+                    // ========================================
+                    // TOTAL / AMOUNT (currency)
+                    // ========================================
+                    'total' => [
+                        'label' => 'Total',
+                        'sortable' => true,
+                        'searchable' => false,
+                        'header_class' => 'text-right whitespace-nowrap',
+                        'cell_class' => 'text-right text-sm font-medium whitespace-nowrap',
+                        'callback' => function ($value, $row, $rowIndex) {
+                            if (class_exists('KIT_User_Roles') && !KIT_User_Roles::can_see_prices()) {
+                                return '***';
+                            }
+                            $amount = is_numeric($value) ? floatval($value) : 0;
+                            return 'R ' . number_format($amount, 2);
+                        }
+                    ],
+
+                    // ========================================
+                    // STATUS (generic)
+                    // ========================================
+                    'status' => [
+                        'label' => 'Status',
+                        'sortable' => true,
+                        'searchable' => true,
+                        'header_class' => 'text-left whitespace-nowrap',
+                        'cell_class' => 'text-left whitespace-nowrap',
+                        'callback' => function ($value, $row, $rowIndex) {
+                            $status = strtolower(trim($value ?? 'pending'));
+                            $config = [
+                                'approved' => ['bg' => '#22c55e', 'text' => 'Approved'],
+                                'pending' => ['bg' => '#eab308', 'text' => 'Pending'],
+                                'rejected' => ['bg' => '#ef4444', 'text' => 'Rejected'],
+                                'completed' => ['bg' => '#3b82f6', 'text' => 'Completed'],
+                                'delivered' => ['bg' => '#3b82f6', 'text' => 'Delivered'],
+                                'in_transit' => ['bg' => '#8b5cf6', 'text' => 'In Transit'],
+                                'cancelled' => ['bg' => '#6b7280', 'text' => 'Cancelled']
+                            ];
+
+                            $settings = $config[$status] ?? ['bg' => '#6b7280', 'text' => ucfirst($status)];
+
+                            return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium" style="background-color: ' . $settings['bg'] . '; color: #fff;">'
+                                    . $settings['text'] . '</span>';
+                        }
+                    ],
+
+                    // ========================================
+                    // APPROVAL STATUS
+                    // ========================================
+                    'approval' => [
+                        'label' => 'Approval',
+                        'sortable' => true,
+                        'searchable' => true,
+                        'header_class' => 'text-left whitespace-nowrap',
+                        'cell_class' => 'text-left whitespace-nowrap',
+                        'callback' => function ($value, $row, $rowIndex) {
+                            $raw = $value ?? 'pending';
+                            $status = strtolower(trim((string)$raw));
+                            
+                            if ($status === '1' || $status === 'true') {
+                                $status = 'approved';
+                            } elseif ($status === '0' || $status === 'false' || $status === '') {
+                                $status = 'pending';
+                            }
+
+                            $config = [
+                                'approved' => ['bg' => '#22c55e', 'icon' => '✓', 'text' => 'Approved'],
+                                'pending' => ['bg' => '#eab308', 'icon' => '⏳', 'text' => 'Pending'],
+                                'rejected' => ['bg' => '#ef4444', 'icon' => '✗', 'text' => 'Rejected']
+                            ];
+
+                            $settings = $config[$status] ?? ['bg' => '#6b7280', 'icon' => '?', 'text' => ucfirst($status)];
+
+                            return '<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium" style="background-color: ' . $settings['bg'] . '; color: #fff;">'
+                                    . '<span>' . $settings['icon'] . '</span>'
+                                    . '<span>' . $settings['text'] . '</span>'
+                                    . '</span>';
+                        }
+                    ],
+
+                    // ========================================
+                    // DATE (formatted)
+                    // ========================================
+                    'created_at' => [
+                        'label' => 'Created',
+                        'sortable' => true,
+                        'searchable' => false,
+                        'header_class' => 'text-left whitespace-nowrap',
+                        'cell_class' => 'text-left text-xs text-gray-600 whitespace-nowrap',
+                        'callback' => function ($value, $row, $rowIndex) {
+                            if (empty($value)) return '—';
+                            $timestamp = strtotime($value);
+                            return $timestamp ? date('d M Y', $timestamp) : esc_html($value);
+                        }
+                    ],
+
+                    // ========================================
+                    // DATE TIME (formatted)
+                    // ========================================
+                    'updated_at' => [
+                        'label' => 'Updated',
+                        'sortable' => true,
+                        'searchable' => false,
+                        'header_class' => 'text-left whitespace-nowrap',
+                        'cell_class' => 'text-left text-xs text-gray-600 whitespace-nowrap',
+                        'callback' => function ($value, $row, $rowIndex) {
+                            if (empty($value)) return '—';
+                            $timestamp = strtotime($value);
+                            return $timestamp ? date('d M Y H:i', $timestamp) : esc_html($value);
+                        }
+                    ],
+
+                    // ========================================
+                    // EMAIL
+                    // ========================================
+                    'email' => [
+                        'label' => 'Email',
+                        'sortable' => true,
+                        'searchable' => true,
+                        'header_class' => 'text-left whitespace-nowrap',
+                        'cell_class' => 'text-left text-sm whitespace-nowrap',
+                        'callback' => function ($value, $row, $rowIndex) {
+                            if (empty($value)) return '—';
+                            return '<a href="mailto:' . esc_attr($value) . '" class="text-blue-600 hover:text-blue-800 hover:underline">' . esc_html($value) . '</a>';
+                        }
+                    ],
+
+                    // ========================================
+                    // PHONE
+                    // ========================================
+                    'phone' => [
+                        'label' => 'Phone',
+                        'sortable' => false,
+                        'searchable' => true,
+                        'header_class' => 'text-left whitespace-nowrap',
+                        'cell_class' => 'text-left text-sm whitespace-nowrap',
+                        'callback' => function ($value, $row, $rowIndex) {
+                            if (empty($value) || $value === 'N/A') return '—';
+                            return '<a href="tel:' . esc_attr($value) . '" class="text-blue-600 hover:text-blue-800 hover:underline">' . esc_html($value) . '</a>';
+                        }
+                    ],
+
+                    // ========================================
+                    // COMPANY NAME
+                    // ========================================
+                    'company_name' => [
+                        'label' => 'Company',
+                        'sortable' => true,
+                        'searchable' => true,
+                        'header_class' => 'text-left whitespace-nowrap w-52 max-w-52',
+                        'cell_class' => 'text-left text-xs w-52 max-w-52 truncate',
+                    ],
+
+                    // ========================================
+                    // COUNTRY
+                    // ========================================
+                    'country_name' => [
+                        'label' => 'Country',
+                        'sortable' => true,
+                        'searchable' => true,
+                        'header_class' => 'text-left whitespace-nowrap w-32 max-w-32',
+                        'cell_class' => 'text-left text-xs w-32 max-w-32',
+                    ],
+
+                    // ========================================
+                    // TOTAL WAYBILLS (count)
+                    // ========================================
+                    'total_waybills' => [
+                        'label' => 'Waybills',
+                        'sortable' => true,
+                        'searchable' => false,
+                        'header_class' => 'text-center whitespace-nowrap w-24 max-w-24',
+                        'cell_class' => 'text-center text-sm font-medium w-24 max-w-24',
+                        'callback' => function ($value, $row, $rowIndex) {
+                            $count = intval($value);
+                            $class = $count > 0 ? 'text-blue-600' : 'text-gray-400';
+                            return '<span class="' . $class . '">' . $count . '</span>';
+                        }
+                    ],
+
+                    // ========================================
+                    // TRUCK DETAILS
+                    // ========================================
+                    'truck_details' => [
+                        'label' => 'Truck',
+                        'sortable' => false,
+                        'searchable' => true,
+                        'header_class' => 'text-left whitespace-nowrap',
+                        'cell_class' => 'text-left text-xs text-gray-600',
+                        'callback' => function ($value, $row, $rowIndex) {
+                            $row = is_object($row) ? (array) $row : $row;
+                            $truck_number = $row['truck_number'] ?? '';
+                            $delivery_reference = $row['delivery_reference'] ?? '';
+                            $dispatch_date = $row['dispatch_date'] ?? '';
+
+                            if (empty($truck_number) && empty($delivery_reference)) {
+                                return '—';
+                            }
+
+                            $html = '<div class="flex flex-col">';
+                            if (!empty($truck_number)) {
+                                $html .= '<span class="font-medium">' . esc_html($truck_number) . '</span>';
+                            }
+                            if (!empty($delivery_reference) && $delivery_reference !== 'pending') {
+                                $html .= '<span class="text-[10px] text-gray-500">' . esc_html($delivery_reference) . '</span>';
+                            }
+                            if (!empty($dispatch_date) && $dispatch_date !== '0000-00-00') {
+                                $formatted_date = date('d M Y', strtotime($dispatch_date));
+                                $html .= '<span class="text-[10px] text-gray-400">' . esc_html($formatted_date) . '</span>';
+                            }
+                            $html .= '</div>';
+                            return $html;
+                        }
+                    ],
+
+                    // ========================================
+                    // DRIVER NAME
+                    // ========================================
+                    'driver_name' => [
+                        'label' => 'Driver',
+                        'sortable' => true,
+                        'searchable' => true,
+                        'header_class' => 'text-left whitespace-nowrap',
+                        'cell_class' => 'text-left text-sm whitespace-nowrap',
+                        'callback' => function ($value, $row, $rowIndex) {
+                            $row = is_object($row) ? (array) $row : $row;
+                            $name = $row['name'] ?? $row['driver_name'] ?? $value ?? '';
+                            $surname = $row['surname'] ?? '';
+                            return esc_html(trim($name . ' ' . $surname) ?: '—');
+                        }
+                    ],
+                ];
             }
         }

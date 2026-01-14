@@ -136,8 +136,8 @@ class KIT_Bulletproof_Calculator
         
         // VAT or International Price (mutually exclusive)
         if ($params['include_vat']) {
-            // RULE: VAT applies to waybill items total only (not the primary charge)
-            $vat_base = $params['waybill_items_total'];
+            // RULE: VAT applies to primary charge + waybill items total (matching legacy behavior)
+            $vat_base = $params['primary_amount'] + $params['waybill_items_total'];
             $charges['vat'] = self::calculate_vat($vat_base);
             $charges['total'] += $charges['vat'];
         } else {

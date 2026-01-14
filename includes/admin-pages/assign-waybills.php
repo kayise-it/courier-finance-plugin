@@ -6,6 +6,11 @@ if (!defined('ABSPATH')) {
 // Include user roles for permission checking
 require_once plugin_dir_path(__FILE__) . '../user-roles.php';
 
+// Include quick stats component
+if (!class_exists('KIT_QuickStats')) {
+    require_once plugin_dir_path(__FILE__) . '../components/quickStats.php';
+}
+
 // Handle form submission
 if (isset($_POST['assign_waybills']) && wp_verify_nonce($_POST['nonce'], 'assign_waybills_nonce')) {
     global $wpdb;
@@ -31,10 +36,15 @@ if (isset($_POST['assign_waybills']) && wp_verify_nonce($_POST['nonce'], 'assign
             }
         }
         
+        if (!class_exists('KIT_Toast')) {
+            require_once plugin_dir_path(__FILE__) . '../components/toast.php';
+        }
+        KIT_Toast::ensure_toast_loads();
+        
         if ($updated > 0) {
-            echo '<div class="notice notice-success"><p>✅ Successfully assigned ' . $updated . ' waybill(s) to delivery!</p></div>';
+            echo KIT_Toast::success('Successfully assigned ' . $updated . ' waybill(s) to delivery!', 'Success');
         } else {
-            echo '<div class="notice notice-error"><p>❌ Failed to assign waybills. Please try again.</p></div>';
+            echo KIT_Toast::error('Failed to assign waybills. Please try again.', 'Error');
         }
     }
 }
@@ -74,24 +84,42 @@ $total_available_deliveries = count($available_deliveries);
     <hr class="wp-header-end">
 
     <!-- Statistics Cards -->
-    <div class="dashboard-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px;">
-        <div class="stat-card" style="background: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #2563eb;">
-            <h3 style="margin: 0 0 10px 0; color: #2563eb;">Warehouse Waybills</h3>
-            <div style="font-size: 2em; font-weight: bold; color: #1e293b;"><?php echo number_format($total_warehouse_waybills); ?></div>
-            <p style="margin: 5px 0 0 0; color: #64748b;">Ready for assignment</p>
-        </div>
-
-        <div class="stat-card" style="background: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #059669;">
-            <h3 style="margin: 0 0 10px 0; color: #059669;">Available Deliveries</h3>
-            <div style="font-size: 2em; font-weight: bold; color: #1e293b;"><?php echo number_format($total_available_deliveries); ?></div>
-            <p style="margin: 5px 0 0 0; color: #64748b;">Scheduled trucks</p>
-        </div>
-
-        <div class="stat-card" style="background: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #7c3aed;">
-            <h3 style="margin: 0 0 10px 0; color: #7c3aed;">Quick Actions</h3>
-            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                <a href="?page=warehouse-waybills" class="button" style="text-decoration: none;">View Warehouse</a>
-                <a href="?page=kit-deliveries" class="button" style="text-decoration: none;">Manage Deliveries</a>
+    <div class="mb-8">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <?php
+            $assign_stats = [
+                [
+                    'title' => 'Warehouse Waybills',
+                    'value' => number_format($total_warehouse_waybills),
+                    'subtitle' => 'Ready for assignment',
+                    'icon' => 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
+                    'color' => 'blue'
+                ],
+                [
+                    'title' => 'Available Deliveries',
+                    'value' => number_format($total_available_deliveries),
+                    'subtitle' => 'Scheduled trucks',
+                    'icon' => 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
+                    'color' => 'green'
+                ]
+            ];
+            echo KIT_QuickStats::render($assign_stats, '', [
+                'grid_cols' => 'grid-cols-1 md:grid-cols-2',
+                'gap' => 'gap-6'
+            ]);
+            ?>
+            
+            <!-- Quick Actions Card (kept separate as it's not a standard stat) -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
+                <h3 class="text-sm font-medium text-gray-600 mb-4">Quick Actions</h3>
+                <div class="flex flex-col gap-2">
+                    <a href="?page=warehouse-waybills" class="inline-flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
+                        View Warehouse
+                    </a>
+                    <a href="?page=kit-deliveries" class="inline-flex items-center justify-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium">
+                        Manage Deliveries
+                    </a>
+                </div>
             </div>
         </div>
     </div>
@@ -168,8 +196,8 @@ $total_available_deliveries = count($available_deliveries);
                 <!-- Action Buttons -->
                 <div class="flex justify-between items-center">
                     <div class="flex items-center space-x-4">
-                        <?php echo KIT_Commons::renderButton('Select All', 'ghost-primary', 'sm', ['id' => 'select-all-btn', 'type' => 'button']); ?>
-                        <?php echo KIT_Commons::renderButton('Deselect All', 'ghost', 'sm', ['id' => 'deselect-all-btn', 'type' => 'button']); ?>
+                        <?php echo KIT_Commons::renderButton('Select All', 'primary', 'sm', ['id' => 'select-all-btn', 'type' => 'button']); ?>
+                        <?php echo KIT_Commons::renderButton('Deselect All', 'secondary', 'sm', ['id' => 'deselect-all-btn', 'type' => 'button']); ?>
                         <span id="selected-count" class="text-sm text-gray-500">0 waybills selected</span>
                     </div>
                     
@@ -207,15 +235,15 @@ $total_available_deliveries = count($available_deliveries);
     <?php endif; ?>
 
     <!-- Quick Links -->
-    <div class="quick-links" style="margin-top: 30px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-        <a href="?page=warehouse-waybills" style="display: block; padding: 15px; background: #2563eb; color: white; text-decoration: none; border-radius: 6px; text-align: center;">
+    <div class="quick-links mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
+        <a href="?page=warehouse-waybills" class="block p-4 bg-blue-600 text-white no-underline rounded-md text-center hover:bg-blue-700 transition-colors">
             <strong>View Warehouse</strong>
         </a>
-        <a href="?page=kit-deliveries" style="display: block; padding: 15px; background: #059669; color: white; text-decoration: none; border-radius: 6px; text-align: center;">
+        <a href="?page=kit-deliveries" class="block p-4 bg-blue-600 text-white no-underline rounded-md text-center hover:bg-blue-700 transition-colors">
             <strong>Manage Deliveries</strong>
         </a>
-        <a href="?page=08600-waybill-manage" style="display: block; padding: 15px; background: #dc2626; color: white; text-decoration: none; border-radius: 6px; text-align: center;">
-            <strong>All Wa78ybills</strong>
+        <a href="?page=08600-waybill-manage" class="block p-4 bg-blue-600 text-white no-underline rounded-md text-center hover:bg-blue-700 transition-colors">
+            <strong>All Waybills</strong>
         </a>
     </div>
 </div>

@@ -27,7 +27,12 @@ if (!KIT_User_Roles::can_access_settings()) {
 
 // Handle form submissions
 if ($_POST && isset($_POST['action'])) {
-    // Handle setup seed: execute SQL from newSQL.sql
+    // Handle wipe tables: clear all plugin data tables
+    if ($_POST['action'] === 'wipe_tables' && isset($_POST['wipe_tables_nonce']) && wp_verify_nonce($_POST['wipe_tables_nonce'], 'wipe_tables')) {
+        $wipe_tables_result = handle_wipe_tables();
+    }
+    
+    // Handle setup seed: execute SQL from latestSQL.sql
     if ($_POST['action'] === 'seed_setup' && isset($_POST['setup_seed_nonce']) && wp_verify_nonce($_POST['setup_seed_nonce'], 'seed_setup')) {
         $setup_seed_result = handle_setup_seed_sql();
     }
@@ -178,12 +183,12 @@ if ($_POST && isset($_POST['action'])) {
     }
 }
 
-// Auto-generate newSQL.sql from Excel if missing (non-destructive)
+// Auto-generate latestSQL.sql from Excel if missing (non-destructive)
 try {
     $plugin_root_autogen = plugin_dir_path(__FILE__) . '../../';
-    $new_sql_path = $plugin_root_autogen . 'newSQL.sql';
+    $latest_sql_path = $plugin_root_autogen . 'latestSQL.sql';
     $excel_path_autogen = plugin_dir_path(__FILE__) . '../../waybill_excel/Waybills_31-10-2025.xlsx';
-    if (!file_exists($new_sql_path)) {
+    if (!file_exists($latest_sql_path)) {
         // Prefer DB export to avoid shell_exec dependency
         $export = kit_export_seed_sql_from_db();
         if (!$export['success'] && file_exists($excel_path_autogen) && function_exists('shell_exec')) {
@@ -204,7 +209,7 @@ function kit_export_seed_sql_from_db(): array
     $drivers = $wpdb->get_results("SELECT name, is_active FROM {$wpdb->prefix}kit_drivers ORDER BY id ASC", ARRAY_A) ?: [];
     $customers = $wpdb->get_results("SELECT cust_id, name, surname, company_name, country_id FROM {$wpdb->prefix}kit_customers ORDER BY id ASC", ARRAY_A) ?: [];
     $deliveries = $wpdb->get_results("SELECT id, delivery_reference, direction_id, destination_city_id, dispatch_date, driver_id, status FROM {$wpdb->prefix}kit_deliveries ORDER BY id ASC", ARRAY_A) ?: [];
-    $waybills = $wpdb->get_results("SELECT description, direction_id, delivery_id, customer_id, waybill_no, warehouse, product_invoice_number, product_invoice_amount, waybill_items_total, total_mass_kg, total_volume, mass_charge, volume_charge, charge_basis, miscellaneous, include_sad500, include_sadc, vat_include, tracking_number, status, created_at, last_updated_at FROM {$wpdb->prefix}kit_waybills ORDER BY id ASC", ARRAY_A) ?: [];
+    $waybills = $wpdb->get_results("SELECT description, direction_id, city_id, delivery_id, customer_id, waybill_no, warehouse, product_invoice_number, product_invoice_amount, waybill_items_total, total_mass_kg, total_volume, mass_charge, volume_charge, charge_basis, miscellaneous, include_sad500, include_sadc, vat_include, tracking_number, status, created_at, last_updated_at FROM {$wpdb->prefix}kit_waybills ORDER BY id ASC", ARRAY_A) ?: [];
 
     $lines = [];
     $lines[] = 'START TRANSACTION';
@@ -231,9 +236,21 @@ function kit_export_seed_sql_from_db(): array
         $lines[] = "INSERT INTO wp_kit_deliveries (delivery_reference, direction_id, destination_city_id, dispatch_date, driver_id, status) SELECT '{$ref}', {$dir}, {$city}, '{$date}', (SELECT id FROM wp_kit_drivers d WHERE d.id = {$driver_id} LIMIT 1), '{$status}' FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM wp_kit_deliveries WHERE delivery_reference = '{$ref}')";
     }
     foreach ($waybills as $r) {
-        $cols = ['description','direction_id','delivery_id','customer_id','waybill_no','warehouse','product_invoice_number','product_invoice_amount','waybill_items_total','total_mass_kg','total_volume','mass_charge','volume_charge','charge_basis','miscellaneous','include_sad500','include_sadc','vat_include','tracking_number','status','created_at','last_updated_at'];
+        $cols = ['description','direction_id','city_id','delivery_id','customer_id','waybill_no','warehouse','product_invoice_number','product_invoice_amount','waybill_items_total','total_mass_kg','total_volume','mass_charge','volume_charge','charge_basis','miscellaneous','include_sad500','include_sadc','vat_include','tracking_number','status','created_at','last_updated_at'];
         $vals = [];
+        $delivery_id = (int)($r['delivery_id'] ?? 0);
         foreach ($cols as $c) {
+            if ($c === 'city_id') {
+                // Handle city_id: get from waybill's city_id if set, otherwise from delivery's destination_city_id
+                $city_id = isset($r['city_id']) && (int)$r['city_id'] > 0 ? (int)$r['city_id'] : 0;
+                if ($city_id === 0 && $delivery_id > 0) {
+                    // Get destination_city_id from delivery
+                    $city_id = (int)$wpdb->get_var($wpdb->prepare("SELECT destination_city_id FROM {$wpdb->prefix}kit_deliveries WHERE id = %d", $delivery_id));
+                }
+                // Use hardcoded value (fallback to 9 if not found)
+                $vals[] = $city_id > 0 ? (string)$city_id : '9';
+                continue;
+            }
             $v = $r[$c];
             if (is_null($v)) { $vals[] = 'NULL'; continue; }
             if (is_numeric($v) && !in_array($c, ['description','product_invoice_number','tracking_number','status','charge_basis','miscellaneous','created_at','last_updated_at'])) {
@@ -541,19 +558,101 @@ function handle_waybill_import()
     }
 }
 
-// Execute SQL from newSQL.sql with dynamic table prefix replacement
+// Wipe all plugin data tables (but preserve settings and reference data)
+function handle_wipe_tables()
+{
+    global $wpdb;
+    
+    try {
+        // Drop foreign keys first to avoid TRUNCATE/DELETE issues
+        require_once(__DIR__ . '/../class-database.php');
+        Database::drop_legacy_foreign_keys();
+        
+        // Disable foreign key checks temporarily
+        $wpdb->query('SET FOREIGN_KEY_CHECKS = 0');
+        
+        // Tables to wipe (data tables that are seeded)
+        // Order matters: wipe child tables first, then parent tables
+        $tables_to_wipe = [
+            'kit_waybill_items',  // Child table (references waybills)
+            'kit_quotations',      // May reference waybills
+            'kit_invoices',        // May reference waybills
+            'kit_deliveries',      // May reference waybills
+            'kit_waybills',        // Parent table
+            'kit_customers',       // Parent table (referenced by waybills)
+            //'kit_drivers',
+        ];
+        
+        $wiped_count = 0;
+        $errors = [];
+        
+        foreach ($tables_to_wipe as $table_name) {
+            $full_table_name = $wpdb->prefix . $table_name;
+            
+            // Check if table exists
+            $table_exists = $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = %s AND table_name = %s",
+                DB_NAME,
+                $full_table_name
+            ));
+            
+            if ($table_exists > 0) {
+                // Use DELETE instead of TRUNCATE (works better with foreign keys disabled)
+                // DELETE works even when foreign keys exist (with checks disabled)
+                $result = $wpdb->query("DELETE FROM `{$full_table_name}`");
+                
+                if ($result === false) {
+                    $errors[] = "Failed to wipe {$table_name}: " . ($wpdb->last_error ?: 'Unknown error');
+                } else {
+                    // Reset auto-increment counter
+                    $wpdb->query("ALTER TABLE `{$full_table_name}` AUTO_INCREMENT = 1");
+                    $wiped_count++;
+                }
+            }
+        }
+        
+        // Re-enable foreign key checks
+        $wpdb->query('SET FOREIGN_KEY_CHECKS = 1');
+        
+        // Reset seeding flags
+        delete_option('kit_customers_seeded');
+        
+        if (!empty($errors)) {
+            return [
+                'success' => false,
+                'message' => 'Wiped ' . $wiped_count . ' tables, but encountered errors: ' . implode('; ', $errors),
+                'stats' => ['wiped' => $wiped_count, 'errors' => $errors]
+            ];
+        }
+        
+        return [
+            'success' => true,
+            'message' => 'Successfully wiped ' . $wiped_count . ' data tables. You can now run Setup Seed.',
+            'stats' => ['wiped' => $wiped_count]
+        ];
+    } catch (Exception $e) {
+        // Re-enable foreign key checks even on error
+        $wpdb->query('SET FOREIGN_KEY_CHECKS = 1');
+        return [
+            'success' => false,
+            'message' => 'Wipe tables failed: ' . $e->getMessage()
+        ];
+    }
+}
+
+// Execute SQL from latestSQL.sql with dynamic table prefix replacement
 function handle_setup_seed_sql()
 {
     global $wpdb;
 
     $pluginRoot = plugin_dir_path(__FILE__) . '../../';
-    $new_sql_file = $pluginRoot . 'newSQL.sql';
+    $latest_sql_file = $pluginRoot . 'latestSQL.sql';
 
     try {
         // Check for files that actually exist
         $sql_file = null;
-        if (file_exists($new_sql_file)) {
-            $sql_file = $new_sql_file;
+        if (file_exists($latest_sql_file)) {
+            $sql_file = $latest_sql_file;
         } else {
             // Try to generate from Excel automatically as last resort
             $generated = kit_generate_seed_sql_from_excel();
@@ -562,7 +661,7 @@ function handle_setup_seed_sql()
             } else {
                 return [
                     'success' => false,
-                    'message' => 'Seed SQL not found. Please ensure newSQL.sql exists in the plugin root.'
+                    'message' => 'Seed SQL not found. Please ensure latestSQL.sql exists in the plugin root.'
                 ];
             }
         }
@@ -579,20 +678,22 @@ function handle_setup_seed_sql()
             ];
         }
 
+        // Helper closure to normalise SQL content (BOM, newlines, prefixes, placeholders)
+        $normalise_sql = function (string $sql) use ($wpdb) {
         // Strip UTF-8 BOM if present to avoid MySQL "﻿ START" syntax errors
-        if (strncmp($sql_content, "\xEF\xBB\xBF", 3) === 0) {
-            $sql_content = substr($sql_content, 3);
+            if (strncmp($sql, "\xEF\xBB\xBF", 3) === 0) {
+                $sql = substr($sql, 3);
         }
 
         // Normalise newlines to LF to keep statement parsing consistent
-        $sql_content = str_replace(["\r\n", "\r"], "\n", $sql_content);
+            $sql = str_replace(["\r\n", "\r"], "\n", $sql);
 
         // Replace hardcoded wp_ prefixes with dynamic prefix if needed
         // First replace {PREFIX} placeholder (new format)
-        $sql_content = str_replace('{PREFIX}', $wpdb->prefix, $sql_content);
+            $sql = str_replace('{PREFIX}', $wpdb->prefix, $sql);
         // Then handle legacy wp_ prefixes (backward compatibility)
-        $sql_content = preg_replace('/`wp_([a-zA-Z_]+)`/', '`' . $wpdb->prefix . '$1`', $sql_content);
-        $sql_content = preg_replace('/(?<![a-zA-Z0-9_])wp_([a-zA-Z_]+)/', $wpdb->prefix . '$1', $sql_content);
+            $sql = preg_replace('/`wp_([a-zA-Z_]+)`/', '`' . $wpdb->prefix . '$1`', $sql);
+            $sql = preg_replace('/(?<![a-zA-Z0-9_])wp_([a-zA-Z_]+)/', $wpdb->prefix . '$1', $sql);
         
         // Determine created_by user_id based on prefix
         // If prefix is NOT 'wp_', we're in production/live -> use user_id 1593
@@ -611,10 +712,82 @@ function handle_setup_seed_sql()
         }
         
         // Replace {CREATED_BY} placeholder with the determined user_id
-        $sql_content = str_replace('{CREATED_BY}', $created_by_user_id, $sql_content);
+            $sql = str_replace('{CREATED_BY}', $created_by_user_id, $sql);
+
+            return $sql;
+        };
+
+        // First pass normalisation on the chosen SQL file
+        $sql_content = $normalise_sql($sql_content);
+
+        // Fix triple-escaped apostrophes: \\\' should be '' (MySQL's apostrophe escape)
+        // In the SQL file, \\\' is literal: backslash-backslash-backslash-apostrophe
+        // When MySQL parses this: \\ = backslash, \' = apostrophe, which ends string early
+        // We need to convert \\\' to '' (two single quotes = SQL's way to escape apostrophe)
+        // Pattern: match backslash-backslash-backslash-apostrophe, replace with two apostrophes
+        $sql_content = str_replace("\\\\\\'", "''", $sql_content);
+
+        // Some legacy exports store the "miscellaneous" field as a PHP-serialised
+        // array starting with a:3:{s:10:"misc_items"; ...}. These blobs contain
+        // many semicolons and nested metadata that are not required for seeding,
+        // and they tend to confuse statement splitting and MySQL parsing.
+        // For import purposes we can safely collapse them to a simple JSON stub.
+        $sql_content = preg_replace(
+            "/'a:3:\\{s:10:\\\\\"misc_items\\\\\";.*?}'/s",
+            '\'{"misc_items":[],"misc_total":"0.00","others":{}}\'',
+            $sql_content
+        );
+
+        // If the chosen seed file doesn't actually contain any data-modifying
+        // statements (e.g. it's just START TRANSACTION/COMMIT), fall back to
+        // generating a richer seed file and use that instead.
+        if (!preg_match('/\b(INSERT|CREATE|UPDATE|DELETE)\b/i', $sql_content)) {
+            $regen_errors = [];
+
+            // 1) Prefer exporting from the current database if possible
+            if (function_exists('kit_export_seed_sql_from_db')) {
+                $export = kit_export_seed_sql_from_db();
+                if (!empty($export['success']) && !empty($export['path']) && file_exists($export['path'])) {
+                    $sql_file = $export['path'];
+                    $sql_content = file_get_contents($sql_file);
+                    if ($sql_content === false) {
+                        $regen_errors[] = 'DB export file could not be read';
+                    } else {
+                        $sql_content = $normalise_sql($sql_content);
+                    }
+                } else {
+                    $regen_errors[] = isset($export['message']) ? $export['message'] : 'DB export failed';
+                }
+            }
+
+            // 2) If DB export didn't yield usable SQL, try Excel-based generator
+            if (!preg_match('/\b(INSERT|CREATE|UPDATE|DELETE)\b/i', $sql_content ?? '') && function_exists('kit_generate_seed_sql_from_excel')) {
+                $generated = kit_generate_seed_sql_from_excel();
+                if (!empty($generated['success']) && !empty($generated['path']) && file_exists($generated['path'])) {
+                    $sql_file = $generated['path'];
+                    $sql_content = file_get_contents($sql_file);
+                    if ($sql_content === false) {
+                        $regen_errors[] = 'Excel-generated seed SQL file could not be read';
+                    } else {
+                        $sql_content = $normalise_sql($sql_content);
+                    }
+                } else {
+                    $regen_errors[] = isset($generated['message']) ? $generated['message'] : 'Excel generator failed';
+                }
+            }
+
+            // 3) After regeneration attempts, if we STILL don't have data SQL, abort with a clear message
+            if (!preg_match('/\b(INSERT|CREATE|UPDATE|DELETE)\b/i', $sql_content ?? '')) {
+                $reason = !empty($regen_errors) ? implode('; ', $regen_errors) : 'no regeneration strategies available';
+                return [
+                    'success' => false,
+                    'message' => 'Seed SQL file contains no data rows and automatic regeneration failed: ' . $reason,
+                ];
+            }
+        }
 
         // Split and execute statements - handle quoted strings properly
-        // This function respects SQL string literals and doesn't split inside them
+        // CRITICAL: Split on semicolons, but respect string literals
         $statements = [];
         $current = '';
         $in_string = false;
@@ -627,37 +800,76 @@ function handle_setup_seed_sql()
             $current .= $char;
             
             // Handle SQL string literals with proper escaping
-            if (!$in_string && ($char === "'" || $char === '"')) {
-                $in_string = true;
-                $string_char = $char;
-            } elseif ($in_string && $char === $string_char) {
-                // Check for SQL escape: '' (two single quotes) or escaped quote
-                if ($char === "'" && $next_char === "'") {
+            if ($in_string) {
+                // CRITICAL: Handle escape sequences FIRST, before checking for end of string
+                if ($char === '\\' && $i + 1 < $len) {
+                    // Escaped character (backslash + any char) - consume both
+                    $i++;
+                    $current .= $sql_content[$i];
+                    continue;
+                }
+                
+                // Check for SQL-style escape: '' (two single quotes) for single-quoted strings
+                if ($char === "'" && $string_char === "'" && $next_char === "'") {
                     // Double single quote escape in SQL - skip next char
                     $i++;
                     $current .= $next_char;
-                } elseif ($char === '\\' && ($next_char === "'" || $next_char === '"')) {
-                    // Escaped quote - skip next char
-                    $i++;
-                    $current .= $next_char;
-                } else {
+                    continue;
+                }
+                
+                // Check if we're at the end of the string
+                if ($char === $string_char) {
                     // End of string
                     $in_string = false;
                     $string_char = '';
                 }
-            } elseif (!$in_string && $char === ';') {
+            } elseif ($char === "'" || $char === '"') {
+                // Start of string
+                $in_string = true;
+                $string_char = $char;
+            } elseif ($char === ';') {
                 $stmt = trim($current);
+                $current = ''; // Reset BEFORE processing to avoid accumulation
+                
                 // Only add non-empty statements that aren't just a semicolon
                 if ($stmt !== '' && $stmt !== ';' && strlen($stmt) > 1) {
-                    // Skip comment-only statements
+                    // Skip comment-only statements - remove all comments first
                     $stmt_clean = preg_replace('/--.*$/m', '', $stmt);
                     $stmt_clean = preg_replace('/\/\*.*?\*\//s', '', $stmt_clean);
                     $stmt_clean = trim($stmt_clean);
-                    if ($stmt_clean !== '' && !preg_match('/^\s*--/', $stmt_clean)) {
-                        $statements[] = $stmt;
+                    
+                    // Only add if there's actual SQL content (not just comments/whitespace)
+                    if ($stmt_clean !== '' && !preg_match('/^\s*--/', $stmt_clean) && !preg_match('/^[\s\n\r]*$/', $stmt_clean)) {
+                        // Additional check: ensure it contains actual SQL keywords
+                        $has_sql_keywords = preg_match('/\b(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|SET|USE|SHOW|DESCRIBE|EXPLAIN)\b/i', $stmt_clean);
+                        if ($has_sql_keywords) {
+                            // Single statement - ensure it ends with semicolon.
+                            // IMPORTANT: Do not attempt to split on semicolons here:
+                            // values like the serialized "miscellaneous" field legitimately
+                            // contain semicolons inside quoted strings.
+                            $final_stmt = rtrim($stmt, ';') . ';';
+                            $statements[] = $final_stmt;
+                            // #region agent log
+                            $log_file = plugin_dir_path(__FILE__) . '../../.cursor/debug.log';
+                            $log_entry = json_encode([
+                                'timestamp' => microtime(true),
+                                'location' => 'settings.php:split_statements',
+                                'message' => 'Statement split',
+                                'data' => [
+                                    'stmt_length' => strlen($final_stmt),
+                                    'stmt_preview' => substr($final_stmt, 0, 150),
+                                    'starts_with' => substr(trim($final_stmt), 0, 30),
+                                    'in_string_at_split' => $in_string,
+                                    'string_char' => $string_char
+                                ],
+                                'sessionId' => 'debug-session',
+                                'runId' => 'run1'
+                            ]) . "\n";
+                            @file_put_contents($log_file, $log_entry, FILE_APPEND);
+                            // #endregion
+                        }
                     }
                 }
-                $current = '';
             }
         }
         
@@ -667,14 +879,37 @@ function handle_setup_seed_sql()
             $stmt_clean = preg_replace('/--.*$/m', '', $stmt);
             $stmt_clean = preg_replace('/\/\*.*?\*\//s', '', $stmt_clean);
             $stmt_clean = trim($stmt_clean);
-            if ($stmt_clean !== '' && !preg_match('/^\s*--/', $stmt_clean)) {
-                $statements[] = $stmt;
+            // Only add if there's actual SQL content with keywords
+            if ($stmt_clean !== '' && !preg_match('/^\s*--/', $stmt_clean) && !preg_match('/^[\s\n\r]*$/', $stmt_clean)) {
+                $has_sql_keywords = preg_match('/\b(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|SET|USE|SHOW|DESCRIBE|EXPLAIN)\b/i', $stmt_clean);
+                if ($has_sql_keywords) {
+                    $statements[] = rtrim($stmt, ';') . ';';
+                }
             }
         }
         
         $executed = 0; $errors = [];
-        foreach ($statements as $statement) {
+        // #region agent log
+        $log_file = plugin_dir_path(__FILE__) . '../../.cursor/debug.log';
+        $log_entry = function($msg, $data = []) use ($log_file) {
+            $entry = json_encode([
+                'timestamp' => microtime(true),
+                'location' => 'settings.php:handle_setup_seed_sql',
+                'message' => $msg,
+                'data' => $data,
+                'sessionId' => 'debug-session',
+                'runId' => 'run1'
+            ]) . "\n";
+            @file_put_contents($log_file, $entry, FILE_APPEND);
+        };
+        $log_entry('Starting statement execution', ['total_statements' => count($statements)]);
+        // #endregion
+        foreach ($statements as $idx => $statement) {
             if ($statement === '') { continue; }
+            
+            // #region agent log
+            $original_statement = $statement;
+            // #endregion
             
             // Remove SQL comments (both -- style and /* */ style) before executing
             // This prevents statements with leading comments from being skipped
@@ -683,10 +918,85 @@ function handle_setup_seed_sql()
             $statement = trim($statement);
             
             if ($statement === '' || strpos($statement, '--') === 0) { continue; }
+            
+            // Safety: Occasionally, parsing errors can leave us with a fragment that
+            // starts with trailing junk (e.g. "}}',0,0,1,...") followed by a valid
+            // INSERT statement. If the first token isn't a recognised SQL verb,
+            // but we can find a later "INSERT INTO", trim everything before it.
+            $was_trimmed = false;
+            if (!preg_match('/^(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|SET|USE)\b/i', $statement)) {
+                $insert_pos = stripos($statement, 'INSERT INTO ');
+                if ($insert_pos !== false) {
+                    // #region agent log
+                    $log_entry('Trimming statement fragment', [
+                        'idx' => $idx,
+                        'before_length' => strlen($statement),
+                        'fragment' => substr($statement, 0, min(100, $insert_pos)),
+                        'insert_pos' => $insert_pos
+                    ]);
+                    // #endregion
+                    $statement = substr($statement, $insert_pos);
+                    $statement = ltrim($statement);
+                    $was_trimmed = true;
+                }
+            }
+
+            // If after cleaning the statement still doesn't start with a known SQL
+            // verb, skip it to avoid feeding garbage to MySQL.
+            if (!preg_match('/^(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|SET|USE)\b/i', $statement)) {
+                // #region agent log
+                $log_entry('Skipping invalid statement', [
+                    'idx' => $idx,
+                    'preview' => substr($statement, 0, 150),
+                    'was_trimmed' => $was_trimmed
+                ]);
+                // #endregion
+                continue;
+            }
+            
+            // Additional safety for INSERTs: ensure we actually have a VALUES or
+            // SELECT clause following the column list. If the statement was
+            // truncated (e.g., we only have "INSERT INTO ... (cols)" with no body)
+            // then executing it will always be a syntax error, so we skip.
+            if (preg_match('/^INSERT\s+INTO\b/i', $statement)) {
+                if (!preg_match('/^INSERT\s+INTO\b.+\)\s+(VALUES|SELECT)\b/si', $statement)) {
+                    // #region agent log
+                    $log_entry('Skipping incomplete INSERT', [
+                        'idx' => $idx,
+                        'preview' => substr($statement, 0, 200),
+                        'has_values' => (bool)preg_match('/\)\s+VALUES\b/si', $statement),
+                        'has_select' => (bool)preg_match('/\)\s+SELECT\b/si', $statement)
+                    ]);
+                    // #endregion
+                    continue;
+                }
+            }
+            
+            // Single statement - ensure it ends with semicolon
+            $statement = rtrim($statement, ';') . ';';
+            
+            // Remove any newlines that might cause MySQL to see multiple statements
+            // Replace newlines with spaces to ensure it's treated as a single line
+            $statement = str_replace(["\r\n", "\r", "\n"], ' ', $statement);
+            // Clean up multiple spaces
+            $statement = preg_replace('/\s+/', ' ', $statement);
+            $statement = trim($statement);
+            
+            // Execute statement - $wpdb->query() can only handle ONE statement
             $result = $wpdb->query($statement);
             if ($result === false) {
                 $err = $wpdb->last_error ?: 'Unknown DB error';
                 $errors[] = $err;
+                // #region agent log
+                $log_entry('SQL execution failed', [
+                    'idx' => $idx,
+                    'error' => $err,
+                    'statement_preview' => substr($statement, 0, 500),
+                    'statement_length' => strlen($statement),
+                    'was_trimmed' => $was_trimmed,
+                    'original_preview' => substr($original_statement, 0, 200)
+                ]);
+                // #endregion
                 if (function_exists('error_log')) {
                     @error_log('[SetupSeed] DB Error: ' . $err . ' | SQL: ' . substr($statement, 0, 300));
                 }
@@ -694,6 +1004,12 @@ function handle_setup_seed_sql()
                 $executed++;
             }
         }
+        // #region agent log
+        $log_entry('Statement execution completed', [
+            'executed' => $executed,
+            'errors_count' => count($errors)
+        ]);
+        // #endregion
 
         if (!empty($errors)) {
             return [
@@ -807,6 +1123,20 @@ function kit_generate_seed_sql_from_excel(): array
         // Waybill description from Excel column exactly as provided
         $waybill_description = addslashes(trim((string)($row['Waybill  description'] ?? $row['Waybill description'] ?? $row['Waybill_description'] ?? '')));
 
+        // Get city_id from CITY column - look up city name in operating_cities table
+        $city_name = trim((string)($row['CITY'] ?? ''));
+        $city_id = 9; // Default fallback
+        if ($city_name !== '') {
+            global $wpdb;
+            $city_id_result = $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM {$wpdb->prefix}kit_operating_cities WHERE city_name = %s LIMIT 1",
+                $city_name
+            ));
+            if ($city_id_result) {
+                $city_id = (int)$city_id_result;
+            }
+        }
+
         // VAT / SADC / SAD500 mapping from Excel (tolerant to headers and values)
         $vatRaw = strtoupper(trim((string)($row['VAT'] ?? $row['Vat'] ?? $row['vat_include'] ?? '')));
         $vatFlag = in_array($vatRaw, ['TRUE','1','YES','SAD500','SADC'], true) ? 1 : 0;
@@ -826,8 +1156,9 @@ function kit_generate_seed_sql_from_excel(): array
         $totalPriceSql = ($totalPrice === '' ? 'NULL' : $totalPrice);
 
         // 1) Insert WAYBILL (no product_invoice_number; PHP generates it later if you use save_waybill route)
-        $sql[] = "INSERT INTO wp_kit_waybills (description, direction_id, delivery_id, customer_id, waybill_no, warehouse, product_invoice_number, product_invoice_amount, waybill_items_total, total_mass_kg, total_volume, item_length, item_width, item_height, mass_charge, volume_charge, charge_basis, miscellaneous, include_sad500, include_sadc, vat_include, tracking_number, status, created_at, last_updated_at)\n"
-               . "SELECT " . ($waybill_description ? "'{$waybill_description}'" : "NULL") . ", 1, del.id, cust.cust_id, FLOOR(RAND()*900000)+100000, 0, NULL, {$totalCost}, {$totalCost}, {$mass}, {$vol}, {$length}, {$width}, {$height}, {$massCost}, {$volCost}, " . ($basis !== '' ? "'" . addslashes($basis) . "'" : "'mass'") . ", '', {$include_sad500}, {$include_sadc}, {$vatFlag}, CONCAT('TRK-', LEFT(UUID(),8)), 'pending', NOW(), NOW()\n"
+        // Use hardcoded city_id from CSV CITY column lookup
+        $sql[] = "INSERT INTO wp_kit_waybills (description, direction_id, city_id, delivery_id, customer_id, waybill_no, warehouse, product_invoice_number, product_invoice_amount, waybill_items_total, total_mass_kg, total_volume, item_length, item_width, item_height, mass_charge, volume_charge, charge_basis, miscellaneous, include_sad500, include_sadc, vat_include, tracking_number, status, created_at, last_updated_at)\n"
+               . "SELECT " . ($waybill_description ? "'{$waybill_description}'" : "NULL") . ", 1, {$city_id}, del.id, cust.cust_id, FLOOR(RAND()*900000)+100000, 0, NULL, {$totalCost}, {$totalCost}, {$mass}, {$vol}, {$length}, {$width}, {$height}, {$massCost}, {$volCost}, " . ($basis !== '' ? "'" . addslashes($basis) . "'" : "'mass'") . ", '', {$include_sad500}, {$include_sadc}, {$vatFlag}, CONCAT('TRK-', LEFT(UUID(),8)), 'pending', NOW(), NOW()\n"
                . "FROM wp_kit_deliveries del\n"
                . "JOIN wp_kit_drivers d ON d.id = del.driver_id AND d.name = '{$driver}' AND del.dispatch_date = '{$date}'\n"
                . "JOIN wp_kit_customers cust ON cust.name = '{$first}' AND cust.surname = '{$last}'\n"
@@ -1224,14 +1555,14 @@ function kit_generate_seed_sql_from_excel(): array
                     <?php
                     // Show seed SQL status - match the priority order in handle_setup_seed_sql()
                     $pluginRoot = plugin_dir_path(__FILE__) . '../../';
-                    $new_sql_file = $pluginRoot . 'newSQL.sql';
+                    $latest_sql_file = $pluginRoot . 'latestSQL.sql';
                     
                     // Determine if the seed file exists (matching handle_setup_seed_sql priority)
                     $sql_file = null;
                     $file_display_name = '';
-                    if (file_exists($new_sql_file)) {
-                        $sql_file = $new_sql_file;
-                        $file_display_name = 'newSQL.sql';
+                    if (file_exists($latest_sql_file)) {
+                        $sql_file = $latest_sql_file;
+                        $file_display_name = 'latestSQL.sql';
                     }
                     
                     $file_exists = ($sql_file !== null);
@@ -1254,18 +1585,61 @@ function kit_generate_seed_sql_from_excel(): array
                                     </p>
                                 <?php else: ?>
                                     <p class="mt-1 text-yellow-700">
-                                        Please ensure <code class="px-2 py-1 rounded bg-gray-100">newSQL.sql</code> exists in the plugin root directory
+                                        Please ensure <code class="px-2 py-1 rounded bg-gray-100">latestSQL.sql</code> exists in the plugin root directory
                                     </p>
                                 <?php endif; ?>
                             </div>
                         </div>
                     </div>
 
-                    <form method="post" action="">
-                        <?php wp_nonce_field('seed_setup', 'setup_seed_nonce'); ?>
-                        <input type="hidden" name="action" value="seed_setup">
-                        <?php echo KIT_Commons::renderButton('Run Setup Seed', 'primary', 'md', ['type' => 'submit', 'gradient' => true]); ?>
+                    <div class="flex gap-3 items-center">
+                        <form method="post" action="" class="inline">
+                            <?php wp_nonce_field('seed_setup', 'setup_seed_nonce'); ?>
+                            <input type="hidden" name="action" value="seed_setup">
+                            <?php echo KIT_Commons::renderButton('Run Setup Seed', 'primary', 'md', ['type' => 'submit', 'gradient' => true]); ?>
                         </form>
+                        
+                        <form method="post" action="" id="wipe-tables-form" class="inline">
+                            <?php wp_nonce_field('wipe_tables', 'wipe_tables_nonce'); ?>
+                            <input type="hidden" name="action" value="wipe_tables">
+                            <?php echo KIT_Commons::renderButton('Wipe Tables', 'danger', 'md', ['type' => 'submit', 'id' => 'wipe-tables-button']); ?>
+                        </form>
+                    </div>
+
+                    <?php if (isset($wipe_tables_result)): ?>
+                        <div class="mt-6 p-4 rounded-lg border <?php echo $wipe_tables_result['success'] ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'; ?>">
+                            <div class="flex">
+                                <div class="flex-shrink-0">
+                                    <?php if ($wipe_tables_result['success']): ?>
+                                        <svg class="h-5 w-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                    <?php else: ?>
+                                        <svg class="h-5 w-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="ml-3 text-sm">
+                                    <p class="font-medium <?php echo $wipe_tables_result['success'] ? 'text-green-800' : 'text-red-800'; ?>"><?php echo $wipe_tables_result['success'] ? 'Tables Wiped Successfully' : 'Wipe Tables Failed'; ?></p>
+                                    <div class="mt-2 <?php echo $wipe_tables_result['success'] ? 'text-green-700' : 'text-red-700'; ?>">
+                                        <p><?php echo esc_html($wipe_tables_result['message'] ?? ''); ?></p>
+                                        <?php if (!empty($wipe_tables_result['stats'])): ?>
+                                            <div class="mt-3 space-y-1">
+                                                <p><strong>Statistics:</strong></p>
+                                                <p>• Tables wiped: <?php echo intval($wipe_tables_result['stats']['wiped'] ?? 0); ?></p>
+                                                <?php if (!empty($wipe_tables_result['stats']['errors'])): ?>
+                                                    <p>• Errors: <?php echo count($wipe_tables_result['stats']['errors']); ?></p>
+                                                    <div class="mt-2 text-xs">
+                                                        <p><strong>Error details:</strong></p>
+                                                        <?php foreach (array_slice($wipe_tables_result['stats']['errors'], 0, 5) as $error): ?>
+                                                            <p class="text-red-600">• <?php echo esc_html($error); ?></p>
+                                                        <?php endforeach; ?>
+                                                    </div>
+                                                <?php endif; ?>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endif; ?>
 
                     <?php if (isset($setup_seed_result)): ?>
                         <div class="mt-6 p-4 rounded-lg border <?php echo $setup_seed_result['success'] ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'; ?>">
@@ -1629,6 +2003,51 @@ function kit_generate_seed_sql_from_excel(): array
                         // Clear the last remaining input instead of removing
                         const input = row.querySelector('input[name="terms_items[]"]');
                         if (input) input.value = '';
+                    }
+                }
+            });
+        }
+
+        // Wipe tables form confirmation
+        const wipeTablesForm = document.getElementById('wipe-tables-form');
+        const wipeTablesButton = document.getElementById('wipe-tables-button');
+
+        if (wipeTablesForm && wipeTablesButton) {
+            wipeTablesButton.addEventListener('click', function(e) {
+                e.preventDefault();
+
+                const confirmed = confirm(
+                    '⚠️ WARNING: This will DELETE ALL DATA from the following tables:\n\n' +
+                    '• Waybill Items\n' +
+                    '• Quotations\n' +
+                    '• Invoices\n' +
+                    '• Waybills\n' +
+                    '• Deliveries\n' +
+                    '• Customers\n\n' +
+                    'This action:\n' +
+                    '• CANNOT be undone\n' +
+                    '• Will permanently delete all data\n' +
+                    '• Settings and reference data will be preserved\n\n' +
+                    'Are you absolutely sure you want to continue?\n\n' +
+                    'Click OK to wipe all tables or Cancel to abort.'
+                );
+
+                if (confirmed) {
+                    // Double confirmation for safety
+                    const doubleConfirmed = confirm(
+                        'FINAL CONFIRMATION:\n\n' +
+                        'You are about to PERMANENTLY DELETE all plugin data.\n\n' +
+                        'This is your last chance to cancel.\n\n' +
+                        'Click OK to proceed with wiping all tables.'
+                    );
+
+                    if (doubleConfirmed) {
+                        // Show loading state
+                        wipeTablesButton.disabled = true;
+                        wipeTablesButton.textContent = 'Wiping Tables...';
+
+                        // Submit the form programmatically
+                        wipeTablesForm.submit();
                     }
                 }
             });

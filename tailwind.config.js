@@ -20,6 +20,10 @@ module.exports = {
     /^p[trblxy]?-/,
     /^m[trblxy]?-/,
     /^space-[xy]-/,
+    // Explicit padding classes for icon inputs
+    'pl-12',
+    'pr-4',
+    'pl-10',
     // Typography & colors
     /^text-/,
     /^font-/,

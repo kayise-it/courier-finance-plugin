@@ -40,6 +40,11 @@ if (!defined('ABSPATH')) {
     if (!$wp_load_found) {
         die('WordPress not found. Please ensure the plugin is installed in the correct directory.');
     }
+    
+    // Verify that ABSPATH was successfully defined after loading WordPress
+    if (!defined('ABSPATH')) {
+        die('WordPress loaded but ABSPATH constant is not defined. WordPress may not have loaded correctly.');
+    }
 }
 
 // Load Composer autoloader if available (for libraries like plugin-update-checker)
@@ -58,17 +63,20 @@ if (!class_exists('Composer\\Autoload\\ClassLoader')) {
 if (class_exists('KIT_Commons')) {
     // KIT_Commons is already loaded
 } else {
-    // Try to load KIT_Commons from common locations
-    $kit_paths = [
-        ABSPATH . 'wp-content/plugins/kit-commons/kit-commons.php',
-        ABSPATH . 'wp-content/mu-plugins/kit-commons.php',
-        ABSPATH . 'wp-content/themes/kit-commons/kit-commons.php',
-    ];
-    
-    foreach ($kit_paths as $kit_path) {
-        if (file_exists($kit_path)) {
-            require_once $kit_path;
-            break;
+    // Verify ABSPATH is defined before using it
+    if (defined('ABSPATH')) {
+        // Try to load KIT_Commons from common locations
+        $kit_paths = [
+            ABSPATH . 'wp-content/plugins/kit-commons/kit-commons.php',
+            ABSPATH . 'wp-content/mu-plugins/kit-commons.php',
+            ABSPATH . 'wp-content/themes/kit-commons/kit-commons.php',
+        ];
+        
+        foreach ($kit_paths as $kit_path) {
+            if (file_exists($kit_path)) {
+                require_once $kit_path;
+                break;
+            }
         }
     }
 }

@@ -1,4 +1,5 @@
-<?php if (!defined('ABSPATH')) { exit; } ?>
+<?php if (!defined('ABSPATH')) { exit; }
+ ?>
 <div class="space-y-4 md:space-y-0 md:grid md:grid-cols-2 md:gap-6">
     <div class="space-y-4 bg-white shadow rounded-lg p-3 md:p-6">
         <div class="md:bg-white rounded-lg">
@@ -39,13 +40,24 @@
         </div>
 
         <!-- Additional Fees otherz-->
+         
+        <?php $optionChoice = 2; // 2 is the option to show the addition charges in the waybill form ?>
         <?php require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/additionCharges.php'); ?>
     </div>
 
     <div class="bg-white shadow rounded-lg p-3 md:p-4">
-
-        <?php
-        require __DIR__ . '/step2.php'; ?>
+        <!-- Customer Information (now part of Step 1) -->
+        <?php require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/customerSelection.php'); ?>
     </div>
 
+    <!-- Navigation Buttons -->
+    <div class="flex justify-between mt-8">
+        <?php echo KIT_Commons::renderButton('Next: Waybill Details', 'primary', 'md', [
+            'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />',
+            'iconPosition' => 'right',
+            'data-target' => 'step-4',
+            'classes' => 'next-step',
+            'gradient' => true
+        ]); ?>
+    </div>
 </div>

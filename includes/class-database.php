@@ -145,6 +145,7 @@ class Database
 
         $sql = "CREATE TABLE $table_name (
         id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        parcel_id INT UNSIGNED NULL,
         description TEXT NULL,
         direction_id INT UNSIGNED NOT NULL,
         city_id INT UNSIGNED NULL,
@@ -152,10 +153,15 @@ class Database
         customer_id MEDIUMINT(10) UNSIGNED NOT NULL,
         approval ENUM('approved','pending','cancelled', 'rejected', 'completed') DEFAULT 'pending',
         approval_userid INT UNSIGNED NULL,
-        waybill_no INT UNSIGNED NOT NULL,
+        waybill_no VARCHAR(20) NOT NULL,
         product_invoice_number VARCHAR(50),
         product_invoice_amount DECIMAL(10,2),
         waybill_items_total DECIMAL(10,2),
+        misc_total DECIMAL(10,2) DEFAULT 0.00,
+        border_clearing_total DECIMAL(10,2) DEFAULT 0.00,
+        sad500_amount DECIMAL(10,2) DEFAULT 0.00,
+        sadc_amount DECIMAL(10,2) DEFAULT 0.00,
+        international_price_rands DECIMAL(10,2) DEFAULT 0.00,
         item_length DECIMAL(10,2),
         item_width DECIMAL(10,2),
         item_height DECIMAL(10,2),
@@ -181,6 +187,7 @@ class Database
         PRIMARY KEY (id),
         INDEX (status),
         INDEX (customer_id),
+        INDEX idx_parcel_id (parcel_id),
         UNIQUE KEY waybill_no (waybill_no),
         UNIQUE KEY product_invoice_number (product_invoice_number)
     ) $charset_collate;";
@@ -236,7 +243,7 @@ class Database
 
         $sql = "CREATE TABLE $table_name (
             id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-            waybillno INT UNSIGNED NOT NULL,
+            waybillno VARCHAR(20) NOT NULL,
             item_name VARCHAR(255) NOT NULL,
             quantity INT NOT NULL,
             unit_price DECIMAL(10,2) NOT NULL,
@@ -250,30 +257,6 @@ class Database
 
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
-        
-        // Add client_invoice column if it doesn't exist (for existing installations)
-        self::add_client_invoice_column();
-    }
-    
-    /**
-     * Add client_invoice column to waybill_items table if it doesn't exist
-     */
-    public static function add_client_invoice_column()
-    {
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'kit_waybill_items';
-        
-        // Check if column exists
-        $column_exists = $wpdb->get_results($wpdb->prepare(
-            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
-            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'client_invoice'",
-            DB_NAME,
-            $table_name
-        ));
-        
-        if (empty($column_exists)) {
-            $wpdb->query("ALTER TABLE $table_name ADD COLUMN client_invoice VARCHAR(50) NULL AFTER total_price");
-        }
     }
 
 
@@ -742,35 +725,6 @@ class Database
             ]);
         }
     }
-    
-    public static function add_international_price_field()
-    {
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'kit_company_details';
-        
-        // First check if table exists
-        $table_exists = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = %s AND table_name = %s",
-            DB_NAME,
-            $table_name
-        ));
-        
-        if ($table_exists == 0) {
-            // Table doesn't exist, skip adding column (it will be created with the column in create_company_details_table)
-            return;
-        }
-        
-        // Check if international_price column exists
-        $column_exists = $wpdb->get_results("SHOW COLUMNS FROM $table_name LIKE 'international_price'");
-        
-        if (empty($column_exists)) {
-            // Add the international_price column
-            $wpdb->query("ALTER TABLE $table_name ADD COLUMN international_price DECIMAL(10,2) DEFAULT 100.00 AFTER sad500_charge");
-            
-            // Update existing rows with default value
-            $wpdb->query("UPDATE $table_name SET international_price = 100.00 WHERE international_price IS NULL");
-        }
-    }
 
     /**
      * Drop legacy foreign key constraints that were part of early schema versions.
@@ -899,15 +853,15 @@ class Database
         self::create_deliveries_table();
         self::update_deliveries_table_for_drivers();
         
-        // Create company_details table first (before trying to add columns to it)
+        // Create company_details table
         self::create_company_details_table();
-        
-        // Add international_price field to existing company_details table if it doesn't exist
-        self::add_international_price_field();
         self::create_waybills_table();
         self::ensure_qr_code_data_longtext();
+        
+        // Create parcels table (replaces consolidated waybills)
+        self::create_parcels_table();
+        
         self::create_waybill_items_table();
-        self::add_client_invoice_column(); // Ensure column exists for existing installations
         self::add_product_invoice_number_unique(); // Ensure unique constraint exists
         self::create_quotations_table();
         self::create_invoices_table();
@@ -952,6 +906,42 @@ class Database
             $wpdb->query("ALTER TABLE $table_name ADD UNIQUE KEY product_invoice_number (product_invoice_number)");
         }
     }
+
+    /**
+     * Create parcels table
+     * Parcels contain multiple waybills (like consolidated waybills, but simpler concept)
+     */
+    public static function create_parcels_table()
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'kit_parcels';
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE $table_name (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            parcel_no VARCHAR(20) NOT NULL,
+            description TEXT NULL,
+            customer_id MEDIUMINT(10) UNSIGNED NOT NULL,
+            total_waybills INT UNSIGNED DEFAULT 0,
+            total_amount DECIMAL(10,2) DEFAULT 0.00,
+            status ENUM('pending', 'quoted', 'paid', 'assigned', 'shipped', 'delivered', 'completed', 'invoiced', 'rejected') DEFAULT 'pending',
+            warehouse BOOLEAN DEFAULT FALSE,
+            created_by BIGINT UNSIGNED NOT NULL,
+            last_updated_by BIGINT UNSIGNED NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY parcel_no (parcel_no),
+            INDEX idx_customer_id (customer_id),
+            INDEX idx_status (status),
+            INDEX idx_warehouse (warehouse),
+            INDEX idx_created_at (created_at)
+        ) $charset_collate;";
+
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+    }
+
     public static function deactivate()
     {
         global $wpdb;

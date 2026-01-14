@@ -14,10 +14,13 @@ class KIT_Modal
             'xl'   => 'max-w-xl',
             '2xl'  => 'max-w-2xl',
             '3xl'  => 'max-w-3xl',
+            '4xl'  => 'max-w-4xl',
+            '5xl'  => 'max-w-5xl',
+            '6xl'  => 'max-w-6xl',
             'full' => 'max-w-full w-full mx-4',
         ];
 
-        $size_class = $size_classes[$size] ?? $size_classes['md'];
+        $size_class = $size_classes[$size] ?? $size_classes['xl'];
 
         ob_start(); ?>
         <?php
@@ -60,6 +63,10 @@ class KIT_Modal
                     e.preventDefault();
                     modal.removeClass('hidden').addClass('flex');
                     body.addClass('overflow-hidden');
+                    
+                    // Trigger custom event when modal opens
+                    modal.trigger('modal:opened');
+                    $(document).trigger('modal:opened', [modal]);
                 });
 
                 // Close modal

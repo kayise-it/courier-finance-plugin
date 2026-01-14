@@ -86,7 +86,16 @@
     
     // PRIORITY 1: Use waybill's saved miscellaneous data (already set above from $origin_city_id)
     
-    // PRIORITY 2: For delivery form context, we don't have origin_city_id stored, so default to first city of the country
+    // PRIORITY 2: Check for customer city_id when waybill data is not available (for customer edit form)
+    if (!$origin_city_id && isset($customer)) {
+        if (is_array($customer) && isset($customer['city_id']) && !empty($customer['city_id'])) {
+            $defaultCityId = intval($customer['city_id']);
+        } elseif (is_object($customer) && isset($customer->city_id) && !empty($customer->city_id)) {
+            $defaultCityId = intval($customer->city_id);
+        }
+    }
+    
+    // PRIORITY 3: For delivery form context, we don't have origin_city_id stored, so default to first city of the country
     // This is a limitation of the current system design - origin cities are not stored per delivery
     // Only override if no saved city data exists
     if ($defaultCityId == 1 && isset($waybill['delivery_id']) && !empty($waybill['delivery_id'])) {

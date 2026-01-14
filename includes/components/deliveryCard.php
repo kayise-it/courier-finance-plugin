@@ -126,11 +126,14 @@ function renderDeliveryCard($delivery, $card_type = 'scheduled', $clickable = tr
      data-reference="<?php echo esc_attr($delivery->delivery_reference ?? ''); ?>"
      data-status="<?php echo esc_attr($delivery->status ?? 'scheduled'); ?>"
      data-description="<?php echo esc_attr($delivery->description ?? ''); ?>"
-     data-origin-country="<?php echo esc_attr($origin_country); ?>"
-     data-destination-country="<?php echo esc_attr($dest_country); ?>"
-     data-origin-code="<?php echo esc_attr($delivery->origin_code ?? ''); ?>"
-     data-destination-code="<?php echo esc_attr($delivery->destination_code ?? ''); ?>"
-     <?php if ($clickable): ?>onclick="if(typeof <?php echo esc_js($onclick_function); ?> === 'function') { <?php echo esc_js($onclick_function); ?>(this, <?php echo esc_js($delivery->direction_id ?? $delivery->id ?? 0); ?>); }"<?php endif; ?>>
+    data-origin-country="<?php echo esc_attr($origin_country); ?>"
+    data-destination-country="<?php echo esc_attr($dest_country); ?>"
+    data-origin-country-id="<?php echo esc_attr($delivery->origin_country_id ?? ''); ?>"
+    data-destination-country-id="<?php echo esc_attr($delivery->destination_country_id ?? ''); ?>"
+    data-destination-city-id="<?php echo esc_attr($delivery->destination_city_id ?? ''); ?>"
+    data-origin-code="<?php echo esc_attr($delivery->origin_code ?? ''); ?>"
+    data-destination-code="<?php echo esc_attr($delivery->destination_code ?? ''); ?>"
+     <?php if ($clickable): ?>onclick="event.stopPropagation(); if(typeof <?php echo esc_js($onclick_function); ?> === 'function' || typeof window.<?php echo esc_js($onclick_function); ?> === 'function') { var fn = typeof <?php echo esc_js($onclick_function); ?> !== 'undefined' ? <?php echo esc_js($onclick_function); ?> : window.<?php echo esc_js($onclick_function); ?>; if(fn) fn(this, <?php echo esc_js($delivery->direction_id ?? $delivery->id ?? 0); ?>); }"<?php endif; ?>>
      
     <?php if ($radio_options): ?>
         <input type="<?php echo esc_attr($radio_options['type'] ?? 'radio'); ?>" 

@@ -863,17 +863,17 @@ jQuery(document).ready(function($) {
             if ($result) {
                 // Add toast notification for non-AJAX requests
                 if (class_exists('KIT_Toast')) {
+                    KIT_Toast::ensure_toast_loads();
                     echo KIT_Toast::db_success('Route creation', 'Route created successfully');
                 }
-                echo '<div class="notice notice-success"><p>Route created successfully.</p></div>';
                 wp_redirect(admin_url('admin.php?page=route-management'));
                 exit;
             } else {
                 // Add toast notification for non-AJAX errors
                 if (class_exists('KIT_Toast')) {
+                    KIT_Toast::ensure_toast_loads();
                     echo KIT_Toast::db_error('Route creation', $wpdb->last_error ?: 'Unknown error');
                 }
-                echo '<div class="notice notice-error"><p>Failed to create route.</p></div>';
             }
         }
     }
