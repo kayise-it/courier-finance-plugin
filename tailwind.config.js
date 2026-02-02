@@ -10,6 +10,8 @@ module.exports = {
     /^grid$/,
     /^grid-cols-/,
     /^md:grid-cols-/,
+    /^col-span-/,
+    /^md:col-span-/,
     /^flex$/,
     /^flex-col$/,
     /^items-/,

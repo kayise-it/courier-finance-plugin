@@ -29,7 +29,7 @@ try {
     if (isset($_POST['assign_warehouse_items'])) {
         error_log('=== WAREHOUSE ASSIGNMENT POST RECEIVED ===');
         error_log('POST data keys: ' . implode(', ', array_keys($_POST)));
-        
+
         // Verify nonce
         if (!isset($_POST['assign_nonce']) || !wp_verify_nonce($_POST['assign_nonce'], 'assign_warehouse_items')) {
             error_log('ERROR: Invalid or missing nonce');
@@ -40,10 +40,10 @@ try {
             echo KIT_Toast::error('Security verification failed. Please refresh the page and try again.', 'Error');
             exit;
         }
-        
+
         error_log('Nonce verified successfully');
-        
-    global $wpdb;
+
+        global $wpdb;
 
         // Extract waybill IDs
         $waybill_ids = [];
@@ -52,118 +52,118 @@ try {
         }
         error_log('Waybill IDs received: ' . print_r($waybill_ids, true));
         error_log('Waybill IDs count: ' . count($waybill_ids));
-        
-    // Accept delivery_id from hidden field or fallback select
-    $delivery_id = 0;
-    if (isset($_POST['delivery_id']) && $_POST['delivery_id'] !== '') {
-        $delivery_id = intval($_POST['delivery_id']);
+
+        // Accept delivery_id from hidden field or fallback select
+        $delivery_id = 0;
+        if (isset($_POST['delivery_id']) && $_POST['delivery_id'] !== '') {
+            $delivery_id = intval($_POST['delivery_id']);
             error_log('Delivery ID from hidden field: ' . $delivery_id);
-    } elseif (isset($_POST['delivery_id_select']) && $_POST['delivery_id_select'] !== '') {
-        $delivery_id = intval($_POST['delivery_id_select']);
+        } elseif (isset($_POST['delivery_id_select']) && $_POST['delivery_id_select'] !== '') {
+            $delivery_id = intval($_POST['delivery_id_select']);
             error_log('Delivery ID from dropdown: ' . $delivery_id);
         } else {
             error_log('ERROR: No delivery ID found in POST data');
         }
-    // #region agent log - DISABLED
-    // Logging temporarily disabled
-    // #endregion
+        // #region agent log - DISABLED
+        // Logging temporarily disabled
+        // #endregion
 
-    // Load toast component for error messages
-    if (!class_exists('KIT_Toast')) {
-        require_once plugin_dir_path(__FILE__) . '../components/toast.php';
-    }
-    KIT_Toast::ensure_toast_loads();
-
-    // Validation with specific error messages
-    // #region agent log - DISABLED
-    // Temporarily disabled logging due to PHP syntax issues
-    // #endregion
-    if (empty($waybill_ids)) {
-        echo KIT_Toast::error('No waybills selected. Please select at least one waybill to assign.', 'Error');
-    } elseif ($delivery_id <= 0) {
-        echo KIT_Toast::error('No delivery selected. Please select a delivery from the dropdown.', 'Error');
-    } else {
-        // #region agent log
-        // Logging disabled
-        // Logging disabled
-        $updated = 0;
-        $errors = [];
-        $assigned_waybill_nos = [];
-        
-        foreach ($waybill_ids as $waybill_id) {
-            try {
-                $waybill_id = intval($waybill_id);
-                error_log('Processing waybill ID: ' . $waybill_id);
-                
-                if ($waybill_id <= 0) {
-                    error_log('WARNING: Invalid waybill ID skipped: ' . $waybill_id);
-                    continue; // Skip invalid IDs
-                }
-                
-                // Check if waybill exists
-                $waybill_check = $wpdb->get_var($wpdb->prepare(
-                    "SELECT id FROM {$wpdb->prefix}kit_waybills WHERE id = %d",
-                    $waybill_id
-                ));
-                
-                if (!$waybill_check) {
-                    error_log('ERROR: Waybill ID ' . $waybill_id . ' does not exist in database');
-                    $errors[] = 'Waybill ID ' . $waybill_id . ': Waybill not found in database';
-                    continue;
-                }
-                
-                error_log('Waybill exists, attempting assignment to delivery ' . $delivery_id);
-                
-            // Use the new warehouse system to assign waybills
-                $result = KIT_Warehouse::assignToDelivery($waybill_id, $delivery_id, get_current_user_id());
-
-                if (is_wp_error($result)) {
-                    $error_msg = $result->get_error_message();
-                    error_log('ERROR assigning waybill ' . $waybill_id . ': ' . $error_msg);
-                    $errors[] = 'Waybill ID ' . $waybill_id . ': ' . $error_msg;
-                } else {
-                    error_log('SUCCESS: Waybill ' . $waybill_id . ' assigned to delivery ' . $delivery_id);
-                $updated++;
-
-                // Get waybill details for logging
-                $waybill = $wpdb->get_row($wpdb->prepare(
-                    "SELECT waybill_no, customer_id FROM {$wpdb->prefix}kit_waybills WHERE id = %d",
-                        $waybill_id
-                ));
-
-                if ($waybill && !empty($waybill->waybill_no)) {
-                    $assigned_waybill_nos[] = (int)$waybill->waybill_no;
-                        error_log('Assigned waybill number: ' . $waybill->waybill_no);
-                }
-            }
-            } catch (Exception $e) {
-                error_log('EXCEPTION processing waybill ' . $waybill_id . ': ' . $e->getMessage());
-                error_log('Stack trace: ' . $e->getTraceAsString());
-                $errors[] = 'Waybill ID ' . $waybill_id . ': Exception - ' . $e->getMessage();
+        // Load toast component for error messages
+        if (!class_exists('KIT_Toast')) {
+            require_once plugin_dir_path(__FILE__) . '../components/toast.php';
         }
-        }
+        KIT_Toast::ensure_toast_loads();
 
-        if ($updated > 0) {
-            $message = 'Successfully assigned ' . $updated . ' waybill(s) to delivery!';
-            if (!empty($errors)) {
-                $message .= ' (' . count($errors) . ' failed)';
-            }
-            echo KIT_Toast::success($message . ' The page will refresh in 2 seconds to show updated warehouse status.', 'Success');
-            echo '<script>setTimeout(function(){ window.location.reload(); }, 2000);</script>';
+        // Validation with specific error messages
+        // #region agent log - DISABLED
+        // Temporarily disabled logging due to PHP syntax issues
+        // #endregion
+        if (empty($waybill_ids)) {
+            echo KIT_Toast::error('No waybills selected. Please select at least one waybill to assign.', 'Error');
+        } elseif ($delivery_id <= 0) {
+            echo KIT_Toast::error('No delivery selected. Please select a delivery from the dropdown.', 'Error');
         } else {
-            $error_msg = 'Failed to assign waybills. ';
-            if (!empty($errors)) {
-                $error_msg .= 'Errors: ' . implode(', ', array_slice($errors, 0, 3));
-                if (count($errors) > 3) {
-                    $error_msg .= ' (and ' . (count($errors) - 3) . ' more)';
+            // #region agent log
+            // Logging disabled
+            // Logging disabled
+            $updated = 0;
+            $errors = [];
+            $assigned_waybill_nos = [];
+
+            foreach ($waybill_ids as $waybill_id) {
+                try {
+                    $waybill_id = intval($waybill_id);
+                    error_log('Processing waybill ID: ' . $waybill_id);
+
+                    if ($waybill_id <= 0) {
+                        error_log('WARNING: Invalid waybill ID skipped: ' . $waybill_id);
+                        continue; // Skip invalid IDs
+                    }
+
+                    // Check if waybill exists
+                    $waybill_check = $wpdb->get_var($wpdb->prepare(
+                        "SELECT id FROM {$wpdb->prefix}kit_waybills WHERE id = %d",
+                        $waybill_id
+                    ));
+
+                    if (!$waybill_check) {
+                        error_log('ERROR: Waybill ID ' . $waybill_id . ' does not exist in database');
+                        $errors[] = 'Waybill ID ' . $waybill_id . ': Waybill not found in database';
+                        continue;
+                    }
+
+                    error_log('Waybill exists, attempting assignment to delivery ' . $delivery_id);
+
+                    // Use the new warehouse system to assign waybills
+                    $result = KIT_Warehouse::assignToDelivery($waybill_id, $delivery_id, get_current_user_id());
+
+                    if (is_wp_error($result)) {
+                        $error_msg = $result->get_error_message();
+                        error_log('ERROR assigning waybill ' . $waybill_id . ': ' . $error_msg);
+                        $errors[] = 'Waybill ID ' . $waybill_id . ': ' . $error_msg;
+                    } else {
+                        error_log('SUCCESS: Waybill ' . $waybill_id . ' assigned to delivery ' . $delivery_id);
+                        $updated++;
+
+                        // Get waybill details for logging
+                        $waybill = $wpdb->get_row($wpdb->prepare(
+                            "SELECT waybill_no, customer_id FROM {$wpdb->prefix}kit_waybills WHERE id = %d",
+                            $waybill_id
+                        ));
+
+                        if ($waybill && !empty($waybill->waybill_no)) {
+                            $assigned_waybill_nos[] = (int)$waybill->waybill_no;
+                            error_log('Assigned waybill number: ' . $waybill->waybill_no);
+                        }
+                    }
+                } catch (Exception $e) {
+                    error_log('EXCEPTION processing waybill ' . $waybill_id . ': ' . $e->getMessage());
+                    error_log('Stack trace: ' . $e->getTraceAsString());
+                    $errors[] = 'Waybill ID ' . $waybill_id . ': Exception - ' . $e->getMessage();
                 }
-            } else {
-                $error_msg .= 'Please check that the waybills and delivery are valid.';
             }
-                   echo KIT_Toast::error($error_msg, 'Error');
-               }
-           }
-       }
+
+            if ($updated > 0) {
+                $message = 'Successfully assigned ' . $updated . ' waybill(s) to delivery!';
+                if (!empty($errors)) {
+                    $message .= ' (' . count($errors) . ' failed)';
+                }
+                echo KIT_Toast::success($message . ' The page will refresh in 2 seconds to show updated warehouse status.', 'Success');
+                echo '<script>setTimeout(function(){ window.location.reload(); }, 2000);</script>';
+            } else {
+                $error_msg = 'Failed to assign waybills. ';
+                if (!empty($errors)) {
+                    $error_msg .= 'Errors: ' . implode(', ', array_slice($errors, 0, 3));
+                    if (count($errors) > 3) {
+                        $error_msg .= ' (and ' . (count($errors) - 3) . ' more)';
+                    }
+                } else {
+                    $error_msg .= 'Please check that the waybills and delivery are valid.';
+                }
+                echo KIT_Toast::error($error_msg, 'Error');
+            }
+        }
+    }
 } catch (Exception $e) {
     error_log('EXCEPTION in warehouse assignment handler: ' . $e->getMessage());
     error_log('Stack trace: ' . $e->getTraceAsString());
@@ -304,9 +304,28 @@ $delivered_count = $stats->delivered ?? 0;
 
     // Convert associative array to numeric array for JSON encoding
     $countries_data = array_values($countries_data);
-    
+
     // Keep backward compatibility for existing code
     $deliveries = $wpdb->get_results("SELECT id, delivery_reference, dispatch_date FROM {$wpdb->prefix}kit_deliveries WHERE status = 'scheduled' ORDER BY dispatch_date ASC");
+
+    // Build option arrays for KIT_Commons::simpleSelect
+    $country_options = ['' => 'Choose country…'];
+    if (!empty($countries_data)) {
+        foreach ($countries_data as $country) {
+            $label = $country['name'];
+            if (!empty($country['deliveries'])) {
+                $label .= ' (' . count($country['deliveries']) . ' deliveries)';
+            }
+            $country_options[(string) $country['id']] = $label;
+        }
+    } else {
+        $country_options[''] = 'No active countries found.';
+    }
+
+    $delivery_options = ['' => 'Choose delivery…'];
+    foreach ($deliveries as $d) {
+        $delivery_options[(string) $d->id] = $d->delivery_reference . ' — ' . ($d->dispatch_date ?: 'TBD');
+    }
 
     // Render quick stats
     $warehouse_stats = [
@@ -331,7 +350,7 @@ $delivered_count = $stats->delivered ?? 0;
                     <div class="p-2 bg-blue-100 rounded-lg">
                         <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                    </svg>
+                        </svg>
                     </div>
                     <div>
                         <h2 class="text-xl font-semibold text-gray-900">Assign Warehouse Items to Delivery</h2>
@@ -371,66 +390,36 @@ $delivered_count = $stats->delivered ?? 0;
                 </div>
             <?php else: ?>
                 <form method="post" id="assign-warehouse-form" action="<?php echo esc_url(admin_url('admin.php?page=warehouse-waybills')); ?>">
-            <?php wp_nonce_field('assign_warehouse_items', 'assign_nonce'); ?>
-            
-            <!-- Two Column Grid Layout -->
-                    <div class="grid grid-cols-1 md:grid-cols-5 gap-8">
-                <!-- Left Column - Delivery Assignment -->
-                        <div class="col-span-1 md:col-span-2 space-y-6">
+                    <?php wp_nonce_field('assign_warehouse_items', 'assign_nonce'); ?>
+
+                    <!-- Two Column Grid Layout (12-col grid: col-span-3 + col-span-9) -->
+                    <div id="warehouse-two-col-grid" class="grid grid-cols-1 md:grid-cols-12 gap-8">
+                        <!-- Left Column - Delivery Assignment -->
+                        <div id="warehouse-left-col" class="col-span-1 md:col-span-3 min-w-0">
                             <!-- Delivery Selection Card -->
-                            <div class="bg-gray-50 rounded-lg border border-gray-200 p-5">
-                                <h3 class="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                                    <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                                    </svg>
-                                    Delivery Selection
-                                </h3>
+                            <?= KIT_Commons::prettyHeading([
+                                        'words' => 'Delivery Selection',
+                                        'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />',
+                                        'size' => 'sm',
+                                        'color' => 'gray',
+                                        'subheading' => 'Select a delivery to assign the waybills to'
+                                    ]) ?>
+                            <div class="w-full bg-gray-50 rounded-lg border border-gray-200 p-4">
 
-                    <!-- Country Selection -->
-                                <div class="mb-5">
-                                    <label class="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2" for="country_id_select">
-                                        <svg class="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                        </svg>
-                                        <span>Destination Country</span>
-                        </label>
-                                    <select name="country_id" id="country_id_select" class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white text-gray-900 font-medium">
-                            <option value="">Choose country…</option>
-                            <?php if (!empty($countries_data)): ?>
-                                <?php foreach ($countries_data as $country): ?>
-                                    <option value="<?php echo esc_attr($country['id']); ?>">
-                                        <?php echo esc_html($country['name']); ?>
-                                        <?php if (count($country['deliveries'])): ?>
-                                            (<?php echo count($country['deliveries']); ?> deliveries)
-                                        <?php endif; ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            <?php else: ?>
-                                <option value="" disabled>No active countries found.</option>
-                            <?php endif; ?>
-                        </select>
+                                <!-- Country Selection -->
+                                <div class="w-full">
+                                    <?php KIT_Commons::simpleSelect('Destination Country', 'country_id', 'country_id_select', $country_options, null); ?>
                                     <p class="mt-1.5 text-xs text-gray-500">Select a country to filter available deliveries</p>
-                    </div>
+                                </div>
 
-                    <!-- Hidden input for delivery ID -->
-                    <input type="hidden" name="delivery_id" id="delivery_id" required>
+                                <!-- Hidden input for delivery ID -->
+                                <input type="hidden" name="delivery_id" id="delivery_id" required>
 
-                    <!-- Delivery select dropdown -->
-                                <div class="mb-5">
-                                    <label class="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2" for="delivery_id_select">
-                                        <svg class="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                                        </svg>
-                                        <span>Select Delivery</span>
-                        </label>
-                                    <select name="delivery_id_select" id="delivery_id_select" class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white text-gray-900">
-                            <option value="">Choose delivery…</option>
-                            <?php foreach ($deliveries as $d): ?>
-                                <option value="<?php echo intval($d->id); ?>"><?php echo esc_html($d->delivery_reference . ' — ' . ($d->dispatch_date ?: 'TBD')); ?></option>
-                            <?php endforeach; ?>
-                        </select>
+                                <!-- Delivery select dropdown -->
+                                <div class="w-full">
+                                    <?php KIT_Commons::simpleSelect('Select Delivery', 'delivery_id_select', 'delivery_id_select', $delivery_options, null); ?>
                                     <p class="mt-1.5 text-xs text-gray-500">Or choose directly from all scheduled deliveries</p>
-                    </div>
+                                </div>
 
                                 <!-- Selected Delivery Info -->
                                 <div id="selected-delivery-info" class="hidden mb-5 p-4 bg-blue-50 border border-blue-200 rounded-lg">
@@ -445,28 +434,28 @@ $delivered_count = $stats->delivered ?? 0;
                                     </div>
                                 </div>
 
-                    <!-- Assignment Button -->
+                                <!-- Assignment Button -->
                                 <div class="pt-4 border-t border-gray-200">
                                     <?php echo KIT_Commons::renderButton('Assign to Delivery', 'primary', 'lg', [
-                            'type' => 'submit',
-                            'name' => 'assign_warehouse_items',
-                            'id' => 'assign-btn',
-                            'classes' => 'disabled:opacity-50 disabled:cursor-not-allowed w-full relative transition-all duration-200',
+                                        'type' => 'submit',
+                                        'name' => 'assign_warehouse_items',
+                                        'id' => 'assign-btn',
+                                        'classes' => 'disabled:opacity-50 disabled:cursor-not-allowed w-full relative transition-all duration-200',
                                         'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />',
                                         'iconPosition' => 'left',
-                            'gradient' => true
-                        ]); ?>
+                                        'gradient' => true
+                                    ]); ?>
 
                                     <!-- Loading State -->
                                     <div id="assign-loading" class="hidden mt-3 text-center">
                                         <div class="inline-flex items-center gap-2 text-sm text-blue-600 font-medium">
                                             <svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                <span>Assigning waybills...</span>
-                            </div>
-                        </div>
+                                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                            <span>Assigning waybills...</span>
+                                        </div>
+                                    </div>
 
                                     <!-- Selection Summary -->
                                     <div class="mt-4 flex items-center justify-between">
@@ -476,141 +465,143 @@ $delivered_count = $stats->delivered ?? 0;
                                                 <svg class="w-3 h-3 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                                                 </svg>
-                                    Ready to assign
-                                </span>
-                            </div>
+                                                Ready to assign
+                                            </span>
+                                        </div>
                                         <a href="#" data-modal="add-delivery-modal" class="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors flex items-center gap-1">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
                                             </svg>
-                                Add New Delivery
-                            </a>
-                        </div>
-                    </div>
-                </div>
+                                            Add New Delivery
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
-                <!-- Right Column - Warehouse Items Table -->
-                        <div class="col-span-1 md:col-span-3 space-y-4">
+                        <!-- Right Column - Warehouse Items Table -->
+                        <div id="warehouse-table-col" class="col-span-1 md:col-span-9 w-full min-w-0">
                             <!-- Table Header -->
-                            <div class="flex items-center justify-between mb-4">
-                <div>
-                                    <h3 class="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                                        <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-                                        </svg>
-                                        Waybills in Warehouse
-                                    </h3>
-                                    <p class="text-xs text-gray-500 mt-1">Select waybills to assign to the selected delivery</p>
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <?= KIT_Commons::prettyHeading([
+                                        'words' => 'Waybills in Warehouse',
+                                        'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />',
+                                        'size' => 'sm',
+                                        'color' => 'gray',
+                                        'classes' => '',
+                                        'subheading' => 'Select waybills to assign to the selected delivery'
+                                    ]) ?>
                                 </div>
-                        <div class="flex gap-2">
-                                    <button type="button" id="select-all" class="px-3 py-1.5 text-xs font-medium border border-gray-300 rounded-lg bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-all">
-                                        Select All
-                                    </button>
-                                    <button type="button" id="deselect-all" class="px-3 py-1.5 text-xs font-medium border border-gray-300 rounded-lg bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-all">
-                                        Deselect All
-                                    </button>
-                        </div>
-                    </div>
+                            </div>
 
                             <!-- Table Container -->
-                            <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                <?php
-                // Helper function to get week label from date
-                function get_week_label($date_string)
-                {
-                    if (empty($date_string)) {
-                        return 'Unassigned Week';
-                    }
-                    $date = new DateTime($date_string);
+                            <div class="overflow-hidden">
+                                <?php
+                                // Helper function to get week label from date
+                                function get_week_label($date_string)
+                                {
+                                    if (empty($date_string)) {
+                                        return 'Unassigned Week';
+                                    }
+                                    $date = new DateTime($date_string);
                                     $day_of_week = (int)$date->format('w');
                                     $days_to_monday = $day_of_week == 0 ? 6 : $day_of_week - 1;
-                    $monday = clone $date;
-                    $monday->modify("-{$days_to_monday} days");
-                    $sunday = clone $monday;
-                    $sunday->modify('+6 days');
-                    $monday_str = $monday->format('M j');
-                    $sunday_str = $sunday->format('M j, Y');
-                    if ($monday->format('M Y') === $sunday->format('M Y')) {
-                        return 'Week of ' . $monday_str . ' - ' . $sunday->format('j, Y');
-                    }
-                    return 'Week of ' . $monday_str . ' - ' . $sunday_str;
-                }
+                                    $monday = clone $date;
+                                    $monday->modify("-{$days_to_monday} days");
+                                    $sunday = clone $monday;
+                                    $sunday->modify('+6 days');
+                                    $monday_str = $monday->format('M j');
+                                    $sunday_str = $sunday->format('M j, Y');
+                                    if ($monday->format('M Y') === $sunday->format('M Y')) {
+                                        return 'Week of ' . $monday_str . ' - ' . $sunday->format('j, Y');
+                                    }
+                                    return 'Week of ' . $monday_str . ' - ' . $sunday_str;
+                                }
 
-                // Convert warehouse items to data array for unified table
-                $table_data = [];
-                foreach ($tracking_rows as $row) {
-                    $date_string = $row->last_updated_at ?? $row->created_at ?? '';
-                    $waybill_no = $row->waybill_no ?? '';
+                                // Convert warehouse items to data array for unified table
+                                $table_data = [];
+                                foreach ($tracking_rows as $row) {
+                                    $date_string = $row->last_updated_at ?? $row->created_at ?? '';
+                                    $waybill_no = $row->waybill_no ?? '';
 
-                    // Get dimensions
-                    $item_length = isset($row->item_length) ? floatval($row->item_length) : 0;
-                    $item_width = isset($row->item_width) ? floatval($row->item_width) : 0;
-                    $item_height = isset($row->item_height) ? floatval($row->item_height) : 0;
+                                    // Get dimensions
+                                    $item_length = isset($row->item_length) ? floatval($row->item_length) : 0;
+                                    $item_width = isset($row->item_width) ? floatval($row->item_width) : 0;
+                                    $item_height = isset($row->item_height) ? floatval($row->item_height) : 0;
 
-                    // Show actual dimensions
-                    $dimension_display = ($item_length > 0 && $item_width > 0 && $item_height > 0)
-                        ? number_format($item_length, 1) . ' × ' . number_format($item_width, 1) . ' × ' . number_format($item_height, 1) . ' cm'
-                        : 'N/A';
+                                    // Show actual dimensions
+                                    $dimension_display = ($item_length > 0 && $item_width > 0 && $item_height > 0)
+                                        ? number_format($item_length, 1) . ' × ' . number_format($item_width, 1) . ' × ' . number_format($item_height, 1) . ' cm'
+                                        : 'N/A';
 
-                    // Format total mass
-                    $total_mass_display = number_format((float)($row->total_mass_kg ?? 0), 2);
+                                    // Format total mass
+                                    $total_mass_display = number_format((float)($row->total_mass_kg ?? 0), 2);
 
-                    $table_data[] = [
-                        'waybill_id' => $waybill_no,
-                        'waybill_no' => $waybill_no,
-                        'waybill_db_id' => intval($row->id ?? 0),
-                        'customer_name' => trim(($row->customer_name ?? '') . ' ' . ($row->customer_surname ?? '')),
-                        'total_mass_kg' => $total_mass_display,
-                        'dimension' => $dimension_display,
-                        'action' => ucfirst($row->status ?? ''),
-                        'created_at' => $date_string,
-                        'week' => get_week_label($date_string),
-                    ];
-                }
+                                    $table_data[] = [
+                                        'waybill_id' => $waybill_no,
+                                        'waybill_no' => $waybill_no,
+                                        'description' => $row->description ?? '',
+                                        'waybill_db_id' => intval($row->id ?? 0),
+                                        'customer_name' => trim(($row->customer_name ?? '') . ' ' . ($row->customer_surname ?? '')),
+                                        'total_mass_kg' => $total_mass_display,
+                                        'dimension' => $dimension_display,
+                                        'action' => ucfirst($row->status ?? ''),
+                                        'created_at' => $date_string,
+                                        'week' => get_week_label($date_string),
+                                    ];
+                                }
 
-                // Define columns for the unified table
-                $columns = [
-                    'checkbox' => [
-                        'label' => '',
-                        'callback' => function ($value, $row) {
+                                // Define columns for the unified table
+                                $columns = [
+                                    'checkbox' => [
+                                        'label' => '',
+                                        'callback' => function ($value, $row) {
                                             return '<input type="checkbox" class="wi waybill-checkbox rounded border-gray-300 text-blue-600 focus:ring-blue-500" name="waybill_ids[]" value="' . intval($row['waybill_db_id']) . '">';
-                        }
-                    ],
-                    'waybill_no' => [
-                        'label' => 'Waybill',
-                        'callback' => function ($value, $row) {
-                            $db_id = intval($row['waybill_db_id'] ?? 0);
-                            $url = admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . urlencode($db_id));
+                                        }
+                                    ],
+                                    'waybill_no' => [
+                                        'label' => 'Waybill',
+                                        'callback' => function ($value, $row) {
+                                            $db_id = intval($row['waybill_db_id'] ?? 0);
+                                            $url = admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . urlencode($db_id));
                                             return '<a href="' . esc_url($url) . '" class="font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors">#' . esc_html($value) . '</a>';
-                        }
-                    ],
-                    'customer_name' => 'Customer',
-                    'total_mass_kg' => 'Weight (kg)',
-                    'dimension' => 'Dimension',
+                                        }
+                                    ],
+                                    'description' => [
+                                        'label' => 'Description',
+                                        'cell_class' => 'text-left text-sm max-w-[200px] truncate',
+                                        'callback' => function ($value, $row) {
+                                            $desc = $row['description'] ?? $value ?? '';
+                                            return esc_html($desc ?: '—');
+                                        }
+                                    ],
+                                    'customer_name' => 'Customer',
+                                    'total_mass_kg' => 'Weight (kg)',
+                                    'dimension' => 'Dimension',
                                     'action' => 'Status',
-                    'created_at' => 'Updated'
-                ];
+                                    'created_at' => 'Updated'
+                                ];
 
-                echo KIT_Unified_Table::infinite($table_data, $columns, [
+                                echo KIT_Unified_Table::infinite($table_data, $columns, [
                                     'title' => '',
-                        'searchable' => true,
-                        'sortable' => true,
-                        'pagination' => true,
-                        'items_per_page' => 20,
-                        'empty_message' => 'No items currently in warehouse',
-                        'class' => 'min-w-full divide-y divide-gray-200',
-                        'groupby' => 'week',
-                        'group_heading_prefix' => '',
-                        'preserve_order' => false,
-                        'group_collapsible' => true,
-                        'group_collapsed' => false,
-                    ]);
-                    ?>
+                                    'searchable' => true,
+                                    'sortable' => true,
+                                    'pagination' => true,
+                                    'items_per_page' => 20,
+                                    'empty_message' => 'No items currently in warehouse',
+                                    'class' => 'min-w-full divide-y divide-gray-200',
+                                    'groupby' => 'week',
+                                    'group_heading_prefix' => '',
+                                    'preserve_order' => false,
+                                    'group_collapsible' => true,
+                                    'group_collapsed' => false,
+                                ]);
+                                ?>
                             </div>
-                </div>
-            </div>
-        </form>
+                        </div>
+                    </div>
+                </form>
             <?php endif; ?>
         </div>
     </div>
@@ -628,6 +619,22 @@ $delivered_count = $stats->delivered ?? 0;
     ?>
 
     <style>
+        /* Force 12-col grid so col-span-9 works when Tailwind responsive classes aren't loaded (e.g. in admin) */
+        @media (min-width: 768px) {
+            #assign-warehouse-form #warehouse-two-col-grid {
+                display: grid !important;
+                grid-template-columns: repeat(12, 1fr);
+                gap: 2rem;
+            }
+            #assign-warehouse-form #warehouse-left-col {
+                grid-column: span 3;
+            }
+            #assign-warehouse-form #warehouse-table-col {
+                grid-column: span 9;
+                min-width: 0;
+            }
+        }
+
         /* Professional styling improvements */
         .warehouse-page {
             background: #f9fafb;
@@ -727,7 +734,7 @@ $delivered_count = $stats->delivered ?? 0;
                     'input.wi.waybill-checkbox',
                     'input.wi[name="waybill_ids[]"]'
                 ];
-                
+
                 let checkboxes = [];
                 selectors.forEach(selector => {
                     const found = document.querySelectorAll(selector);
@@ -738,7 +745,7 @@ $delivered_count = $stats->delivered ?? 0;
                         }
                     });
                 });
-                
+
                 console.log('Found checkboxes:', checkboxes.length, 'using selectors:', selectors);
                 return checkboxes;
             }
@@ -748,22 +755,22 @@ $delivered_count = $stats->delivered ?? 0;
                 const n = boxes.filter(b => b.checked).length;
                 // Check both hidden field and fallback dropdown
                 const deliverySelected = (deliverySelect && deliverySelect.value && deliverySelect.value !== '') ||
-                                       (deliverySelectFallback && deliverySelectFallback.value && deliverySelectFallback.value !== '');
+                    (deliverySelectFallback && deliverySelectFallback.value && deliverySelectFallback.value !== '');
 
-                console.log('Refresh: waybills selected:', n, 'delivery selected:', deliverySelected, 
-                           'hidden value:', deliverySelect?.value, 'dropdown value:', deliverySelectFallback?.value);
-                
+                console.log('Refresh: waybills selected:', n, 'delivery selected:', deliverySelected,
+                    'hidden value:', deliverySelect?.value, 'dropdown value:', deliverySelectFallback?.value);
+
                 // Update count with better formatting
                 if (count) {
-                if (n === 0) {
-                    count.textContent = '0 selected';
-                    count.className = 'text-sm font-medium text-gray-500';
-                } else {
-                    count.textContent = `${n} waybill${n !== 1 ? 's' : ''} selected`;
-                    count.className = 'text-sm font-semibold text-blue-700';
+                    if (n === 0) {
+                        count.textContent = '0 selected';
+                        count.className = 'text-sm font-medium text-gray-500';
+                    } else {
+                        count.textContent = `${n} waybill${n !== 1 ? 's' : ''} selected`;
+                        count.className = 'text-sm font-semibold text-blue-700';
                     }
                 }
-                
+
                 // Show/hide badge
                 const badge = document.getElementById('sel-badge');
                 if (badge) {
@@ -775,20 +782,20 @@ $delivered_count = $stats->delivered ?? 0;
                         badge.classList.remove('inline-flex');
                     }
                 }
-                
+
                 // Update button state
                 if (assignBtn) {
                     const canAssign = n > 0 && deliverySelected;
                     assignBtn.disabled = !canAssign;
-                
+
                     // Visual feedback
                     if (canAssign) {
-                    assignBtn.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2');
-                } else {
-                    assignBtn.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2');
+                        assignBtn.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2');
+                    } else {
+                        assignBtn.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2');
                     }
                 }
-                
+
                 // Highlight selected rows
                 boxes.forEach(box => {
                     const row = box.closest('tr');
@@ -805,29 +812,29 @@ $delivered_count = $stats->delivered ?? 0;
             // Selection handlers using event delegation for dynamic content
             if (headerSelect) {
                 headerSelect.addEventListener('change', () => {
-                const state = headerSelect.checked;
+                    const state = headerSelect.checked;
                     const boxes = getWaybillCheckboxes();
-                boxes.forEach(b => b.checked = state);
-                refresh();
-            });
+                    boxes.forEach(b => b.checked = state);
+                    refresh();
+                });
             }
 
             if (selectAll) {
                 selectAll.addEventListener('click', () => {
                     const boxes = getWaybillCheckboxes();
-                boxes.forEach(b => b.checked = true);
-                if (headerSelect) headerSelect.checked = true;
-                refresh();
-            });
+                    boxes.forEach(b => b.checked = true);
+                    if (headerSelect) headerSelect.checked = true;
+                    refresh();
+                });
             }
 
             if (deselectAll) {
                 deselectAll.addEventListener('click', () => {
                     const boxes = getWaybillCheckboxes();
-                boxes.forEach(b => b.checked = false);
-                if (headerSelect) headerSelect.checked = false;
-                refresh();
-            });
+                    boxes.forEach(b => b.checked = false);
+                    if (headerSelect) headerSelect.checked = false;
+                    refresh();
+                });
             }
 
             // Use event delegation for checkboxes (handles dynamically loaded content)
@@ -872,7 +879,7 @@ $delivered_count = $stats->delivered ?? 0;
             }
 
             // Update hidden field when visible dropdown changes
-                    if (deliverySelectFallback) {
+            if (deliverySelectFallback) {
                 deliverySelectFallback.addEventListener('change', function() {
                     console.log('Delivery dropdown changed:', this.value);
                     const selectedValue = this.value;
@@ -946,11 +953,11 @@ $delivered_count = $stats->delivered ?? 0;
                         });
                     }
                 };
-                }
+            }
 
             if (countrySelect) {
-                    countrySelect.addEventListener('change', function() {
-                        const countryId = parseInt(this.value);
+                countrySelect.addEventListener('change', function() {
+                    const countryId = parseInt(this.value);
                     console.log('Country dropdown changed:', countryId);
 
                     // Clear delivery selection when country changes
@@ -972,7 +979,7 @@ $delivered_count = $stats->delivered ?? 0;
                     updateDeliverySelection();
                     refresh();
                 });
-                            } else {
+            } else {
                 console.warn('countrySelect not found');
             }
 

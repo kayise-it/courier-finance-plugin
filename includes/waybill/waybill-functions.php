@@ -3359,6 +3359,7 @@ class KIT_Waybills
             SELECT 
                 w.id,
                 w.waybill_no,
+                w.description,
                 w.customer_id,
                 w.direction_id,
                 w.delivery_id,
@@ -4531,13 +4532,16 @@ class KIT_Waybills
                 else {
                     echo 'Not Approved';
                 }
-                echo KIT_Commons::renderButton('Edit', 'primary', 'md', [
+                echo KIT_Commons::renderButton('Edit', 'primary', 'lg', [
                     'id' => 'editWaybillBtn',
                     'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>',
                     'iconPosition' => 'left',
                     'gradient' => true
                 ]);
-                echo '<a href="' . admin_url('admin.php?page=08600-Waybill') . '" class="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors">Back to List</a>';
+                echo KIT_Commons::renderButton('Back to List', 'secondary', 'lg', [
+                    'href' => admin_url('admin.php?page=08600-Waybill'),
+                    'gradient' => false
+                ]);
                 echo '</div></div>';
 
                 // Main content sections
@@ -4607,9 +4611,10 @@ class KIT_Waybills
                 echo '<div id="waybill-edit-form" class="hidden mt-6 max-w-7xl mx-auto">';
                 include plugin_dir_path(__FILE__) . 'waybill-form.php';
                 echo '<div class="mt-4 flex justify-end space-x-3">';
-                echo '<a
-                            href="' . admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . $waybill['id'] . '&waybill_atts=view_waybill') . '"
-                            class="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors">Cancel</a>';
+                echo KIT_Commons::renderButton('Cancel', 'secondary', 'lg', [
+                    'href' => admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . $waybill['id'] . '&waybill_atts=view_waybill'),
+                    'gradient' => false,
+                ]);
                 echo '</div>';
                 echo '</div>';
 
@@ -4633,9 +4638,10 @@ class KIT_Waybills
                 echo '<div class="bg-white rounded-lg shadow-md p-6 max-w-7xl mx-auto">';
                 include plugin_dir_path(__FILE__) . 'waybill-form.php';
                 echo '<div class="mt-4 flex justify-end space-x-3">';
-                echo '<a
-                        href="' . admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . $waybill['id'] . '&waybill_atts=view_waybill') . '"
-                        class="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors">Cancel</a>';
+                echo KIT_Commons::renderButton('Cancel', 'secondary', 'lg', [
+                    'href' => admin_url('admin.php?page=08600-Waybill-view&waybill_id=' . $waybill['id'] . '&waybill_atts=view_waybill'),
+                    'gradient' => false,
+                ]);
                 echo '</div>';
                 echo '</div>';
             }

@@ -41,11 +41,7 @@ class KIT_Modal
                     <?php if ($title): ?>
                         <h3 class="text-lg font-semibold text-gray-800"><?php echo esc_html($title); ?></h3>
                     <?php endif; ?>
-                    <button type="button" class="modal-close text-gray-500 hover:text-gray-700 focus:outline-none">
-                        <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    </button>
+                    <?php echo KIT_Commons::renderButton('', 'ghost', 'lg', ['type' => 'button', 'classes' => 'modal-close text-gray-500 hover:text-gray-700 focus:outline-none', 'ariaLabel' => 'Close', 'iconOnly' => true, 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />']); ?>
                 </div>
                 <div class="p-6">
                     <?php echo $content; ?>

@@ -1351,7 +1351,7 @@ function kit_generate_seed_sql_from_excel(): array
                         </div>
 
                         <div class="mt-8 pt-6 border-t border-gray-200">
-                            <?php echo KIT_Commons::renderButton('Save Company Details', 'primary', 'lg', ['type' => 'submit', 'gradient' => true]); ?>
+                            <?= KIT_Commons::renderButton('Save Company Details', 'primary', 'lg', ['type' => 'submit', 'gradient' => true]) ?>
                         </div>
                     </form>
                 </div>
@@ -1484,8 +1484,8 @@ function kit_generate_seed_sql_from_excel(): array
                                 <h4 class="text-sm font-medium text-yellow-800 mb-2">Database Migration</h4>
                                 <p class="text-xs text-yellow-700 mb-3">Use these tools to add missing fields/tables safely without wiping data.</p>
                                 <div class="flex flex-wrap gap-3">
-                                    <?php echo KIT_Commons::renderButton('Add International Price Field', 'warning', 'md', ['id' => 'migrate-db', 'type' => 'button', 'gradient' => true]); ?>
-                                    <?php echo KIT_Commons::renderButton('Run Full DB Migration (Add missing columns/tables)', 'secondary', 'md', ['id' => 'kit-run-migration', 'type' => 'button']); ?>
+                                    <?php echo KIT_Commons::renderButton('Add International Price Field', 'warning', 'lg', ['id' => 'migrate-db', 'type' => 'button', 'gradient' => true]); ?>
+                                    <?php echo KIT_Commons::renderButton('Run Full DB Migration (Add missing columns/tables)', 'secondary', 'lg', ['id' => 'kit-run-migration', 'type' => 'button']); ?>
                                 </div>
                                 <div id="migration-result" class="mt-2 text-sm"></div>
                             </div>
@@ -1596,13 +1596,13 @@ function kit_generate_seed_sql_from_excel(): array
                         <form method="post" action="" class="inline">
                             <?php wp_nonce_field('seed_setup', 'setup_seed_nonce'); ?>
                             <input type="hidden" name="action" value="seed_setup">
-                            <?php echo KIT_Commons::renderButton('Run Setup Seed', 'primary', 'md', ['type' => 'submit', 'gradient' => true]); ?>
+                            <?php echo KIT_Commons::renderButton('Run Setup Seed', 'primary', 'lg', ['type' => 'submit', 'gradient' => true]); ?>
                         </form>
                         
                         <form method="post" action="" id="wipe-tables-form" class="inline">
                             <?php wp_nonce_field('wipe_tables', 'wipe_tables_nonce'); ?>
                             <input type="hidden" name="action" value="wipe_tables">
-                            <?php echo KIT_Commons::renderButton('Wipe Tables', 'danger', 'md', ['type' => 'submit', 'id' => 'wipe-tables-button']); ?>
+                            <?php echo KIT_Commons::renderButton('Wipe Tables', 'danger', 'lg', ['type' => 'submit', 'id' => 'wipe-tables-button']); ?>
                         </form>
                     </div>
 
@@ -1713,12 +1713,12 @@ function kit_generate_seed_sql_from_excel(): array
                                 <?php foreach ($existing_items as $txt): ?>
                                     <div class="flex items-center gap-2">
                                         <input type="text" name="terms_items[]" value="<?php echo esc_attr($txt); ?>" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Enter a term item">
-                                        <button type="button" class="remove-term-item px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100">Remove</button>
+                                        <?php echo KIT_Commons::renderButton('Remove', 'secondary', 'lg', ['type' => 'button', 'classes' => 'remove-term-item px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100']); ?>
                                     </div>
                                 <?php endforeach; ?>
                                     </div>
                             <div class="mt-3">
-                                <button type="button" id="add-term-item" class="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100">Add Item</button>
+                                <?php echo KIT_Commons::renderButton('Add Item', 'secondary', 'lg', ['type' => 'button', 'id' => 'add-term-item', 'classes' => 'px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100']); ?>
                                     </div>
                             <p class="text-xs text-gray-500 mt-2">Items will be saved as a bullet list in PDFs. You can still paste full HTML below if needed.</p>
                                     </div>

@@ -61,14 +61,14 @@ global $waybill_items;
 
     <!-- Navigation Buttons -->
     <div class="flex justify-between mt-8">
-        <?php echo KIT_Commons::renderButton('Back', 'secondary', 'md', [
+        <?php echo KIT_Commons::renderButton('Back', 'secondary', 'lg', [
             'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 17l-5-5m0 0l5-5m-5 5h12" />',
             'iconPosition' => 'left',
             'data-target' => 'step-4',
             'classes' => 'prev-step'
         ]); ?>
         
-        <?php echo KIT_Commons::renderButton($is_edit_mode ? 'Update Waybill' : 'Create Waybill', 'success', 'md', [
+        <?php echo KIT_Commons::renderButton($is_edit_mode ? 'Update Waybill' : 'Create Waybill', 'success', 'lg', [
             'type' => 'submit',
             'classes' => 'submit-btn',
             'id' => 'next-step-3',

@@ -422,10 +422,7 @@ class KIT_Customers
                         Cancel
                     </a>
                 <?php endif; ?>
-                <button type="submit"
-                    class="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-500">
-                    Save Customer
-                </button>
+                <?php echo KIT_Commons::renderButton('Save Customer', 'primary', 'lg', ['type' => 'submit']); ?>
             </div>
         </form>
 
@@ -741,7 +738,7 @@ class KIT_Customers
         }
         $output .= '<h3>Bulk Upload Customers (CSV or Excel)</h3>';
         $output .= '<input type="file" name="customers_file" accept=".csv,.xlsx,.xls" required> ';
-        $output .= KIT_Commons::renderButton('Upload', 'primary', 'md', ['type' => 'submit', 'gradient' => true]);
+        $output .= KIT_Commons::renderButton('Upload', 'primary', 'lg', ['type' => 'submit', 'gradient' => true]);
         $output .= '</form>';
         return $output;
     }
@@ -1080,7 +1077,7 @@ function customer_button_with_modal()
     ?>
     <div class="p-6">
         <!-- Trigger Button -->
-        <?php echo KIT_Commons::renderButton('Open Modal', 'success', 'md', ['onclick' => 'document.getElementById(\'thaboModal\').classList.remove(\'hidden\')', 'gradient' => true]); ?>
+        <?php echo KIT_Commons::renderButton('Open Modal', 'success', 'lg', ['onclick' => 'document.getElementById(\'thaboModal\').classList.remove(\'hidden\')', 'gradient' => true]); ?>
 
         <!-- Modal Overlay -->
         <div id="thaboModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
@@ -1088,7 +1085,7 @@ function customer_button_with_modal()
             <div class="bg-white p-6 rounded-xl shadow-xl w-96 text-center">
                 <h2 class="text-xl font-semibold mb-4">Hey Thabo 👋</h2>
                 <p class="mb-6">Welcome to the modal!</p>
-                <?php echo KIT_Commons::renderButton('Close', 'secondary', 'md', ['onclick' => 'document.getElementById(\'thaboModal\').classList.add(\'hidden\')']); ?>
+                <?php echo KIT_Commons::renderButton('Close', 'secondary', 'lg', ['onclick' => 'document.getElementById(\'thaboModal\').classList.add(\'hidden\')']); ?>
             </div>
         </div>
     </div>
@@ -1316,8 +1313,8 @@ function customer_form()
                         </div>
 
                         <div class="flex justify-end space-x-2">
-                            <?php echo KIT_Commons::renderButton('Cancel', 'secondary', 'md', ['type' => 'button', 'id' => 'customerModalCloseBtn']); ?>
-                            <?php echo KIT_Commons::renderButton($is_edit ? 'Update' : 'Save', 'success', 'md', ['type' => 'submit', 'name' => 'customer_submit', 'id' => 'customerSubmitBtn', 'gradient' => true]); ?>
+                            <?php echo KIT_Commons::renderButton('Cancel', 'secondary', 'lg', ['type' => 'button', 'id' => 'customerModalCloseBtn']); ?>
+                            <?php echo KIT_Commons::renderButton($is_edit ? 'Update' : 'Save', 'success', 'lg', ['type' => 'submit', 'name' => 'customer_submit', 'id' => 'customerSubmitBtn', 'gradient' => true]); ?>
                         </div>
                     </form>
                 </div>
@@ -1673,7 +1670,7 @@ function customer_detail_view($customer_id)
                     $pdf_icon = '<svg class="inline-block ml-1 -mt-0.5 w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 20 20"><path d="M12 16v-4m0 4l-2-2m2 2l2-2M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V6.828a2 2 0 00-.586-1.414l-3.828-3.828A2 2 0 0012.172 2H6z"></path></svg>';
 
                     if (!empty($pdf_url)) {
-                        echo KIT_Commons::renderButton('PDF', 'primary', 'md', [
+                        echo KIT_Commons::renderButton('PDF', 'primary', 'lg', [
                             'href' => $pdf_url,
                             'gradient' => true,
                             'icon' => $pdf_icon,
@@ -1681,7 +1678,7 @@ function customer_detail_view($customer_id)
                             'rel' => 'noopener'
                         ]);
                     } else {
-                        echo KIT_Commons::renderButton('PDF', 'primary', 'md', [
+                        echo KIT_Commons::renderButton('PDF', 'primary', 'lg', [
                             'href' => '#',
                             'gradient' => true,
                             'icon' => $pdf_icon,
@@ -1690,7 +1687,7 @@ function customer_detail_view($customer_id)
                         ]);
                     }
                     ?>
-                    <?php echo KIT_Commons::renderButton('Edit Cusstomer', 'primary', 'md', ['href' => '?page=08600-customers&edit_customer=' . $customer_id, 'gradient' => true]); ?>
+                    <?php echo KIT_Commons::renderButton('Edit Cusstomer', 'primary', 'lg', ['href' => '?page=08600-customers&edit_customer=' . $customer_id, 'gradient' => true]); ?>
                 </div>
             </div>
             <div class="col-span-3">
@@ -2137,12 +2134,12 @@ function edit_customer_form($customer_id)
                             <div class="flex flex-col sm:flex-row justify-end gap-3 pt-6 border-t border-gray-200">
                                 <?php 
                                 $back_icon = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>';
-                                echo KIT_Commons::renderButton('Back', 'secondary', 'md', [
+                                echo KIT_Commons::renderButton('Back', 'secondary', 'lg', [
                                     'href' => admin_url('admin.php?page=08600-customers&view_customer=' . $customer_id),
                                     'icon' => $back_icon
                                 ]); 
                                 $save_icon = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>';
-                                echo KIT_Commons::renderButton('Update Customer', 'primary', 'md', [
+                                echo KIT_Commons::renderButton('Update Customer', 'primary', 'lg', [
                                     'type' => 'submit', 
                                     'name' => 'customer_submit', 
                                     'gradient' => true,

@@ -45,7 +45,7 @@ class KIT_Unified_Table
             'groupby' => null,
             'group_heading_prefix' => '',
             'group_heading_cell_class' => 'px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-700 bg-gray-100',
-            'group_heading_row_class' => 'bg-gray-50',
+            'group_heading_row_class' => 'bg-gray-50 border-0',
             'preserve_order' => false,
             'group_collapsible' => false,
             'group_collapsed' => false,
@@ -62,24 +62,6 @@ class KIT_Unified_Table
         ];
 
         $options = array_merge($defaults, $options);
-        
-        // #region agent log
-        $log_data = [
-            'sessionId' => 'debug-session',
-            'runId' => 'run1',
-            'hypothesisId' => 'C',
-            'location' => 'class-unified-table.php:' . __LINE__,
-            'message' => 'Merged table options after defaults',
-            'data' => [
-                'header_base_class' => $options['header_base_class'],
-                'table_class' => $options['table_class'],
-                'has_custom_table_class' => isset($options['table_class']) && $options['table_class'] !== $defaults['table_class'],
-                'has_custom_header_class' => isset($options['header_base_class']) && $options['header_base_class'] !== $defaults['header_base_class']
-            ],
-            'timestamp' => time() * 1000
-        ];
-        file_put_contents('/Applications/MAMP/htdocs/08600/wp-content/plugins/courier-finance-plugin/.cursor/debug.log', json_encode($log_data) . "\n", FILE_APPEND);
-        // #endregion
 
         // Store original groupby value for view toggling
         $original_groupby = $options['groupby'];
@@ -418,14 +400,15 @@ class KIT_Unified_Table
                                     </div>
                                 </div>
                             <?php endif; ?>
-                            <button type="button"
-                                id="clear-infinite-search-<?php echo esc_attr($table_id); ?>"
-                                class="inline-flex items-center justify-center w-10 h-10 border border-gray-300 rounded-md bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors flex-shrink-0"
-                                title="Clear search">
-                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                                </svg>
-                            </button>
+                            <?php echo KIT_Commons::renderButton('', 'ghost', 'sm', [
+                                'type' => 'button',
+                                'id' => 'clear-infinite-search-' . esc_attr($table_id),
+                                'classes' => 'inline-flex items-center justify-center w-10 h-10 border border-gray-300 rounded-md bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors flex-shrink-0',
+                                'title' => 'Clear search',
+                                'ariaLabel' => 'Clear search',
+                                'iconOnly' => true,
+                                'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>',
+                            ]); ?>
                         </div>
                     <?php endif; ?>
                 </div>
@@ -476,47 +459,39 @@ class KIT_Unified_Table
                                                 break;
                                         }
                                         if ($action_label):
+                                            $bulk_icon = '';
+                                            if ($action === 'delete') {
+                                                $bulk_icon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>';
+                                            } elseif ($action === 'export') {
+                                                $bulk_icon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>';
+                                            } elseif ($action === 'status_active') {
+                                                $bulk_icon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>';
+                                            } elseif ($action === 'status_inactive') {
+                                                $bulk_icon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path>';
+                                            }
+                                            echo KIT_Commons::renderButton($action_label, 'primary', 'sm', [
+                                                'type' => 'button',
+                                                'id' => $action_id,
+                                                'classes' => 'inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold shadow-sm transition-all duration-200 ' . $action_class . ' disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-md active:scale-95',
+                                                'data-bulk-action' => $action,
+                                                'disabled' => true,
+                                                'icon' => $bulk_icon,
+                                                'iconPosition' => 'left',
+                                            ]);
                                     ?>
-                                            <button type="button"
-                                                id="<?php echo esc_attr($action_id); ?>"
-                                                class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold shadow-sm transition-all duration-200 <?php echo esc_attr($action_class); ?> disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-md active:scale-95"
-                                                data-bulk-action="<?php echo esc_attr($action); ?>"
-                                                disabled>
-                                                <?php
-                                                // Add icons based on action
-                                                if ($action === 'delete'): ?>
-                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                                                    </svg>
-                                                <?php elseif ($action === 'export'): ?>
-                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                                                    </svg>
-                                                <?php elseif ($action === 'status_active'): ?>
-                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                                    </svg>
-                                                <?php elseif ($action === 'status_inactive'): ?>
-                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                                    </svg>
-                                                <?php endif; ?>
-                                                <?php echo esc_html($action_label); ?>
-                                            </button>
                                     <?php
                                         endif;
                                     endforeach;
                                     ?>
                                 </div>
                             </div>
-                            <button type="button"
-                                id="bulk-clear-selection-<?php echo esc_attr($table_id); ?>"
-                                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-white rounded-md transition-colors">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                                </svg>
-                                Clear Selection
-                            </button>
+                            <?php echo KIT_Commons::renderButton('Clear Selection', 'ghost', 'sm', [
+                                'type' => 'button',
+                                'id' => 'bulk-clear-selection-' . esc_attr($table_id),
+                                'classes' => 'inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-white rounded-md transition-colors',
+                                'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>',
+                                'iconPosition' => 'left',
+                            ]); ?>
                         </div>
                     </div>
                 <?php endif; ?>
@@ -524,33 +499,14 @@ class KIT_Unified_Table
                 <!-- Table Container -->
                 <div class="px-6 overflow-x-auto">
                             <table id="<?php echo esc_attr($table_id); ?>" class="<?php echo esc_attr($options['table_class']); ?>" style="width:100%;" <?php if ($hasGroupRows): ?> data-has-group-rows="1" <?php endif; ?> data-original-groupby="<?php echo esc_attr($original_groupby ?? ''); ?>" data-current-view="<?php echo ($view_param === 'infinite' || !$hasGroupRows) ? 'infinite' : 'grouped'; ?>">
-                                <thead class="bg-gray-50 border-b-2 border-gray-200">
-                                    <?php
-                                    // #region agent log
-                                    $log_data = [
-                                        'sessionId' => 'debug-session',
-                                        'runId' => 'run1',
-                                        'hypothesisId' => 'A',
-                                        'location' => 'class-unified-table.php:' . __LINE__,
-                                        'message' => 'Table header rendering - checking header_base_class',
-                                        'data' => [
-                                            'header_base_class' => $options['header_base_class'] ?? 'NOT SET',
-                                            'table_id' => $table_id,
-                                            'has_bulk_management' => $options['bulk_management'] ?? false,
-                                            'columns_count' => count($columns)
-                                        ],
-                                        'timestamp' => time() * 1000
-                                    ];
-                                    file_put_contents('/Applications/MAMP/htdocs/08600/wp-content/plugins/courier-finance-plugin/.cursor/debug.log', json_encode($log_data) . "\n", FILE_APPEND);
-                                    // #endregion
-                                    ?>
+                                <thead class="bg-gray-50">
                                     <tr>
                                         <?php if ($options['bulk_management'] === true): ?>
                                             <!-- Bulk selection checkbox header -->
                                             <th class="<?php echo esc_attr($options['header_base_class']); ?> w-12 text-center" style="width: 48px;">
                                                 <input type="checkbox"
                                                     id="bulk-select-all-<?php echo esc_attr($table_id); ?>"
-                                                    class="bulk-select-all-checkbox w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer transition-all"
+                                                    class="bulk-select-all-checkbox w-4 h-4 rounded border-0 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer transition-all"
                                                     title="Select all"
                                                     aria-label="Select all rows"
                                                     style="display: inline-block; margin: 0; cursor: pointer; pointer-events: auto;">
@@ -569,23 +525,6 @@ class KIT_Unified_Table
                                             $headerClass = $options['header_base_class'];
                                             if (is_array($column) && !empty($column['header_class'])) {
                                                 $headerClass = trim($headerClass . ' ' . $column['header_class']);
-                                                // #region agent log
-                                                $log_data = [
-                                                    'sessionId' => 'debug-session',
-                                                    'runId' => 'run1',
-                                                    'hypothesisId' => 'A',
-                                                    'location' => 'class-unified-table.php:' . __LINE__,
-                                                    'message' => 'Column header_class override detected',
-                                                    'data' => [
-                                                        'column_key' => $key,
-                                                        'base_class' => $options['header_base_class'],
-                                                        'custom_header_class' => $column['header_class'],
-                                                        'final_header_class' => $headerClass
-                                                    ],
-                                                    'timestamp' => time() * 1000
-                                                ];
-                                                file_put_contents('/Applications/MAMP/htdocs/08600/wp-content/plugins/courier-finance-plugin/.cursor/debug.log', json_encode($log_data) . "\n", FILE_APPEND);
-                                                // #endregion
                                             }
                                             // Check if header should be right-aligned
                                             $isRightAligned = strpos($headerClass, 'text-right') !== false;
@@ -593,12 +532,12 @@ class KIT_Unified_Table
                                             ?>
                                             <th<?php if ($columnSortable): ?> data-column="<?php echo esc_attr($key); ?>" <?php endif; ?> class="<?php echo esc_attr($headerClass); ?>">
                                                 <?php if ($columnSortable): ?>
-                                                    <button type="button" class="sortable-header flex items-center gap-2 <?php echo esc_attr($flexJustify); ?> text-gray-700 hover:text-gray-900 font-semibold transition-colors group w-full">
-                                                        <span class="whitespace-normal break-words"><?php echo esc_html($label); ?></span>
-                                                        <svg class="sort-icon w-4 h-4 text-gray-400 group-hover:text-gray-600 transition-colors flex-shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-                                                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                                                        </svg>
-                                                    </button>
+                                                    <?php echo KIT_Commons::renderButton($label, 'ghost', 'sm', [
+                                                        'type' => 'button',
+                                                        'classes' => 'sortable-header flex items-center gap-2 border-0 shadow-none ' . esc_attr($flexJustify) . ' text-gray-700 hover:text-gray-900 font-semibold transition-colors group w-full',
+                                                        'icon' => '<path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />',
+                                                        'iconPosition' => 'right',
+                                                    ]); ?>
                                                 <?php else: ?>
                                                     <span class="flex items-center gap-1 <?php echo esc_attr($flexJustify); ?> text-gray-700 font-semibold whitespace-normal break-words"><?php echo esc_html($label); ?></span>
                                                 <?php endif; ?>
@@ -621,7 +560,7 @@ class KIT_Unified_Table
                                     <?php
                                     $visibleRowCounter = 0;
                                     $totalColumns = (($options['bulk_management'] === true) ? 1 : 0) + 1 + count($columns) + (!empty($options['actions']) ? 1 : 0);
-                                    ?>
+                                    ?> 
                                     <?php foreach ($display_data as $rowIndex => $row): ?>
                                         <?php
                                         if ((is_array($row) && !empty($row['__group_row'])) || (is_object($row) && !empty($row->__group_row))) {
@@ -653,21 +592,18 @@ class KIT_Unified_Table
                                             <tr class="<?php echo esc_attr($options['group_heading_row_class']); ?>" data-group-row="1" <?php if ($groupId): ?> data-group-id="<?php echo esc_attr($groupId); ?>" <?php endif; ?> data-collapsed="<?php echo $groupCollapsed ? '1' : '0'; ?>">
                                                 <td colspan="<?php echo esc_attr($totalColumns); ?>" class="<?php echo esc_attr($headingCellClass); ?>">
                                                     <?php if ($isCollapsible): ?>
-                                                        <button type="button" class="<?php echo esc_attr($gradientButtonClasses); ?>" data-group-toggle="<?php echo esc_attr($groupId); ?>" aria-expanded="<?php echo $groupCollapsed ? 'false' : 'true'; ?>">
-                                                            <span class="group-toggle-label flex items-center gap-2 flex-1">
-                                                                <?php if ($groupCount > 0): ?>
-                                                                    <span class="inline-flex items-center justify-center min-w-[1.5rem] h-6 px-2 text-xs font-semibold text-white bg-red-600 rounded-full leading-none">
-                                                                        <?php echo esc_html($groupCount); ?>
-                                                                    </span>
-                                                                    <?php echo esc_html($headingContent); ?>
-                                                                <?php endif; ?>
-                                                            </span>
-                                                            <span class="group-toggle-icon-wrapper inline-flex items-center justify-center w-5 h-5 flex-shrink-0">
-                                                                <svg class="<?php echo esc_attr($iconClasses); ?>" <?php if ($groupCollapsed): ?> style="transform: rotate(-90deg);" <?php endif; ?> fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
-                                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                                                                </svg>
-                                                            </span>
-                                                        </button>
+                                                        <?php
+                                                        $groupBtnLabel = $groupCount > 0 ? '<span class="inline-flex items-center justify-center min-w-[1.5rem] h-6 px-2 text-xs font-semibold text-white bg-red-600 rounded-full leading-none">' . esc_html($groupCount) . '</span> ' . esc_html($headingContent) : 'Group';
+                                                        echo KIT_Commons::renderButton($groupBtnLabel, 'primary', 'sm', [
+                                                            'type' => 'button',
+                                                            'classes' => $gradientButtonClasses,
+                                                            'data-group-toggle' => $groupId,
+                                                            'ariaExpanded' => $groupCollapsed ? 'false' : 'true',
+                                                            'icon' => '<path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />',
+                                                            'iconPosition' => 'right',
+                                                            'rawHtml' => $groupCount > 0,
+                                                        ]);
+                                                        ?>
                                                     <?php else: ?>
                                                         <span class="inline-flex items-center font-semibold text-gray-700 gap-2">
                                                             <?php if ($groupCount > 0): ?>
@@ -733,7 +669,7 @@ class KIT_Unified_Table
                                         }
 
                                         // Row styling
-                                        $rowClass = 'hover:bg-blue-50/50 transition-colors duration-150 border-b border-gray-100';
+                                        $rowClass = 'hover:bg-blue-50/50 transition-colors duration-150';
                                         ?>
                                         <tr<?php echo $rowAttrStr; ?> class="<?php echo esc_attr($rowClass); ?>" data-row-id="<?php echo esc_attr(is_array($row) ? ($row['id'] ?? '') : (is_object($row) ? ($row->id ?? '') : '')); ?>">
                                             <?php if ($options['bulk_management'] === true): ?>
@@ -748,7 +684,7 @@ class KIT_Unified_Table
                                                     }
                                                     ?>
                                                     <input type="checkbox"
-                                                        class="bulk-row-checkbox w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer transition-all hover:border-blue-400"
+                                                        class="bulk-row-checkbox w-4 h-4 rounded border-0 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer transition-all"
                                                         value="<?php echo esc_attr($row_id); ?>"
                                                         data-row-id="<?php echo esc_attr($row_id); ?>"
                                                         aria-label="Select row"

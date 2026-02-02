@@ -43,7 +43,7 @@ class KIT_DashboardQuickies {
             ];
         }
 
-        $html = '<div class="dashboard-quickies bg-white rounded-lg shadow-sm border border-gray-200 p-4">';
+        $html = '<div class="dashboard-quickies bg-white rounded-lg border-gray-200 p-4">';
         
         if (!empty($title)) {
             $html .= '<h3 class="text-sm font-medium text-gray-700 mb-3">' . esc_html($title) . '</h3>';

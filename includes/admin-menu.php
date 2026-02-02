@@ -8,20 +8,30 @@ if (!defined('ABSPATH')) {
  */
 function plugin_add_menu()
 {
-    // Main 08600 Solution Menu (use Manage Waybills as the top-level page)
+    // Main 08600 Solution Menu (Dashboard is the default landing page)
     add_menu_page(
-        '08600 Solution', // Page title
-        '08600 Solution', // Menu title
-        'kit_view_waybills', // Capability
-        '08600-waybill-manage', // Menu slug (top-level now points to Manage Waybills)
-        'plugin_Waybill_list_page', // Callback function
-        'dashicons-admin-plugins', // Icon
-        6 // Position
+        '08600 Solution',
+        '08600 Solution',
+        'kit_view_waybills',
+        '08600-dashboard',
+        'dashboard_page',
+        'dashicons-admin-plugins',
+        6
+    );
+
+    // Dashboard (first submenu = default when clicking parent)
+    add_submenu_page(
+        '08600-dashboard',
+        'Dashboard',
+        'Dashboard',
+        'kit_view_waybills',
+        '08600-dashboard',
+        'dashboard_page'
     );
 
     // Create Waybill
     add_submenu_page(
-        '08600-waybill-manage',
+        '08600-dashboard',
         'Create Waybill',
         'Create Waybill',
         'kit_view_waybills',
@@ -31,7 +41,7 @@ function plugin_add_menu()
 
     // Manage Waybills
     add_submenu_page(
-        '08600-waybill-manage',
+        '08600-dashboard',
         'Manage Waybills',
         'Manage Waybills',
         'kit_view_waybills',
@@ -41,7 +51,7 @@ function plugin_add_menu()
 
     // Warehouse
     add_submenu_page(
-        '08600-waybill-manage',
+        '08600-dashboard',
         'Warehouse',
         'Warehouse',
         'kit_view_waybills',
@@ -57,7 +67,7 @@ function plugin_add_menu()
 
     // Customers
     add_submenu_page(
-        '08600-waybill-manage',
+        '08600-dashboard',
         'Customers',
         'Customers',
         'kit_view_waybills',
@@ -89,7 +99,7 @@ function plugin_add_menu()
 
     // Routes & Destinations
     add_submenu_page(
-        '08600-waybill-manage',
+        '08600-dashboard',
         'Routes & Destinations',
         'Routes & Destinations',
         'kit_view_waybills',
@@ -99,7 +109,7 @@ function plugin_add_menu()
 
     // Countries
     add_submenu_page(
-        '08600-waybill-manage',
+        '08600-dashboard',
         'Countries',
         'Countries',
         'kit_view_waybills',
@@ -109,7 +119,7 @@ function plugin_add_menu()
 
     // Deliveries
     add_submenu_page(
-        '08600-waybill-manage',
+        '08600-dashboard',
         'Deliveries',
         'Deliveries',
         'kit_view_waybills',
@@ -119,7 +129,7 @@ function plugin_add_menu()
 
     // Drivers
     add_submenu_page(
-        '08600-waybill-manage',
+        '08600-dashboard',
         'Manage Drivers',
         'Drivers',
         'kit_view_waybills',
@@ -179,17 +189,17 @@ function plugin_add_menu()
 
     // Settings (at bottom) - STRICTLY RESTRICTED ACCESS
     add_submenu_page(
-        '08600-waybill-manage',
+        '08600-dashboard',
         'Settings',
         'Settings',
-        'kit_access_settings', // Only specific administrators (Thando, Mel, Patricia) can see this menu item
+        'kit_access_settings',
         '08600-settings',
         'waybill_settings_page'
     );
 
     // Help (at bottom bottom)
     add_submenu_page(
-        '08600-waybill-manage',
+        '08600-dashboard',
         'Help',
         'Help',
         'kit_view_waybills',
@@ -197,6 +207,13 @@ function plugin_add_menu()
         'waybill_help_page'
     );
 
+}
+
+/**
+ * Dashboard page callback (default landing for 08600 Solution)
+ */
+function dashboard_page() {
+    include plugin_dir_path(__FILE__) . 'admin-pages/dashboard.php';
 }
 
 add_action('admin_menu', 'plugin_add_menu');

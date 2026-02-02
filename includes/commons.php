@@ -264,28 +264,27 @@ class KIT_Commons
             <?php wp_nonce_field('update_waybill_approval_nonce'); ?>
             <div class="relative inline-block text-left">
                 <div>
-                    <button type="button"
-                        id="quote-button-<?= esc_attr($waybillid) ?>"
-                        onclick="toggleDropdownQuote('<?= esc_attr($waybillid) ?>')"
-                        class="inline-flex items-center justify-center gap-2 px-4 py-2  border shadow-sm bg-white font-medium <?= esc_attr($current_colors) ?> hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                        <span><?= esc_html($current_label2) ?></span>
-                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
-                        </svg>
-                    </button>
+                    <?= KIT_Commons::renderButton($current_label2, 'ghost', 'sm', [
+                        'type' => 'button',
+                        'id' => 'quote-button-' . esc_attr($waybillid),
+                        'onclick' => "toggleDropdownQuote('" . esc_js($waybillid) . "')",
+                        'classes' => 'inline-flex items-center justify-center gap-2 px-4 py-2 border shadow-sm bg-white font-medium ' . $current_colors . ' hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500',
+                        'icon' => '<path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>',
+                        'iconPosition' => 'right',
+                    ]) ?>
                 </div>
 
                 <div class="hidden origin-top-left absolute left-0 mt-2 w-56  shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50"
                     id="quote-dropdown-<?= esc_attr($waybillid) ?>">
                     <div class="py-1" role="menu" aria-orientation="vertical">
                         <?php foreach ($statusesStatus as $key => $label): ?>
-                            <button type="submit"
-                                name="status"
-                                value="<?= esc_attr($key) ?>"
-                                class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900 <?= ($key === $current_status2 ? 'bg-gray-100 text-gray-900' : '') ?>"
-                                role="menuitem">
-                                <?= esc_html($label) ?>
-                            </button>
+                            <?= KIT_Commons::renderButton($label, 'ghost', 'sm', [
+                                'type' => 'submit',
+                                'name' => 'status',
+                                'value' => $key,
+                                'classes' => 'block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900 ' . ($key === $current_status2 ? 'bg-gray-100 text-gray-900' : ''),
+                                'role' => 'menuitem',
+                            ]) ?>
                         <?php endforeach; ?>
                     </div>
                 </div>
@@ -425,28 +424,27 @@ class KIT_Commons
 
             <div class="relative inline-block text-left">
                 <div>
-                    <button type="button"
-                        id="approval-button-<?= esc_attr($waybillid) ?>"
-                        onclick="toggleDropdownApproval('<?= esc_attr($waybillid) ?>')"
-                        class="inline-flex items-center justify-center gap-2 px-4 py-2  border shadow-sm bg-white font-medium <?= esc_attr($current_colors) ?> hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                        <span><?= esc_html($current_label) ?></span>
-                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
-                        </svg>
-                    </button>
+                    <?= KIT_Commons::renderButton($current_label, 'ghost', 'sm', [
+                        'type' => 'button',
+                        'id' => 'approval-button-' . esc_attr($waybillid),
+                        'onclick' => "toggleDropdownApproval('" . esc_js($waybillid) . "')",
+                        'classes' => 'inline-flex items-center justify-center gap-2 px-4 py-2 border shadow-sm bg-white font-medium ' . $current_colors . ' hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500',
+                        'icon' => '<path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>',
+                        'iconPosition' => 'right',
+                    ]) ?>
                 </div>
 
                 <div class="hidden origin-top-right absolute right-0 mt-2 w-56  shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50"
                     id="approval-dropdown-<?= esc_attr($waybillid) ?>">
                     <div class="py-1" role="menu" aria-orientation="vertical">
                         <?php foreach ($statuses as $key => $label): ?>
-                            <button type="submit"
-                                name="status"
-                                value="<?= esc_attr($key) ?>"
-                                class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900 <?= ($key === $current_status ? 'bg-gray-100 text-gray-900' : '') ?>"
-                                role="menuitem">
-                                <?= esc_html($label) ?>
-                            </button>
+                            <?= KIT_Commons::renderButton($label, 'ghost', 'sm', [
+                                'type' => 'submit',
+                                'name' => 'status',
+                                'value' => $key,
+                                'classes' => 'block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900 ' . ($key === $current_status ? 'bg-gray-100 text-gray-900' : ''),
+                                'role' => 'menuitem',
+                            ]) ?>
                         <?php endforeach; ?>
                     </div>
                 </div>
@@ -578,15 +576,14 @@ class KIT_Commons
 
             <div class="relative inline-block text-left">
                 <div>
-                    <button type="button"
-                        id="delivery-assignment-button-<?= esc_attr($waybill_id) ?>"
-                        onclick="toggleDeliveryAssignment('<?= esc_attr($waybill_id) ?>')"
-                        class="inline-flex items-center justify-center gap-2 px-4 py-2  border shadow-sm font-medium bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500">
-                        <span>Assign to Delivery</span>
-                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
-                        </svg>
-                    </button>
+                    <?= KIT_Commons::renderButton('Assign to Delivery', 'warning', 'sm', [
+                        'type' => 'button',
+                        'id' => 'delivery-assignment-button-' . esc_attr($waybill_id),
+                        'onclick' => "toggleDeliveryAssignment('" . esc_js($waybill_id) . "')",
+                        'classes' => 'inline-flex items-center justify-center gap-2 px-4 py-2 border shadow-sm font-medium bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500',
+                        'icon' => '<path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>',
+                        'iconPosition' => 'right',
+                    ]) ?>
                 </div>
 
                 <div class="hidden origin-top-right absolute right-0 mt-2 w-80  shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50"
@@ -598,17 +595,18 @@ class KIT_Commons
                             </div>
                         <?php else: ?>
                             <?php foreach ($available_deliveries as $delivery): ?>
-                                <button type="submit"
-                                    name="delivery_id"
-                                    value="<?= esc_attr($delivery->delivery_id) ?>"
-                                    class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-                                    role="menuitem">
-                                    <div class="font-medium"><?= esc_html($delivery->delivery_name) ?></div>
-                                    <div class="text-xs text-gray-500">
-                                        <?= esc_html($delivery->destination_city) ?>, <?= esc_html($delivery->destination_country) ?>
-                                        <br>Dispatch: <?= esc_html(date('M j, Y', strtotime($delivery->dispatch_date))) ?>
-                                    </div>
-                                </button>
+                                <?= KIT_Commons::renderButton(
+                                    $delivery->delivery_name . ' — ' . $delivery->destination_city . ', ' . $delivery->destination_country . ' (Dispatch: ' . date('M j, Y', strtotime($delivery->dispatch_date)) . ')',
+                                    'ghost',
+                                    'sm',
+                                    [
+                                        'type' => 'submit',
+                                        'name' => 'delivery_id',
+                                        'value' => $delivery->delivery_id,
+                                        'classes' => 'block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900',
+                                        'role' => 'menuitem',
+                                    ]
+                                ) ?>
                             <?php endforeach; ?>
                         <?php endif; ?>
                     </div>
@@ -800,10 +798,16 @@ class KIT_Commons
 
                 // Fallbacks for esc_attr/esc_html if not running in WP (for linting/tests)
                 if (!function_exists('esc_attr')) {
-                    function esc_attr($s) { return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
+                    function esc_attr($s)
+                    {
+                        return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                    }
                 }
                 if (!function_exists('esc_html')) {
-                    function esc_html($s) { return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
+                    function esc_html($s)
+                    {
+                        return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                    }
                 }
 
                 $labelClass = self::labelClass();
@@ -912,7 +916,7 @@ class KIT_Commons
                     $iconHtml = '';
                     $iconWrapper = '';
                     $uniqueId = !empty($atts['id']) ? esc_attr($atts['id']) : 'input-' . uniqid();
-                    
+
                     // If icon is provided, wrap input in relative container and add icon
                     if (!empty($atts['icon'])) {
                         $iconWrapper = '<div class="relative input-with-icon-container">';
@@ -933,20 +937,20 @@ class KIT_Commons
                             $atts['special'] = $paddingStyle . ' ' . $atts['special'];
                         }
                     }
-                    
+
                     // Use the unique ID for the input
                     $inputId = !empty($atts['id']) ? esc_attr($atts['id']) : $uniqueId;
-                    
+
                     $inputHtml = '<input step="0.01" type="' . esc_attr($atts['type']) . '" name="' . esc_attr($atts['name']) .
                         '" id="' . $inputId . '" value="' . esc_attr($atts['value']) .
                         '" class="' . esc_attr($inputClass) . ' ' . esc_attr($atts['class']) . '" ' . ($atts['onclick'] ? 'onclick="' . $atts['onclick'] . '" ' : '') .
                         esc_attr($atts['special']) . ' tabindex="' . esc_attr($atts['tabindex']) . '"/>';
-                    
+
                     $closeWrapper = $iconWrapper ? '</div>' : '';
-                    
+
                     $labelHtml = '<label for="' . $inputId . '" class="' . esc_attr($labelClass) . " " . esc_attr($atts['label_class']) . '">' .
                         esc_html($atts['label']) . '</label>';
-                    
+
                     return $labelHtml . $iconWrapper . $iconHtml . $inputHtml . $closeWrapper;
                 }
 
@@ -1317,12 +1321,12 @@ class KIT_Commons
                 return 'inline-flex items-center gap-2 border rounded';
             }
 
-            // Size-based padding classes
+            // Size-based padding and min-width for consistent button dimensions
             public static function buttonSizePadding($size = 'md')
             {
                 $sizeClasses = [
                     'sm' => 'px-2 py-1 text-xs',
-                    'md' => 'px-3 py-1 text-sm',
+                    'md' => 'px-3 py-1.5 text-sm min-w-[7.5rem]',
                     'lg' => 'px-4 py-2 text-base'
                 ];
                 return $sizeClasses[$size] ?? $sizeClasses['md'];
@@ -1536,7 +1540,10 @@ class KIT_Commons
                 ];
 
                 $options = array_merge($defaults, $options);
-                
+                // Primary action buttons (Edit, PDF, etc.) use gradient by default so they match size and style
+                if ($type === 'primary' && (empty($options['gradient']) || $options['gradient'] === false)) {
+                    $options['gradient'] = true;
+                }
                 // If color is specified, use custom color styling with sharp design
                 if (!empty($options['color'])) {
                     $color = sanitize_text_field($options['color']);
@@ -1550,40 +1557,40 @@ class KIT_Commons
                     // Get type-specific classes
                     $typeClasses = '';
                     switch ($type) {
-                    case 'primary':
-                        $typeClasses = self::buttonPrimary($size, $options['fullWidth'], $options['gradient'], $options['plain']);
-                        break;
-                    case 'secondary':
-                        $typeClasses = self::buttonSecondary($size, $options['fullWidth'], $options['gradient'], $options['plain']);
-                        break;
-                    case 'success':
-                        $typeClasses = self::buttonSuccess($size, $options['fullWidth'], $options['gradient'], $options['plain']);
-                        break;
-                    case 'danger':
-                        $typeClasses = self::buttonDanger($size, $options['fullWidth'], $options['gradient'], $options['plain']);
-                        break;
-                    case 'warning':
-                        $typeClasses = self::buttonWarning($size, $options['fullWidth'], $options['gradient'], $options['plain']);
-                        break;
-                    case 'outline-primary':
-                        $typeClasses = self::buttonOutlinePrimary($size, $options['fullWidth']);
-                        break;
-                    case 'outline-secondary':
-                        $typeClasses = self::buttonOutlineSecondary($size, $options['fullWidth']);
-                        break;
-                    case 'ghost':
-                        $typeClasses = self::buttonGhost($size, $options['fullWidth']);
-                        break;
-                    case 'ghost-primary':
-                        $typeClasses = self::buttonGhostPrimary($size, $options['fullWidth']);
-                        break;
-                    case 'link':
-                        $typeClasses = self::buttonLink($size);
-                        break;
-                    default:
-                        $typeClasses = self::buttonPrimary($size, $options['fullWidth'], false, $options['plain']);
+                        case 'primary':
+                            $typeClasses = self::buttonPrimary($size, $options['fullWidth'], $options['gradient'], $options['plain']);
+                            break;
+                        case 'secondary':
+                            $typeClasses = self::buttonSecondary($size, $options['fullWidth'], $options['gradient'], $options['plain']);
+                            break;
+                        case 'success':
+                            $typeClasses = self::buttonSuccess($size, $options['fullWidth'], $options['gradient'], $options['plain']);
+                            break;
+                        case 'danger':
+                            $typeClasses = self::buttonDanger($size, $options['fullWidth'], $options['gradient'], $options['plain']);
+                            break;
+                        case 'warning':
+                            $typeClasses = self::buttonWarning($size, $options['fullWidth'], $options['gradient'], $options['plain']);
+                            break;
+                        case 'outline-primary':
+                            $typeClasses = self::buttonOutlinePrimary($size, $options['fullWidth']);
+                            break;
+                        case 'outline-secondary':
+                            $typeClasses = self::buttonOutlineSecondary($size, $options['fullWidth']);
+                            break;
+                        case 'ghost':
+                            $typeClasses = self::buttonGhost($size, $options['fullWidth']);
+                            break;
+                        case 'ghost-primary':
+                            $typeClasses = self::buttonGhostPrimary($size, $options['fullWidth']);
+                            break;
+                        case 'link':
+                            $typeClasses = self::buttonLink($size);
+                            break;
+                        default:
+                            $typeClasses = self::buttonPrimary($size, $options['fullWidth'], false, $options['plain']);
                     }
-                    
+
                     // Combine base classes with type classes
                     $typeClasses = trim($baseClasses . ' ' . $typeClasses);
                 }
@@ -1642,7 +1649,19 @@ class KIT_Commons
                 if (!empty($options['ariaLabel'])) {
                     $attributes[] = 'aria-label="' . esc_attr($options['ariaLabel']) . '"';
                 }
-                
+                if (isset($options['role']) && $options['role'] !== '') {
+                    $attributes[] = 'role="' . esc_attr($options['role']) . '"';
+                }
+                if (isset($options['ariaExpanded']) && $options['ariaExpanded'] !== '') {
+                    $attributes[] = 'aria-expanded="' . esc_attr($options['ariaExpanded']) . '"';
+                }
+                if (!empty($options['title'])) {
+                    $attributes[] = 'title="' . esc_attr($options['title']) . '"';
+                }
+                if (!empty($options['style'])) {
+                    $attributes[] = 'style="' . esc_attr($options['style']) . '"';
+                }
+
                 // Handle data attributes (any option starting with 'data-')
                 foreach ($options as $key => $value) {
                     if (strpos($key, 'data-') === 0 && !empty($value)) {
@@ -1655,16 +1674,28 @@ class KIT_Commons
                 // Build content
                 $content = '';
 
+                $svgClass = 'w-4 h-4' . (!empty($options['iconClasses']) ? ' ' . esc_attr($options['iconClasses']) : '');
+                $svgAttrs = 'class="' . $svgClass . '" fill="none" stroke="currentColor" viewBox="0 0 24 24"';
+                if (!empty($options['iconId'])) {
+                    $svgAttrs = 'id="' . esc_attr($options['iconId']) . '" ' . $svgAttrs;
+                }
                 // Add icon if specified
                 if ($options['icon'] && $options['iconPosition'] === 'left') {
-                    $content .= '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">' . $options['icon'] . '</svg>';
+                    $content .= '<svg ' . $svgAttrs . '>' . $options['icon'] . '</svg>';
                 }
 
-                $content .= '<span>' . esc_html($text) . '</span>';
+                if (empty($options['iconOnly'])) {
+                    $spanOpen = '<span';
+                    if (!empty($options['contentId'])) {
+                        $spanOpen .= ' id="' . esc_attr($options['contentId']) . '"';
+                    }
+                    $spanOpen .= '>';
+                    $content .= $spanOpen . (!empty($options['rawHtml']) ? $text : esc_html($text)) . '</span>';
+                }
 
                 // Add icon if specified (right position)
                 if ($options['icon'] && $options['iconPosition'] === 'right') {
-                    $content .= '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">' . $options['icon'] . '</svg>';
+                    $content .= '<svg ' . $svgAttrs . '>' . $options['icon'] . '</svg>';
                 }
 
                 // Add loading spinner
@@ -1704,7 +1735,8 @@ class KIT_Commons
                     'size' => '2xl',
                     'color' => 'black',
                     'classes' => '',
-                    'tag' => 'h2'
+                    'tag' => 'h2',
+                    'subheading' => ''
                 ];
 
                 $args = array_merge($defaults, $args);
@@ -1755,14 +1787,22 @@ class KIT_Commons
                         '</svg>';
                 }
 
+                // Build subheading if provided
+                $subheadingHtml = '';
+                if (!empty($args['subheading'])) {
+                    $subheadingHtml = '<p class="text-xs text-gray-500 mt-1">' . esc_html($args['subheading']) . '</p>';
+                }
+
                 // Build the heading
                 $heading = '<' . $tag . ' class="' . esc_attr($allClasses) . '">' .
                     $iconHtml .
                     esc_html($args['words']) .
-                    '</' . $tag . '>';
+                    '</' . $tag . '>'.
+                    $subheadingHtml ;
 
                 return $heading;
             }
+            
             public static function bossText($args = [])
             {
                 $defaults = [
@@ -3044,7 +3084,7 @@ class KIT_Commons
                             // Build view URL
                             $view_url = admin_url('admin.php?page=' . $view_page . '&' . $view_param . '=' . $waybill_id);
 
-                            $waybill_link = $waybill_id > 0 
+                            $waybill_link = $waybill_id > 0
                                 ? '<a href="' . esc_url($view_url) . '" target="_blank" rel="noopener" class="text-blue-600 hover:text-blue-800 hover:underline font-medium">#' . esc_html($waybill_no) . '</a>'
                                 : '#' . esc_html($waybill_no);
 
@@ -3052,14 +3092,14 @@ class KIT_Commons
                             // Prefer 'status' field as it's more comprehensive, fallback to 'approval'
                             $raw_status = $row['status'] ?? $row['approval'] ?? 'pending';
                             $status = strtolower(trim((string)$raw_status));
-                            
+
                             // Normalize numeric and boolean values
                             if ($status === '1' || $status === 'true') {
                                 $status = 'approved';
                             } elseif ($status === '0' || $status === 'false' || $status === '') {
                                 $status = 'pending';
                             }
-                            
+
                             // Comprehensive status badge configuration (supports all status values)
                             $config = [
                                 // Approval statuses
@@ -3079,13 +3119,13 @@ class KIT_Commons
 
                             $settings = $config[$status] ?? ['bg' => '#6b7280', 'icon' => '?', 'text' => ucfirst($status)];
 
-                            // ALWAYS show status badge below waybill number (universal requirement)
-                            $badge = '<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium mt-1" style="background-color: ' . $settings['bg'] . '; color: #fff;">'
-                                    . '<span>' . $settings['icon'] . '</span>'
-                                    . '<span>' . $settings['text'] . '</span>'
-                                    . '</span>';
+                            // ALWAYS show status badge below waybill number (universal requirement); w-fit so badge doesn't expand column width
+                            $badge = '<span class="inline-flex w-fit items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium mt-1 shrink-0" style="background-color: ' . $settings['bg'] . '; color: #fff;">'
+                                . '<span>' . $settings['icon'] . '</span>'
+                                . '<span>' . $settings['text'] . '</span>'
+                                . '</span>';
 
-                            // Optional: creator name (shown above status badge)
+                            // Order: waybill link → customer/company → status badge
                             $extra = [];
                             if (!empty($row['created_by'])) {
                                 $user_data = function_exists('get_userdata') ? get_userdata($row['created_by']) : null;
@@ -3093,10 +3133,26 @@ class KIT_Commons
                                     $extra[] = '<span class="text-[10px] text-gray-400 mt-0.5">' . esc_html($user_data->display_name) . '</span>';
                                 }
                             }
-                            // Status badge is always included
+                            // Customer/company name between waybill_no and status
+                            $customer_name = trim((string)($row['customer_name'] ?? ''));
+                            $customer_surname = trim((string)($row['customer_surname'] ?? $row['surname'] ?? ''));
+                            $company = trim((string)($row['company'] ?? $row['customer_company'] ?? ''));
+                            $customer_display = trim($customer_name . ' ' . $customer_surname);
+                            if ($company !== '') {
+                                $customer_display = $customer_display !== '' ? $customer_display . ' · ' . $company : $company;
+                            }
+                            if ($customer_display !== '') {
+                                $customer_id = $row['customer_id'] ?? 0;
+                                if ($customer_id > 0) {
+                                    $customer_display = '<a href="?page=08600-customers&view_customer=' . (int) $customer_id . '" target="_blank" rel="noopener" class="text-blue-600 hover:text-blue-800 hover:underline text-[11px] font-medium">' . esc_html($customer_display) . '</a>';
+                                } else {
+                                    $customer_display = '<span class="text-[11px] text-gray-700">' . esc_html($customer_display) . '</span>';
+                                }
+                                $extra[] = '<span class="block mt-0.5">' . $customer_display . '</span>';
+                            }
                             $extra[] = $badge;
 
-                            return '<div class="flex flex-col">' . $waybill_link . implode('', $extra) . '</div>';
+                            return '<div class="flex flex-col items-start min-w-0">' . $waybill_link . implode('', $extra) . '</div>';
                         }
                     ],
 
@@ -3172,6 +3228,22 @@ class KIT_Commons
                     ],
 
                     // ========================================
+                    // WAYBILL DESCRIPTION
+                    // ========================================
+                    'description' => [
+                        'label' => 'Description',
+                        'sortable' => true,
+                        'searchable' => true,
+                        'header_class' => 'text-left whitespace-nowrap',
+                        'cell_class' => 'text-left text-sm max-w-[200px] truncate',
+                        'callback' => function ($value, $row, $rowIndex) {
+                            $row = is_object($row) ? (array) $row : $row;
+                            $desc = $row['description'] ?? $value ?? '';
+                            return esc_html($desc ?: '—');
+                        }
+                    ],
+
+                    // ========================================
                     // DESTINATION / CITY
                     // ========================================
                     'destination' => [
@@ -3183,7 +3255,7 @@ class KIT_Commons
                         'callback' => function ($value, $row, $rowIndex) {
                             $row = is_object($row) ? (array) $row : $row;
                             $city_name = $row['city'] ?? '';
-                            
+
                             if (empty($city_name) && !empty($value)) {
                                 if (strpos($value, ',') !== false) {
                                     list($country, $city) = array_map('trim', explode(',', $value, 2));
@@ -3192,17 +3264,17 @@ class KIT_Commons
                                     $city_name = $value;
                                 }
                             }
-                            
+
                             $delivery_reference = $row['delivery_reference'] ?? '';
                             $delivery_id = $row['delivery_id'] ?? 0;
-                            
+
                             $html = '<div class="flex flex-col">';
                             $html .= '<span class="font-medium text-gray-900">' . esc_html($city_name ?: '—') . '</span>';
-                            
+
                             if (!empty($delivery_reference) && $delivery_reference !== 'pending') {
                                 $html .= '<span class="text-[10px] text-gray-500">Ref: ' . esc_html($delivery_reference) . '</span>';
                             }
-                            
+
                             $html .= '</div>';
                             return $html;
                         }
@@ -3237,15 +3309,15 @@ class KIT_Commons
                             $volume = $row['total_volume'] ?? 0;
 
                             $mass_display = ($mass > 0) ? number_format($mass, 1) . ' kg' : '0 kg';
-                            $dimensions_display = ($length > 0 && $width > 0 && $height > 0) 
+                            $dimensions_display = ($length > 0 && $width > 0 && $height > 0)
                                 ? number_format($length, 0) . ' × ' . number_format($width, 0) . ' × ' . number_format($height, 0)
                                 : '0 × 0 × 0';
                             $volume_display = ($volume > 0) ? number_format($volume, 3) . ' m³' : '0 m³';
 
-                            return '<div class="text-xs text-gray-500">' . 
-                                   esc_html($mass_display) . '<br>' . 
-                                   esc_html($dimensions_display) . '<br>' . 
-                                   esc_html($volume_display) . '</div>';
+                            return '<div class="text-xs text-gray-500">' .
+                                esc_html($mass_display) . '<br>' .
+                                esc_html($dimensions_display) . '<br>' .
+                                esc_html($volume_display) . '</div>';
                         }
                     ],
 
@@ -3291,7 +3363,7 @@ class KIT_Commons
                             $settings = $config[$status] ?? ['bg' => '#6b7280', 'text' => ucfirst($status)];
 
                             return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium" style="background-color: ' . $settings['bg'] . '; color: #fff;">'
-                                    . $settings['text'] . '</span>';
+                                . $settings['text'] . '</span>';
                         }
                     ],
 
@@ -3307,7 +3379,7 @@ class KIT_Commons
                         'callback' => function ($value, $row, $rowIndex) {
                             $raw = $value ?? 'pending';
                             $status = strtolower(trim((string)$raw));
-                            
+
                             if ($status === '1' || $status === 'true') {
                                 $status = 'approved';
                             } elseif ($status === '0' || $status === 'false' || $status === '') {
@@ -3323,9 +3395,9 @@ class KIT_Commons
                             $settings = $config[$status] ?? ['bg' => '#6b7280', 'icon' => '?', 'text' => ucfirst($status)];
 
                             return '<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium" style="background-color: ' . $settings['bg'] . '; color: #fff;">'
-                                    . '<span>' . $settings['icon'] . '</span>'
-                                    . '<span>' . $settings['text'] . '</span>'
-                                    . '</span>';
+                                . '<span>' . $settings['icon'] . '</span>'
+                                . '<span>' . $settings['text'] . '</span>'
+                                . '</span>';
                         }
                     ],
 

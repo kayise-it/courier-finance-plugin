@@ -106,10 +106,7 @@ if (isset($_GET['error']) && $_GET['error'] == '1') {
                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500">
                     Cancel
                 </a>
-                <button type="submit" 
-                        class="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-500">
-                    Save Customer
-                </button>
+                <?php echo KIT_Commons::renderButton('Save Customer', 'primary', 'lg', ['type' => 'submit']); ?>
             </div>
         </form>
     </div>

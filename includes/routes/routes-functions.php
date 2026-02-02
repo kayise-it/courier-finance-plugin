@@ -318,13 +318,13 @@ class KIT_Routes
                                 return '
                                     <div class="flex items-center gap-2">
                                         <span class="' . $status_class . '" style="color: ' . $status_color . '; font-weight: 600;">● ' . $status_text . '</span>
-                                        <button type="button" 
-                                                class="route-toggle-btn text-xs px-2 py-1 rounded border hover:bg-gray-50" 
-                                                data-route-id="' . $row['route_id'] . '" 
-                                                data-new-status="' . $new_status . '"
-                                                style="color: ' . $status_color . '; border-color: ' . $status_color . ';">
-                                            ' . $toggle_text . '
-                                        </button>
+                                        ' . KIT_Commons::renderButton($toggle_text, 'ghost', 'sm', [
+                                            'type' => 'button',
+                                            'classes' => 'route-toggle-btn text-xs px-2 py-1 rounded border hover:bg-gray-50',
+                                            'data-route-id' => $row['route_id'],
+                                            'data-new-status' => $new_status,
+                                            'style' => 'color: ' . esc_attr($status_color) . '; border-color: ' . esc_attr($status_color) . ';',
+                                        ]) . '
                                     </div>
                                 ';
                             }
@@ -597,8 +597,8 @@ jQuery(document).ready(function($) {
                             <?php } ?>
 
                             <div style="display: flex; gap: 12px; margin-top: 24px; padding-top: 24px; border-top: 1px solid #e5e7eb;">
-                                <?php echo KIT_Commons::renderButton($is_edit_mode ? 'Update Route' : 'Create Route', 'primary', 'md', ['type' => 'submit', 'gradient' => true]); ?>
-                                <?php echo KIT_Commons::renderButton('Cancel', 'secondary', 'md', ['type' => 'button', 'onclick' => 'window.location.href=\'?page=route-management\'']); ?>
+                                <?php echo KIT_Commons::renderButton($is_edit_mode ? 'Update Route' : 'Create Route', 'primary', 'lg', ['type' => 'submit', 'gradient' => true]); ?>
+                                <?php echo KIT_Commons::renderButton('Cancel', 'secondary', 'lg', ['type' => 'button', 'onclick' => 'window.location.href=\'?page=route-management\'']); ?>
                             </div>
                         </form>
                     </div>

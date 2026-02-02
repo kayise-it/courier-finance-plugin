@@ -19,9 +19,7 @@ $GLOBALS['current_waybill_index'] = $waybill_index;
     <div class="flex items-center justify-between mb-6">
         <h2 class="text-2xl font-bold text-gray-800">Waybill #<?php echo esc_html($waybill_index + 1); ?> - Miscellaneous Items</h2>
         <?php if (!$is_first): ?>
-            <button type="button" class="remove-waybill-misc-section bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
-                Remove Waybill
-            </button>
+            <?php echo KIT_Commons::renderButton('Remove Waybill', 'danger', 'lg', ['type' => 'button', 'classes' => 'remove-waybill-misc-section bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors']); ?>
         <?php endif; ?>
     </div>
 

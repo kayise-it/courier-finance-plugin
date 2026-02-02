@@ -995,7 +995,7 @@ class KIT_Deliveries
             }
 
             echo KIT_Commons::showingHeader([
-                'title'   => 'Delivery De32tails',
+                'title'   => 'Delivery Details',
                 'icon'    => KIT_Commons::icon('receipt'),
                 'content' => KIT_Modal::render(
                     'create-waybill-modal',
@@ -1626,21 +1626,25 @@ class KIT_Deliveries
                             <hr>
                             <!-- Button to generate PDF of this delivery and its waybills, showing the waybills and the city names of the waybills -->
                             <div class="flex justify-between">
-                                <div class="flex-1">
+                                <div class="">
                                     <?php
                                     // Render Edit Delivery Modal
                                     $edit_delivery_form = self::deliveryForm($delivery_id, true);
-                                    echo KIT_Modal::render(
-                                        'edit-delivery-truck-modal',
-                                        'Edit Delivery Truck',
-                                        $edit_delivery_form,
-                                        '3xl',
-                                        true,
-                                        'Edit'
+                                    echo KIT_Commons::renderButton(
+                                        'EDIT',
+                                        'primary',
+                                        'lg',
+                                        [
+                                            'onclick'     => sprintf("editDeliveryTruck('%s')", esc_js($delivery_id)),
+                                            'classes'     => 'gap-2',
+                                            'icon'        => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />',
+                                            'iconPosition' => 'left',
+                                        ]
                                     );
+                                    
                                     ?>
                                 </div>
-                                <div class="flex-1 flex  justify-end">
+                                <div class="">
                                     <?php
                                     $delivery_pdf_url = add_query_arg(
                                         [
@@ -1652,7 +1656,7 @@ class KIT_Deliveries
                                     ?>
                                     <?php
                                     echo KIT_Commons::renderButton(
-                                        ' PDF',
+                                        'PDF',
                                         'primary',
                                         'lg',
                                         [
@@ -1714,42 +1718,43 @@ class KIT_Deliveries
 
                         <?php
                         // Use standardized columns - waybill_no includes status badge below it (universal)
+                        // Name & Surname column removed; Mass & Dims and Volume (m³) combined in one cell
                         $columns = KIT_Commons::getColumns([
                             'waybill_no',
-                            'customer_name' => [
-                                'label'        => 'Name & Surname',
-                                'header_class' => 'whitespace-nowrap',
-                            ],
+                            'description',
                         ]);
-                        
-                        // Add custom columns that aren't in the standard definitions
+                        // Description: biggest column for space
+                        $columns['description']['header_class'] = ($columns['description']['header_class'] ?? '') . ' whitespace-nowrap text-left min-w-[180px]';
+                        $columns['description']['cell_class']   = ($columns['description']['cell_class'] ?? '') . ' text-left text-sm min-w-[180px] max-w-none';
+
+                        // Mass & Dims and Volume (m³) combined in one cell
                         $columns['total_mass_kg'] = array(
-                            'label'        => 'Mass & Dims',
+                            'label'        => 'Mass, Dims & Vol (m³)',
                             'header_class' => 'whitespace-nowrap',
                             'callback'     => function ($value, $row, $rowIndex) {
-                                // Show normal dimensions for waybills
                                 $mass = $value ?? 0;
                                 $length = isset($row['item_length']) ? floatval($row['item_length']) : 0;
                                 $width = isset($row['item_width']) ? floatval($row['item_width']) : 0;
                                 $height = isset($row['item_height']) ? floatval($row['item_height']) : 0;
                                 $volume = isset($row['total_volume']) ? floatval($row['total_volume']) : 0;
-                                
+
                                 $mass_display = ($mass > 0) ? number_format($mass, 1) . ' kg' : '0 kg';
-                                $dimensions_display = ($length > 0 && $width > 0 && $height > 0) 
+                                $dimensions_display = ($length > 0 && $width > 0 && $height > 0)
                                     ? number_format($length, 0) . ' x ' . number_format($width, 0) . ' x ' . number_format($height, 0)
                                     : '0 x 0 x 0';
                                 $volume_display = ($volume > 0) ? number_format($volume, 3) . ' m³' : '0 m³';
-                                
-                                return '<div class="text-xs text-gray-500">' . 
-                                       esc_html($mass_display) . ' <br> ' . 
-                                       esc_html($dimensions_display) . ' <br> ' . 
+
+                                return '<div class="text-xs text-gray-500">' .
+                                       esc_html($mass_display) . ' <br> ' .
+                                       esc_html($dimensions_display) . ' <br> ' .
                                        esc_html($volume_display) . '</div>';
                             },
                         );
                         $columns['destination_city'] = array(
                             'label'    => 'Destination City',
+                            'header_class' => 'whitespace-nowrap text-left',
+                            'cell_class'   => 'whitespace-nowrap text-left',
                             'callback' => function ($value, $row, $rowIndex) {
-                                // Use customer_city if available, otherwise use city_id
                                 $city_name = isset($row['customer_city']) ? trim($row['customer_city']) : '';
                                 if (empty($city_name)) {
                                     $city_id = $row['city_id'] ?? 0;
@@ -1760,23 +1765,17 @@ class KIT_Deliveries
                                 return !empty($city_name) ? esc_html($city_name) : '<span class="text-gray-400">N/A</span>';
                             },
                         );
-                        $columns['total_volume'] = array(
-                            'label'    => 'Volume (m³)',
-                            'callback' => function ($value, $row, $rowIndex) {
-                                $volume = $value ?? 0;
-                                return number_format($volume, 1) . ' m³';
-                            },
-                        );
 
                         // Conditionally add total column based on user permissions
                         if (class_exists('KIT_User_Roles') && KIT_User_Roles::can_see_prices()) {
                             $columns['total'] = array(
-                                'label'    => 'Total',
-                                'callback' => function ($value, $row, $rowIndex) {
+                                'label'        => 'Total',
+                                'header_class' => 'whitespace-nowrap text-right',
+                                'cell_class'   => 'whitespace-nowrap text-right',
+                                'callback'     => function ($value, $row, $rowIndex) {
                                     $total = $value ?? 0;
-                                    // Handle non-numeric values (like '***')
                                     if (!is_numeric($total)) {
-                                        return $total; // Return as-is if not numeric
+                                        return $total;
                                     }
                                     return KIT_Commons::currency() . ' ' . number_format(floatval($total), 2);
                                 },
@@ -1785,15 +1784,17 @@ class KIT_Deliveries
                         // Debug: Check how many waybills we have
                         $waybill_count = is_array($waybillsandItems) ? count($waybillsandItems) : 0;
                         ?>
-                        <div class="overflow-x-auto -mx-3 md:mx-0">
+                        <div class="">
                             <?php
                             //customer dropdown trigger truck waybills
                             $dropdowns = true;
+
                             echo KIT_Unified_Table::infinite($waybillsandItems, $columns, [
                                 'title'                 => 'Waybills on Truck',
                                 'subtitle'              => 'Showing: ' . $waybill_count . ' waybills',
                                 'empty_message'         => 'No waybills assigned',
                                 'class'                 => 'min-w-full divide-y divide-gray-200',
+                                'table_class'           => 'w-full border-collapse',
                                 'groupby'               => 'city',
                                 'group_heading_prefix'  => '',
                                 'preserve_order'        => true,
@@ -2085,11 +2086,15 @@ class KIT_Deliveries
                                 value="<?php echo $delivery ? esc_attr($delivery->delivery_reference) : KIT_Deliveries::generateDeliveryRef() ?>"
                                 class="w-full px-3 py-2.5 border border-blue-200 rounded-lg shadow-sm bg-white text-gray-900 font-mono text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                             <div class="absolute inset-y-0 right-0 flex items-center pr-3">
-                                <button type="button" onclick="copyToClipboard('delivery_reference')" class="text-blue-500 hover:text-blue-700 transition-colors" title="Copy reference">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
-                                    </svg>
-                                </button>
+                                <?php echo KIT_Commons::renderButton('', 'link', 'sm', [
+                                    'type' => 'button',
+                                    'onclick' => "copyToClipboard('delivery_reference')",
+                                    'classes' => 'text-blue-500 hover:text-blue-700 transition-colors',
+                                    'title' => 'Copy reference',
+                                    'ariaLabel' => 'Copy reference',
+                                    'iconOnly' => true,
+                                    'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>',
+                                ]); ?>
                             </div>
                         </div>
                     </div>
@@ -2256,28 +2261,11 @@ class KIT_Deliveries
 
                 <!-- Navigation Buttons -->
                 <div class="flex flex-col sm:flex-row gap-3 pt-6 border-t border-gray-200">
-                    <button type="button" id="prev-step-btn" class="hidden flex-1 px-6 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors flex items-center justify-center" style="display: none;">
-                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
-                        </svg>
-                        Previous
-                    </button>
-                    <button type="button" id="next-step-btn" class="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center shadow-sm" style="display: flex;">
-                        Next
-                        <svg class="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                        </svg>
-                    </button>
-                    <button type="submit" id="submit-delivery-btn" class="hidden flex-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md flex items-center justify-center" style="display: none;">
-                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                        </svg>
-                        <?php echo $delivery ? 'Update Delivery' : 'Create Delivery'; ?>
-                    </button>
+                    <?php echo KIT_Commons::renderButton('Previous', 'secondary', 'lg', ['type' => 'button', 'id' => 'prev-step-btn', 'classes' => 'hidden flex-1 px-6 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors flex items-center justify-center', 'style' => 'display: none;', 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>', 'iconPosition' => 'left']); ?>
+                    <?php echo KIT_Commons::renderButton('Next', 'primary', 'lg', ['type' => 'button', 'id' => 'next-step-btn', 'classes' => 'flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center shadow-sm', 'style' => 'display: flex;', 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>', 'iconPosition' => 'right']); ?>
+                    <?php echo KIT_Commons::renderButton($delivery ? 'Update Delivery' : 'Create Delivery', 'primary', 'lg', ['type' => 'submit', 'id' => 'submit-delivery-btn', 'classes' => 'hidden flex-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md flex items-center justify-center', 'style' => 'display: none;', 'gradient' => true, 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>', 'iconPosition' => 'left']); ?>
                     <?php if ($is_modal): ?>
-                        <button type="button" class="flex-1 px-6 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors modal-close flex items-center justify-center">
-                            Cancel
-                        </button>
+                        <?php echo KIT_Commons::renderButton('Cancel', 'secondary', 'lg', ['type' => 'button', 'classes' => 'flex-1 px-6 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors modal-close flex items-center justify-center']); ?>
                     <?php endif; ?>
                 </div>
             </form>

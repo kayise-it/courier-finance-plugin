@@ -252,8 +252,7 @@ if (!$totals_match && class_exists('KIT_Waybills') && $waybill_no > 0) {
                         $canAccessPDF = isset($pdfVerifier['soWhat']) && $pdfVerifier['soWhat'] && KIT_User_Roles::can_see_prices();
 
                         if ($canAccessPDF) { ?>
-                            <div class="flex flex-col">
-                                <span class="opacity-0 text-gray-600 font-bold">Invoice Status:</span>
+                            <div class="waybill-action-btn-wrap inline-flex shrink-0">
                                 <?= KIT_Commons::renderButton(
                                     'PDF',
                                     'primary',
@@ -789,20 +788,36 @@ if (!$totals_match && class_exists('KIT_Waybills') && $waybill_no > 0) {
             </div>
         </div>
     <?php endif; ?>
-    <div class="flex justify-end space-x-3 border-t pt-4">
+    <div class="flex justify-end gap-3 border-t pt-4">
         <?php if (KIT_User_Roles::can_edit_approved_waybill($waybill['approval'] ?? 'pending')): ?>
-            <a href="?page=08600-Waybill-view&waybill_id=<?= $waybill['id'] ?>&edit=true"
-                class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                Edit Waybill
-            </a>
+            <div class="waybill-action-btn-wrap inline-flex shrink-0">
+                <?= KIT_Commons::renderButton(
+                    'Edit',
+                    'primary',
+                    'md',
+                    [
+                        'href' => '?page=08600-Waybill-view&waybill_id=' . (int) $waybill['id'] . '&edit=true',
+                        'gradient' => true,
+                        'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>',
+                        'iconPosition' => 'left',
+                    ]
+                ); ?>
+            </div>
         <?php elseif (($waybill['approval'] ?? 'pending') === 'approved' || ($waybill['approval'] ?? 'pending') === 1): ?>
-            <?= KIT_Commons::renderButton([
-                'text' => 'Edit Waybill (Locked)',
-                'type' => 'button',
-                'class' => 'px-4 py-2 border border-gray-300 rounded-md text-gray-500 bg-gray-100 cursor-not-allowed',
-                'disabled' => true,
-                'title' => 'Waybill is approved and locked for editing. Only administrators can edit approved waybills.'
-            ]) ?>
+            <div class="waybill-action-btn-wrap inline-flex shrink-0">
+                <?= KIT_Commons::renderButton(
+                    'Edit Waybill (Locked)',
+                    'secondary',
+                    'md',
+                    [
+                        'type' => 'button',
+                        'disabled' => true,
+                        'title' => 'Waybill is approved and locked for editing. Only administrators can edit approved waybills.',
+                        'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a2 2 0 00-2-2H4a2 2 0 00-2 2v4h8z"></path>',
+                        'iconPosition' => 'left',
+                    ]
+                ); ?>
+            </div>
         <?php endif; ?>
 
     </div>

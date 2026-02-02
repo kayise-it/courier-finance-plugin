@@ -168,10 +168,7 @@ if (!empty($waybill['truck_driver']) && is_numeric($waybill['truck_driver'])) {
                         class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
                         Cancel Editing
                     </a>
-                    <button type="submit"
-                        class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        Save Changes
-                    </button>
+                    <?php echo KIT_Commons::renderButton('Save Changes', 'primary', 'lg', ['type' => 'submit']); ?>
                 </div>
             </div>
 
@@ -332,12 +329,7 @@ if (!empty($waybill['truck_driver']) && is_numeric($waybill['truck_driver'])) {
                         </div>
                     </div>
                 </div>
-                <button type="button" id="toggle-customer-form-edit" class="px-4 py-2 text-sm mt-6 font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-2">
-                    <span id="toggle-customer-form-text-edit">Edit Customer</span>
-                    <svg id="toggle-customer-form-icon-edit" class="w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                    </svg>
-                </button>
+                <?php echo KIT_Commons::renderButton('Edit Customer', 'ghost', 'lg', ['type' => 'button', 'id' => 'toggle-customer-form-edit', 'classes' => 'px-4 py-2 text-sm mt-6 font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-2', 'contentId' => 'toggle-customer-form-text-edit', 'iconId' => 'toggle-customer-form-icon-edit', 'iconClasses' => 'transition-transform', 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />', 'iconPosition' => 'right']); ?>
 
                 <!-- Customer Form (Hidden by default) -->
                 <div id="customer-form-edit" class="hidden">
@@ -359,12 +351,8 @@ if (!empty($waybill['truck_driver']) && is_numeric($waybill['truck_driver'])) {
                             </div>
                         </div>
                         <div class="mt-2 flex flex-wrap gap-2">
-                            <button type="button" id="add-new-customer-btn-edit" class="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 transition">
-                                + Add New Customer
-                            </button>
-                            <button type="button" id="recent-customers-btn-edit" class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition">
-                                Recent Customers
-                            </button>
+                            <?php echo KIT_Commons::renderButton('+ Add New Customer', 'ghost-primary', 'sm', ['type' => 'button', 'id' => 'add-new-customer-btn-edit', 'classes' => 'px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 transition']); ?>
+                            <?php echo KIT_Commons::renderButton('Recent Customers', 'ghost', 'sm', ['type' => 'button', 'id' => 'recent-customers-btn-edit', 'classes' => 'px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition']); ?>
                         </div>
                     </div>
 
@@ -659,10 +647,7 @@ if (!empty($waybill['truck_driver']) && is_numeric($waybill['truck_driver'])) {
             echo '</div>';
             echo '</div>';
             ?>
-            <button type="submit"
-                class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                Save Changes
-            </button>
+            <?php echo KIT_Commons::renderButton('Save Changes', 'primary', 'lg', ['type' => 'submit']); ?>
         </div>
     </form>
 </div>

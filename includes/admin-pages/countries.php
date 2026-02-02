@@ -239,12 +239,12 @@ $inactive_countries = $total_countries - $active_countries;
                         return '
                             <div class="flex items-center gap-2">
                                 <span class="' . $status_class . ' font-semibold ' . $color_class . '">● ' . $status_text . '</span>
-                                <button type="button" 
-                                        class="quick-toggle-btn text-xs px-2 py-1 rounded border hover:bg-gray-50 ' . $color_class . '" 
-                                        data-country-id="' . $row['id'] . '" 
-                                        data-new-status="' . $new_status . '">
-                                    ' . $toggle_text . '
-                                </button>
+                                ' . KIT_Commons::renderButton($toggle_text, 'ghost', 'sm', [
+                                    'type' => 'button',
+                                    'classes' => 'quick-toggle-btn text-xs px-2 py-1 rounded border hover:bg-gray-50 ' . $color_class,
+                                    'data-country-id' => $row['id'],
+                                    'data-new-status' => $new_status,
+                                ]) . '
                             </div>
                         ';
                     }
@@ -351,7 +351,7 @@ $inactive_countries = $total_countries - $active_countries;
                         </table>
                         
                         <p class="submit">
-                            <button type="submit" name="edit_country" class="button button-primary">Update Country</button>
+                            <?php echo KIT_Commons::renderButton('Update Country', 'primary', 'lg', ['type' => 'submit', 'name' => 'edit_country', 'classes' => 'button button-primary']); ?>
                             <a href="?page=08600-countries" class="button">Cancel</a>
                         </p>
                     </form>
@@ -406,7 +406,7 @@ $inactive_countries = $total_countries - $active_countries;
                         </table>
                         
                         <p class="submit">
-                            <button type="submit" name="add_country" class="button button-primary">Add Country</button>
+                            <?php echo KIT_Commons::renderButton('Add Country', 'primary', 'lg', ['type' => 'submit', 'name' => 'add_country', 'classes' => 'button button-primary']); ?>
                             <a href="?page=08600-countries" class="button">Cancel</a>
                         </p>
                     </form>

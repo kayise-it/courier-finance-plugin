@@ -24,12 +24,16 @@ if (version_compare(PHP_VERSION, '8.1.0', '>=')) {
         return false; // Let other errors through normally
     });
 
-    // Start output buffering to catch any warnings that slip through
-    if (!headers_sent()) {
+    // Start output buffering to catch any warnings (skip REST API - would corrupt JSON)
+    $is_rest_request = isset($_SERVER['REQUEST_URI']) && strpos($_SERVER['REQUEST_URI'], 'wp-json') !== false;
+    if (!headers_sent() && !$is_rest_request) {
         ob_start(function($buffer) {
+            if ($buffer === null || $buffer === '') {
+                return $buffer;
+            }
             // Remove deprecation warnings from the output buffer (safety net)
-            $buffer = preg_replace('/Deprecated:\s.*?(?:\n|<br\s*\/?>)/is', '', $buffer);
-            return $buffer;
+            $cleaned = preg_replace('/Deprecated:\s.*?(?:\n|<br\s*\/?>)/is', '', $buffer);
+            return $cleaned !== null ? $cleaned : $buffer;
         });
     }
 }
@@ -60,10 +64,39 @@ function customStyling()
     $page = isset($_GET['page']) ? sanitize_text_field($_GET['page']) : '';
     $is_routes_page = in_array($page, ['route-management', 'route-create'], true);
     $is_customer_page = in_array($page, ['edit-customer', '08600-add-customer'], true);
-    if (($screen && $screen->id && strpos($screen->id, '08600') !== false) || $is_routes_page || $is_customer_page) {
+    $is_dashboard = ($page === '08600-dashboard');
+    $is_plugin_page = ($screen && $screen->id && strpos($screen->id, '08600') !== false) || $is_routes_page || $is_customer_page || $is_dashboard;
+    if ($is_plugin_page) {
         wp_enqueue_style('autsincss', plugin_dir_url(__FILE__) . 'assets/css/austin.css', array(), '1.0');
         wp_enqueue_style('kit-tailwindcss', plugin_dir_url(__FILE__) . 'assets/css/frontend.css', array(), '1.0');
-        
+        if ($is_dashboard) {
+            wp_enqueue_style('kit-dashboard-css', plugin_dir_url(__FILE__) . 'assets/css/dashboard.css', array('kit-tailwindcss'), '1.0');
+            wp_enqueue_style('leaflet-css', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', array(), '1.9.4');
+            wp_enqueue_script('leaflet-js', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', array(), '1.9.4', true);
+            wp_enqueue_script('kit-dashboard-map', plugin_dir_url(__FILE__) . 'assets/js/dashboard-map.js', array('jquery', 'leaflet-js'), '1.0', true);
+            global $wpdb;
+            $default_map_address = 'Unit 1, Kya North Park, 28 Bernie St, Kya Sands, Randburg, 2188';
+            $map_center_address = '';
+            if ($wpdb && isset($wpdb->prefix)) {
+                $table = $wpdb->prefix . 'kit_company_details';
+                if ($wpdb->get_var("SHOW TABLES LIKE '" . esc_sql($table) . "'") === $table) {
+                    $map_center_address = (string) $wpdb->get_var('SELECT company_address FROM ' . $wpdb->prefix . 'kit_company_details LIMIT 1');
+                }
+            }
+            $map_center_address = trim($map_center_address) !== '' ? trim($map_center_address) : $default_map_address;
+            /* Fallback coords for Kya Sands, Randburg when Nominatim fails */
+            $map_fallback_lat = -26.0789;
+            $map_fallback_lng = 28.0123;
+            wp_localize_script('kit-dashboard-map', 'kitDashboardMap', array(
+                'ajaxurl'              => admin_url('admin-ajax.php'),
+                'nonce'                => wp_create_nonce('kit_dashboard_map'),
+                'map_center_address'   => $map_center_address,
+                'map_geocode_query'    => 'Kya Sands, Randburg, South Africa',
+                'map_fallback_lat'     => $map_fallback_lat,
+                'map_fallback_lng'     => $map_fallback_lng,
+                'map_logo_url'         => plugin_dir_url(__FILE__) . 'img/logo.png',
+            ));
+        }
         // Add CSS class wrapper to admin body for scoping
         add_filter('admin_body_class', function($classes) {
             return $classes . ' courier-finance-plugin';
@@ -97,8 +130,10 @@ require_once plugin_dir_path(__FILE__) . 'includes/customers/customers-functions
 require_once plugin_dir_path(__FILE__) . 'includes/deliveries/deliveries-functions.php';
 require_once plugin_dir_path(__FILE__) . 'includes/waybill/waybill-functions.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin-pages.php';
+require_once plugin_dir_path(__FILE__) . 'includes/dashboard/dashboard-functions.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin-menu.php';
 require_once plugin_dir_path(__FILE__) . 'includes/waybillmultiform.php';
+require_once plugin_dir_path(__FILE__) . 'includes/frontend/employee-portal.php';
 
 // Initialize classes
 add_action('init', function() {
@@ -116,6 +151,9 @@ add_action('init', function() {
     }
     if (class_exists('KIT_Deliveries')) {
         KIT_Deliveries::init();
+    }
+    if (class_exists('KIT_Dashboard')) {
+        KIT_Dashboard::init();
     }
     if (class_exists('Plugin')) {
         Plugin::init();
@@ -137,11 +175,56 @@ register_activation_hook(__FILE__, function() {
         if (class_exists('KIT_Deliveries')) {
             KIT_Deliveries::schedule_daily_delivery_status_update();
         }
+
+        // Create employee portal pages (login + dashboard)
+        kit_create_employee_portal_pages();
     } catch (Exception $e) {
         // Log error but don't break activation
         error_log('Plugin activation error: ' . $e->getMessage());
     }
 });
+
+/**
+ * Create employee login and dashboard pages if they don't exist.
+ * Runs on activation and on init (one-time migration for existing installs).
+ */
+function kit_create_employee_portal_pages() {
+    $option_key = 'kit_employee_portal_pages_created';
+    if (get_option($option_key) === 'yes') {
+        return;
+    }
+
+    $login_page = get_page_by_path('employee-login', OBJECT, 'page');
+    if (!$login_page) {
+        wp_insert_post([
+            'post_title'   => 'Employee Login',
+            'post_name'    => 'employee-login',
+            'post_content' => '[kit_employee_login]',
+            'post_status'  => 'publish',
+            'post_type'    => 'page',
+            'post_author'  => 1,
+        ]);
+    }
+
+    $dashboard_page = get_page_by_path('employee-dashboard', OBJECT, 'page');
+    if (!$dashboard_page) {
+        wp_insert_post([
+            'post_title'   => 'Employee Dashboard',
+            'post_name'    => 'employee-dashboard',
+            'post_content' => '[kit_employee_dashboard]',
+            'post_status'  => 'publish',
+            'post_type'    => 'page',
+            'post_author'  => 1,
+        ]);
+    }
+
+    update_option($option_key, 'yes');
+}
+add_action('init', function() {
+    if (get_option('kit_employee_portal_pages_created') !== 'yes') {
+        kit_create_employee_portal_pages();
+    }
+}, 99);
 
 // CRITICAL: Register deactivation hook BEFORE any WordPress functions are called
 // This ensures WordPress can find and execute the hook even if plugin fails to load

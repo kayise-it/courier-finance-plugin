@@ -131,6 +131,7 @@ function plugin_Waybill_list_page()
     $orderby_map = [
         'waybill_no' => 'w.waybill_no',
         'customer_name' => 'c.name',
+        'description' => 'w.description',
         'created_by' => 'u.display_name',
         'destination' => 'dest_city.city_name',
         'approval' => 'w.approval',
@@ -205,6 +206,7 @@ function plugin_Waybill_list_page()
             'id' => $bulk_id, // Required for bulk management checkboxes
             'waybill_id' => $view_id, // For view links
             'waybill_no' => $row->waybill_no ?? 'N/A',
+            'description' => $row->description ?? '',
             'customer_name' => $customer_name,
             // Expose customer_id so table callbacks (e.g. customer_name column) can link to the customer detail page
             'customer_id' => isset($row->customer_id) ? intval($row->customer_id) : 0,
@@ -351,7 +353,6 @@ function plugin_Waybill_list_page()
                 // Waybill # automatically includes status badge below
                 $columns = KIT_Commons::getColumns([
                     'waybill_no',
-                    'customer_name' => ['label' => 'Name & Surname'],
                     'mass_and_dimensions',
                     'destination' => [
                         'label' => 'City',
@@ -386,6 +387,24 @@ function plugin_Waybill_list_page()
                     ],
                     'total' => ['cell_class' => 'text-right text-xs whitespace-nowrap']
                 ]);
+                // Insert Description column after Waybill # (so it appears as second data column)
+                $description_col = [
+                    'label' => 'Description',
+                    'sortable' => true,
+                    'searchable' => true,
+                    'header_class' => 'text-left whitespace-nowrap min-w-[180px]',
+                    'cell_class' => 'text-left text-sm min-w-[180px] max-w-[280px] truncate',
+                    'callback' => function ($value, $row, $rowIndex) {
+                        $row = is_object($row) ? (array) $row : $row;
+                        $desc = $row['description'] ?? $value ?? '';
+                        return esc_html($desc ?: '—');
+                    }
+                ];
+                $columns = array_merge(
+                    array_slice($columns, 0, 1, true),
+                    ['description' => $description_col],
+                    array_slice($columns, 1, null, true)
+                );
                
                 // Render table (infinite scroll) and pass actions so they appear in the dedicated Actions column
                 if (class_exists('KIT_Unified_Table')) {

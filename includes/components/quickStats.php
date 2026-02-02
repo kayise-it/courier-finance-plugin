@@ -103,6 +103,9 @@ class KIT_QuickStats {
             ],
             'gray' => [
                 'icon' => 'bg-gray-100 text-gray-600'
+            ],
+            'orange' => [
+                'icon' => 'bg-orange-100 text-orange-600'
             ]
         ];
         

@@ -138,18 +138,8 @@ if (isset($customers_data) && is_array($customers_data)) {
             
             <!-- Quick Action Buttons -->
             <div class="mt-3 flex flex-wrap gap-2">
-                <button type="button" id="add-new-customer-btn" class="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors">
-                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                    </svg>
-                    Add New Customer
-                </button>
-                <button type="button" id="recent-customers-btn" class="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors">
-                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Recent Customers
-                </button>
+                <?php echo KIT_Commons::renderButton('Add New Customer', 'primary', 'lg', ['type' => 'button', 'id' => 'add-new-customer-btn', 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />', 'iconPosition' => 'left']); ?>
+                <?php echo KIT_Commons::renderButton('Recent Customers', 'secondary', 'lg', ['type' => 'button', 'id' => 'recent-customers-btn', 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />', 'iconPosition' => 'left']); ?>
             </div>
         </div>
         

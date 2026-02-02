@@ -14,13 +14,13 @@ if (!defined('ABSPATH')) {
             <h3 class="text-lg font-semibold text-gray-900 mb-4">User Manual</h3>
             <ul class="list-none p-0 m-0 space-y-2.5">
                 <li>
-                    <?php echo KIT_Commons::renderButton('Getting Started Guide', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
+                    <?php echo KIT_Commons::renderButton('Getting Started Guide', 'secondary', 'lg', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
                 <li>
-                    <?php echo KIT_Commons::renderButton('Complete User Manual', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
+                    <?php echo KIT_Commons::renderButton('Complete User Manual', 'secondary', 'lg', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
                 <li>
-                    <?php echo KIT_Commons::renderButton('Feature Documentation', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
+                    <?php echo KIT_Commons::renderButton('Feature Documentation', 'secondary', 'lg', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
             </ul>
         </div>
@@ -30,13 +30,13 @@ if (!defined('ABSPATH')) {
             <h3 class="text-lg font-semibold text-gray-900 mb-4">Frequently Asked Questions</h3>
             <ul class="list-none p-0 m-0 space-y-2.5">
                 <li>
-                    <?php echo KIT_Commons::renderButton('General Questions', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
+                    <?php echo KIT_Commons::renderButton('General Questions', 'secondary', 'lg', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
                 <li>
-                    <?php echo KIT_Commons::renderButton('Technical Issues', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
+                    <?php echo KIT_Commons::renderButton('Technical Issues', 'secondary', 'lg', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
                 <li>
-                    <?php echo KIT_Commons::renderButton('Billing Questions', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
+                    <?php echo KIT_Commons::renderButton('Billing Questions', 'secondary', 'lg', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
             </ul>
         </div>
@@ -46,13 +46,13 @@ if (!defined('ABSPATH')) {
             <h3 class="text-lg font-semibold text-gray-900 mb-4">Video Tutorials</h3>
             <ul class="list-none p-0 m-0 space-y-2.5">
                 <li>
-                    <?php echo KIT_Commons::renderButton('Basic Tutorials', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
+                    <?php echo KIT_Commons::renderButton('Basic Tutorials', 'secondary', 'lg', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
                 <li>
-                    <?php echo KIT_Commons::renderButton('Advanced Features', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
+                    <?php echo KIT_Commons::renderButton('Advanced Features', 'secondary', 'lg', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
                 <li>
-                    <?php echo KIT_Commons::renderButton('Tips & Tricks', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
+                    <?php echo KIT_Commons::renderButton('Tips & Tricks', 'secondary', 'lg', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
             </ul>
         </div>
@@ -62,13 +62,13 @@ if (!defined('ABSPATH')) {
             <h3 class="text-lg font-semibold text-gray-900 mb-4">Contact Support</h3>
             <ul class="list-none p-0 m-0 space-y-2.5">
                 <li>
-                    <?php echo KIT_Commons::renderButton('Email Support', 'secondary', 'md', ['href' => 'mailto:info@kayiseit.co.za', 'fullWidth' => true]); ?>
+                    <?php echo KIT_Commons::renderButton('Email Support', 'secondary', 'lg', ['href' => 'mailto:info@kayiseit.co.za', 'fullWidth' => true]); ?>
                 </li>
                 <li>
-                    <?php echo KIT_Commons::renderButton('Phone Support', 'secondary', 'md', ['href' => 'tel:0877022625', 'fullWidth' => true]); ?>
+                    <?php echo KIT_Commons::renderButton('Phone Support', 'secondary', 'lg', ['href' => 'tel:0877022625', 'fullWidth' => true]); ?>
                 </li>
                 <li>
-                    <?php echo KIT_Commons::renderButton('Live Chat', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
+                    <?php echo KIT_Commons::renderButton('Live Chat', 'secondary', 'lg', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
             </ul>
         </div>
@@ -78,13 +78,13 @@ if (!defined('ABSPATH')) {
             <h3 class="text-lg font-semibold text-gray-900 mb-4">System Status</h3>
             <ul class="list-none p-0 m-0 space-y-2.5">
                 <li>
-                    <?php echo KIT_Commons::renderButton('System Health', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
+                    <?php echo KIT_Commons::renderButton('System Health', 'secondary', 'lg', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
                 <li>
-                    <?php echo KIT_Commons::renderButton('Maintenance Schedule', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
+                    <?php echo KIT_Commons::renderButton('Maintenance Schedule', 'secondary', 'lg', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
                 <li>
-                    <?php echo KIT_Commons::renderButton('Update History', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
+                    <?php echo KIT_Commons::renderButton('Update History', 'secondary', 'lg', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
             </ul>
         </div>
@@ -94,13 +94,13 @@ if (!defined('ABSPATH')) {
             <h3 class="text-lg font-semibold text-gray-900 mb-4">Community</h3>
             <ul class="list-none p-0 m-0 space-y-2.5">
                 <li>
-                    <?php echo KIT_Commons::renderButton('User Forum', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
+                    <?php echo KIT_Commons::renderButton('User Forum', 'secondary', 'lg', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
                 <li>
-                    <?php echo KIT_Commons::renderButton('Feature Requests', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
+                    <?php echo KIT_Commons::renderButton('Feature Requests', 'secondary', 'lg', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
                 <li>
-                    <?php echo KIT_Commons::renderButton('Feedback', 'secondary', 'md', ['href' => '#', 'fullWidth' => true]); ?>
+                    <?php echo KIT_Commons::renderButton('Feedback', 'secondary', 'lg', ['href' => '#', 'fullWidth' => true]); ?>
                 </li>
             </ul>
         </div>
