@@ -18,6 +18,9 @@ function initItemsPerPage() {
 // Country change handler
 // Global function for handling country changes (using working implementation from waybill)
 function handleCountryChange(countryId, fieldName) {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/eac88981-a808-4140-9871-c5bc5fb2b15c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'waybill-pagination.js:handleCountryChange:entry',message:'handleCountryChange called',data:{countryId:countryId,fieldName:fieldName,hasMyPluginAjax:!(typeof window==='undefined')&&!!(window.myPluginAjax),hasCountryCities:!(typeof window==='undefined')&&!!(window.myPluginAjax&&window.myPluginAjax.countryCities),countryCitiesKeys:(typeof window!=='undefined'&&window.myPluginAjax&&window.myPluginAjax.countryCities)?Object.keys(window.myPluginAjax.countryCities).length:0},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(function(){});
+    // #endregion
     if (!countryId) return;
 
     var primaryId = '';
@@ -37,11 +40,17 @@ function handleCountryChange(countryId, fieldName) {
     }
 
     var citySelect = document.getElementById(primaryId) || document.getElementById(fallbackId);
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/eac88981-a808-4140-9871-c5bc5fb2b15c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'waybill-pagination.js:handleCountryChange:citySelect',message:'citySelect lookup',data:{primaryId:primaryId,fallbackId:fallbackId,citySelectFound:!!citySelect},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(function(){});
+    // #endregion
     if (!citySelect) return;
 
     // Try preloaded map first for instant update
-    var citiesMap = (window.myPluginAjax && myPluginAjax.countryCities) || {};
+    var citiesMap = (window.myPluginAjax && window.myPluginAjax.countryCities) || {};
     var cities = citiesMap && citiesMap[String(countryId)] ? citiesMap[String(countryId)] : [];
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/eac88981-a808-4140-9871-c5bc5fb2b15c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'waybill-pagination.js:handleCountryChange:cities',message:'cities for country',data:{countryId:countryId,citiesLength:Array.isArray(cities)?cities.length:0,hasMap:!!citiesMap,mapKeys:typeof citiesMap==='object'?Object.keys(citiesMap).length:0},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(function(){});
+    // #endregion
 
     if (Array.isArray(cities) && cities.length) {
         citySelect.innerHTML = '<option value="">Select City</option>';
@@ -53,8 +62,72 @@ function handleCountryChange(countryId, fieldName) {
         });
         citySelect.disabled = false;
     } else {
-        citySelect.innerHTML = '<option value="">No cities found</option>';
-        citySelect.disabled = false;
+        // Fallback: fetch cities via AJAX when preloaded JSON is missing/empty
+        citySelect.innerHTML = '<option value=\"\">Loading cities...</option>';
+        citySelect.disabled = true;
+        var ajaxUrlCities = window.ajaxurl || (window.myPluginAjax && window.myPluginAjax.ajax_url);
+        var nonces2 = window.myPluginAjax && window.myPluginAjax.nonces;
+        // IMPORTANT: backend validates against 'get_waybills_nonce', so always use that
+        var nonceCities = (nonces2 && nonces2.get_waybills_nonce) || '';
+        if (ajaxUrlCities && nonceCities) {
+            if (typeof jQuery !== 'undefined') {
+                jQuery.ajax({
+                    url: ajaxUrlCities,
+                    type: 'POST',
+                    dataType: 'json',
+                    data: {
+                        action: 'handle_get_cities_for_country',
+                        country_id: countryId,
+                        nonce: nonceCities
+                    },
+                    success: function (response) {
+                        if (response && response.success && Array.isArray(response.data) && response.data.length) {
+                            citySelect.innerHTML = '<option value=\"\">Select City</option>';
+                            response.data.forEach(function (city) {
+                                var option = document.createElement('option');
+                                option.value = city.id;
+                                option.textContent = city.city_name;
+                                citySelect.appendChild(option);
+                            });
+                        } else {
+                            citySelect.innerHTML = '<option value=\"\">No cities found</option>';
+                        }
+                        citySelect.disabled = false;
+                    },
+                    error: function () {
+                        citySelect.innerHTML = '<option value=\"\">Error loading cities</option>';
+                        citySelect.disabled = false;
+                    }
+                });
+            } else {
+                fetch(ajaxUrlCities, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'action=' + encodeURIComponent('handle_get_cities_for_country') +
+                          '&country_id=' + encodeURIComponent(countryId) +
+                          '&nonce=' + encodeURIComponent(nonceCities)
+                }).then(function (r) { return r.json(); }).then(function (response) {
+                    if (response && response.success && Array.isArray(response.data) && response.data.length) {
+                        citySelect.innerHTML = '<option value=\"\">Select City</option>';
+                        response.data.forEach(function (city) {
+                            var option = document.createElement('option');
+                            option.value = city.id;
+                            option.textContent = city.city_name;
+                            citySelect.appendChild(option);
+                        });
+                    } else {
+                        citySelect.innerHTML = '<option value=\"\">No cities found</option>';
+                    }
+                    citySelect.disabled = false;
+                }).catch(function () {
+                    citySelect.innerHTML = '<option value=\"\">Error loading cities</option>';
+                    citySelect.disabled = false;
+                });
+            }
+        } else {
+            citySelect.innerHTML = '<option value=\"\">No cities found</option>';
+            citySelect.disabled = false;
+        }
     }
 
     // Keep scheduled deliveries refresh for destination changes
@@ -63,16 +136,37 @@ function handleCountryChange(countryId, fieldName) {
         var list = document.getElementById('scheduled-deliveries-list');
         if (list && ajaxUrl2) {
             list.innerHTML = '<div class="text-gray-500">Loading deliveries...</div>';
-            jQuery.ajax({
-                url: ajaxUrl2,
-                type: 'POST',
-                dataType: 'json',
-                data: {
-                    action: 'get_deliveries_by_country_id',
-                    country: countryId,
-                    nonce: (window.myPluginAjax && window.myPluginAjax.nonces && (myPluginAjax.nonces.deliveries_nonce || myPluginAjax.nonces.get_waybills_nonce)) || ''
-                },
-                success: function(res){
+            var nonces = window.myPluginAjax && window.myPluginAjax.nonces;
+            var nonce = (nonces && (nonces.deliveries_nonce || nonces.get_waybills_nonce)) || '';
+            if (typeof jQuery !== 'undefined') {
+                jQuery.ajax({
+                    url: ajaxUrl2,
+                    type: 'POST',
+                    dataType: 'json',
+                    data: {
+                        action: 'get_deliveries_by_country_id',
+                        country: countryId,
+                        nonce: nonce
+                    },
+                    success: function(res){
+                        if (res && res.success && res.html) {
+                            list.innerHTML = res.html;
+                        } else if (res && res.data && res.data.html) {
+                            list.innerHTML = res.data.html;
+                        } else {
+                            list.innerHTML = '<div class="text-gray-500">No deliveries found</div>';
+                        }
+                    },
+                    error: function(){
+                        list.innerHTML = '<div class="text-red-600">Error loading deliveries</div>';
+                    }
+                });
+            } else {
+                fetch(ajaxUrl2, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'action=get_deliveries_by_country_id&country=' + encodeURIComponent(countryId) + '&nonce=' + encodeURIComponent(nonce)
+                }).then(function(r) { return r.json(); }).then(function(res) {
                     if (res && res.success && res.html) {
                         list.innerHTML = res.html;
                     } else if (res && res.data && res.data.html) {
@@ -80,14 +174,14 @@ function handleCountryChange(countryId, fieldName) {
                     } else {
                         list.innerHTML = '<div class="text-gray-500">No deliveries found</div>';
                     }
-                },
-                error: function(){
+                }).catch(function() {
                     list.innerHTML = '<div class="text-red-600">Error loading deliveries</div>';
-                }
-            });
+                });
+            }
         }
     }
 }
+window.handleCountryChange = handleCountryChange;
 
 // originCountry change handler for cities and destinationCountry change handler for cities
 function gaybitch(value, type) {
@@ -170,8 +264,39 @@ document.addEventListener('click', function (e) {
 
 
 
+// Event delegation: country dropdowns work even when form/step is added after DOMContentLoaded (e.g. shortcode chain, step 4 hidden)
+function onCountrySelectChange(e) {
+    var el = e && e.target;
+    if (!el || el.tagName !== 'SELECT' || typeof handleCountryChange !== 'function') return;
+    if (el.id === 'stepDestinationSelect' || el.name === 'destination_country') {
+        handleCountryChange(el.value, 'destination_country');
+    } else if (el.id === 'origin_country' || el.name === 'origin_country') {
+        handleCountryChange(el.value, 'origin_country');
+    }
+}
+document.addEventListener('change', onCountrySelectChange, true);
+
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function () {
     initItemsPerPage();
-    // Removed auto city-loading on page load to preserve server-selected defaults
+    // Bind country dropdowns so they work even when inline onchange is stripped (e.g. frontend/CSP)
+    var destCountrySelect = document.getElementById('stepDestinationSelect') || document.querySelector('select[name="destination_country"]');
+    var originCountrySelect = document.getElementById('origin_country') || document.querySelector('select[name="origin_country"]');
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/eac88981-a808-4140-9871-c5bc5fb2b15c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'waybill-pagination.js:DOMContentLoaded:binding',message:'country select binding',data:{destFound:!!destCountrySelect,originFound:!!originCountrySelect,handleCountryChangeDefined:typeof handleCountryChange==='function',destOptionCount:destCountrySelect?destCountrySelect.options.length:0},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C,D'})}).catch(function(){});
+    // #endregion
+    if (destCountrySelect && typeof handleCountryChange === 'function') {
+        destCountrySelect.removeEventListener('change', destCountrySelect._kitCountryChange);
+        destCountrySelect._kitCountryChange = function() {
+            handleCountryChange(destCountrySelect.value, 'destination_country');
+        };
+        destCountrySelect.addEventListener('change', destCountrySelect._kitCountryChange);
+    }
+    if (originCountrySelect && typeof handleCountryChange === 'function') {
+        originCountrySelect.removeEventListener('change', originCountrySelect._kitCountryChange);
+        originCountrySelect._kitCountryChange = function() {
+            handleCountryChange(originCountrySelect.value, 'origin_country');
+        };
+        originCountrySelect.addEventListener('change', originCountrySelect._kitCountryChange);
+    }
 });

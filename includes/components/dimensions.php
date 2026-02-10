@@ -178,8 +178,9 @@ KIT_Commons::enqueueComponentScripts(['kitscript']);
         let debounceTimer = null;
         // Initialize with stored rate from database if available (for editing existing waybills)
         // But we'll always fetch from table when direction_id or volume changes
-        let baseRate = <?php echo $prefill_volume_rate_used !== null && $prefill_volume_rate_used > 0 ? $prefill_volume_rate_used : 'null'; ?>;
-        let lastBaseRate = <?php echo $prefill_volume_rate_used !== null && $prefill_volume_rate_used > 0 ? $prefill_volume_rate_used : 'null'; ?>;
+        <?php if (!isset($prefill_volume_rate_used)) { $prefill_volume_rate_used = null; } ?>
+        let baseRate = <?php echo ($prefill_volume_rate_used !== null && $prefill_volume_rate_used > 0) ? $prefill_volume_rate_used : 'null'; ?>;
+        let lastBaseRate = <?php echo ($prefill_volume_rate_used !== null && $prefill_volume_rate_used > 0) ? $prefill_volume_rate_used : 'null'; ?>;
         let lastDirectionId = null; // Track direction_id changes
 
         function validateDimension(value) {

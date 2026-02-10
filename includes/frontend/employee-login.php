@@ -16,17 +16,23 @@ if (!defined('ABSPATH')) {
  * @return string
  */
 function kit_employee_login_shortcode() {
-    // Already logged in with plugin access - redirect to dashboard
-    if (is_user_logged_in() && KIT_User_Roles::can_view_waybills()) {
-        $dashboard_url = apply_filters('kit_employee_dashboard_url', home_url('/employee-dashboard/'));
-        wp_safe_redirect($dashboard_url);
-        exit;
+    // Never redirect during REST API requests (block editor save/preview) or the response would not be valid JSON
+    if (defined('REST_REQUEST') && REST_REQUEST) {
+        return '';
     }
-
-    // Admins who can see prices - redirect to wp-admin dashboard
-    if (is_user_logged_in() && KIT_User_Roles::can_see_prices()) {
-        wp_safe_redirect(admin_url('admin.php?page=08600-dashboard'));
-        exit;
+    // Allow viewing the login form when already logged in (e.g. for testing) via ?show_login=1
+    $force_show_login = isset($_GET['show_login']) && $_GET['show_login'] === '1';
+    // Same login for all: admins → wp-admin, staff → front-end dashboard (check admin first)
+    if (!$force_show_login && is_user_logged_in()) {
+        if (KIT_User_Roles::can_see_prices()) {
+            wp_safe_redirect(admin_url('admin.php?page=08600-dashboard'));
+            exit;
+        }
+        if (KIT_User_Roles::can_view_waybills()) {
+            $dashboard_url = apply_filters('kit_employee_dashboard_url', home_url('/employee-dashboard/'));
+            wp_safe_redirect($dashboard_url);
+            exit;
+        }
     }
 
     $error = '';

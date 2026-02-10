@@ -211,195 +211,197 @@ class KIT_Routes
 ?>
 
         <div class="wrap">
-            <?php
-            echo KIT_Commons::showingHeader([
-                'title' => 'Route Management',
-                'desc' => 'Manage shipping routes and destinations',
-            ]);
-            ?>
+            <div class="<?php echo KIT_Commons::containerClasses(); ?>">
+                <?php
+                echo KIT_Commons::showingHeader([
+                    'title' => 'Route Management',
+                    'desc' => 'Manage shipping routes and destinations',
+                ]);
+                ?>
 
-            <div class="<?= KIT_Commons::container() ?>">
-                <!-- Overview Section -->
-                <div>
-                    <!-- Statistics Cards -->
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px;">
-                        <div style="background: white; padding: 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #e5e7eb;">
-                            <div style="display: flex; align-items: center; gap: 16px;">
-                                <div style="width: 48px; height: 48px; background: #dbeafe; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
-                                    <span style="font-size: 24px; color: #2563eb;">🗺️</span>
+                <div class="<?= KIT_Commons::container() ?>">
+                    <!-- Overview Section -->
+                    <div>
+                        <!-- Statistics Cards -->
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px;">
+                            <div style="background: white; padding: 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #e5e7eb;">
+                                <div style="display: flex; align-items: center; gap: 16px;">
+                                    <div style="width: 48px; height: 48px; background: #dbeafe; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+                                        <span style="font-size: 24px; color: #2563eb;">🗺️</span>
+                                    </div>
+                                    <div>
+                                        <p style="font-size: 14px; color: #6b7280; margin: 0 0 4px 0;">Total Routes</p>
+                                        <p style="font-size: 28px; font-weight: 700; color: #111827; margin: 0;"><?php echo $total_routes; ?></p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p style="font-size: 14px; color: #6b7280; margin: 0 0 4px 0;">Total Routes</p>
-                                    <p style="font-size: 28px; font-weight: 700; color: #111827; margin: 0;"><?php echo $total_routes; ?></p>
+                            </div>
+
+                            <div style="background: white; padding: 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #e5e7eb;">
+                                <div style="display: flex; align-items: center; gap: 16px;">
+                                    <div style="width: 48px; height: 48px; background: #dcfce7; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+                                        <span style="font-size: 24px; color: #16a34a;">✅</span>
+                                    </div>
+                                    <div>
+                                        <p style="font-size: 14px; color: #6b7280; margin: 0 0 4px 0;">Active Routes</p>
+                                        <p style="font-size: 28px; font-weight: 700; color: #111827; margin: 0;"><?php echo $active_routes; ?></p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style="background: white; padding: 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #e5e7eb;">
+                                <div style="display: flex; align-items: center; gap: 16px;">
+                                    <div style="width: 48px; height: 48px; background: #fee2e2; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+                                        <span style="font-size: 24px; color: #dc2626;">❌</span>
+                                    </div>
+                                    <div>
+                                        <p style="font-size: 14px; color: #6b7280; margin: 0 0 4px 0;">Inactive Routes</p>
+                                        <p style="font-size: 28px; font-weight: 700; color: #111827; margin: 0;"><?php echo $inactive_routes; ?></p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
 
-                        <div style="background: white; padding: 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #e5e7eb;">
-                            <div style="display: flex; align-items: center; gap: 16px;">
-                                <div style="width: 48px; height: 48px; background: #dcfce7; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
-                                    <span style="font-size: 24px; color: #16a34a;">✅</span>
-                                </div>
-                                <div>
-                                    <p style="font-size: 14px; color: #6b7280; margin: 0 0 4px 0;">Active Routes</p>
-                                    <p style="font-size: 28px; font-weight: 700; color: #111827; margin: 0;"><?php echo $active_routes; ?></p>
-                                </div>
-                            </div>
-                        </div>
 
-                        <div style="background: white; padding: 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #e5e7eb;">
-                            <div style="display: flex; align-items: center; gap: 16px;">
-                                <div style="width: 48px; height: 48px; background: #fee2e2; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
-                                    <span style="font-size: 24px; color: #dc2626;">❌</span>
-                                </div>
-                                <div>
-                                    <p style="font-size: 14px; color: #6b7280; margin: 0 0 4px 0;">Inactive Routes</p>
-                                    <p style="font-size: 28px; font-weight: 700; color: #111827; margin: 0;"><?php echo $inactive_routes; ?></p>
-                                </div>
-                            </div>
-                        </div>
+
                     </div>
 
+                    <!-- All Routes Section -->
+                    <div style="background: white; padding: 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #e5e7eb; margin-top: 24px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                            <?= KIT_Commons::bossText([
+                                'icon' => '<path d="M16 7a4 4 0 1 0-8 0v2a4 4 0 0 0 8 0V7z" /><path d="M12 19v-2m0 0a7 7 0 0 1-7-7V7a7 7 0 0 1 14 0v3a7 7 0 0 1-7 7z" />',
+                                'words' => 'All Shipping Routes',
+                                'size' => '2xl',
+                                'color' => 'black',
+                                'classes' => '',
+                                'tag' => 'h2'
+                            ]) ?> <div style="display: flex; gap: 12px;">
 
-
-                </div>
-
-                <!-- All Routes Section -->
-                <div style="background: white; padding: 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #e5e7eb; margin-top: 24px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                        <?= KIT_Commons::bossText([
-                            'icon' => '<path d="M16 7a4 4 0 1 0-8 0v2a4 4 0 0 0 8 0V7z" /><path d="M12 19v-2m0 0a7 7 0 0 1-7-7V7a7 7 0 0 1 14 0v3a7 7 0 0 1-7 7z" />',
-                            'words' => 'All Shipping Routes',
-                            'size' => '2xl',
-                            'color' => 'black',
-                            'classes' => '',
-                            'tag' => 'h2'
-                        ]) ?> <div style="display: flex; gap: 12px;">
-
-                            <?php echo KIT_Commons::renderButton('Create New', 'primary', 'sm', ['onclick' => 'window.location.href=\'?page=route-create\'', 'gradient' => true]); ?>
-                            <?php echo KIT_Commons::renderButton('Manage Countries', 'secondary', 'sm', ['onclick' => 'window.location.href=\'?page=08600-countries\'', 'gradient' => false]); ?>
+                                <?php echo KIT_Commons::renderButton('Create New', 'primary', 'sm', ['onclick' => 'window.location.href=\'?page=route-create\'', 'gradient' => true]); ?>
+                                <?php echo KIT_Commons::renderButton('Manage Countries', 'secondary', 'sm', ['onclick' => 'window.location.href=\'?page=08600-countries\'', 'gradient' => false]); ?>
+                            </div>
                         </div>
-                    </div>
 
 
-                    <?php
-                    // Get routes data
-                    $routes = self::get_routes();
+                        <?php
+                        // Get routes data
+                        $routes = self::get_routes();
 
-                    // Convert to array format for unified table
-                    $routeData = [];
-                    foreach ($routes as $route) {
-                        $routeData[] = [
-                            'route_id' => $route->route_id,
-                            'origin_country_name' => $route->origin_country_name,
-                            'destination_country_name' => $route->destination_country_name,
-                            'description' => $route->description,
-                            'is_active' => $route->is_active
-                        ];
-                    }
+                        // Convert to array format for unified table
+                        $routeData = [];
+                        foreach ($routes as $route) {
+                            $routeData[] = [
+                                'route_id' => $route->route_id,
+                                'origin_country_name' => $route->origin_country_name,
+                                'destination_country_name' => $route->destination_country_name,
+                                'description' => $route->description,
+                                'is_active' => $route->is_active
+                            ];
+                        }
 
-                    // Define columns
-                    $columns = [
-                        'route_id' => 'Route ID',
-                        'origin_country_name' => 'Origin',
-                        'destination_country_name' => 'Destination',
-                        'description' => 'Description',
-                        'is_active' => [
-                            'label' => 'Status',
-                            'sortable' => true,
-                            'searchable' => false,
-                            'callback' => function($value, $row) {
-                                $status_text = $value ? 'Active' : 'Inactive';
-                                $status_class = $value ? 'status-active' : 'status-inactive';
-                                $status_color = $value ? '#16a34a' : '#dc2626';
-                                $toggle_text = $value ? 'Deactivate' : 'Activate';
-                                $new_status = $value ? 0 : 1;
-                                
-                                return '
+                        // Define columns
+                        $columns = [
+                            'route_id' => 'Route ID',
+                            'origin_country_name' => 'Origin',
+                            'destination_country_name' => 'Destination',
+                            'description' => 'Description',
+                            'is_active' => [
+                                'label' => 'Status',
+                                'sortable' => true,
+                                'searchable' => false,
+                                'callback' => function ($value, $row) {
+                                    $status_text = $value ? 'Active' : 'Inactive';
+                                    $status_class = $value ? 'status-active' : 'status-inactive';
+                                    $status_color = $value ? '#16a34a' : '#dc2626';
+                                    $toggle_text = $value ? 'Deactivate' : 'Activate';
+                                    $new_status = $value ? 0 : 1;
+
+                                    return '
                                     <div class="flex items-center gap-2">
                                         <span class="' . $status_class . '" style="color: ' . $status_color . '; font-weight: 600;">● ' . $status_text . '</span>
                                         ' . KIT_Commons::renderButton($toggle_text, 'ghost', 'sm', [
-                                            'type' => 'button',
-                                            'classes' => 'route-toggle-btn text-xs px-2 py-1 rounded border hover:bg-gray-50',
-                                            'data-route-id' => $row['route_id'],
-                                            'data-new-status' => $new_status,
-                                            'style' => 'color: ' . esc_attr($status_color) . '; border-color: ' . esc_attr($status_color) . ';',
-                                        ]) . '
+                                        'type' => 'button',
+                                        'classes' => 'route-toggle-btn text-xs px-2 py-1 rounded border hover:bg-gray-50',
+                                        'data-route-id' => $row['route_id'],
+                                        'data-new-status' => $new_status,
+                                        'style' => 'color: ' . esc_attr($status_color) . '; border-color: ' . esc_attr($status_color) . ';',
+                                    ]) . '
                                     </div>
                                 ';
-                            }
-                        ]
-                    ];
+                                }
+                            ]
+                        ];
 
-                    // Define actions
-                    $actions = [
-                        [
-                            'label' => 'Edit',
-                            'href' => '?page=route-create&route_id={route_id}&route_atts=edit_route',
-                            'class' => 'text-blue-600 hover:text-blue-800'
-                        ]
-                    ];
+                        // Define actions
+                        $actions = [
+                            [
+                                'label' => 'Edit',
+                                'href' => '?page=route-create&route_id={route_id}&route_atts=edit_route',
+                                'class' => 'text-blue-600 hover:text-blue-800'
+                            ]
+                        ];
 
-                    // Render unified table with advanced features
-                    echo KIT_Unified_Table::infinite($routeData, $columns, [
-                        'title' => 'All Routes',
-                        'actions' => $actions,
-                        'searchable' => true,
-                        'sortable' => true,
-                        'exportable' => true,
-                        'empty_message' => 'No routes found'
-                    ]);
-                    ?>
+                        // Render unified table with advanced features
+                        echo KIT_Unified_Table::infinite($routeData, $columns, [
+                            'title' => 'All Routes',
+                            'actions' => $actions,
+                            'searchable' => true,
+                            'sortable' => true,
+                            'exportable' => true,
+                            'empty_message' => 'No routes found'
+                        ]);
+                        ?>
+                    </div>
+
                 </div>
-
             </div>
         </div>
 
-<script>
-jQuery(document).ready(function($) {
-    // Quick toggle functionality for routes
-    $(document).on('click', '.route-toggle-btn', function(e) {
-        e.preventDefault();
-        
-        const $btn = $(this);
-        const routeId = $btn.data('route-id');
-        const newStatus = $btn.data('new-status');
-        const $row = $btn.closest('tr');
-        
-        // Disable button during request
-        $btn.prop('disabled', true).text('Updating...');
-        
-        $.ajax({
-            url: ajaxurl,
-            type: 'POST',
-            data: {
-                action: 'toggle_route_status',
-                route_id: routeId,
-                new_status: newStatus,
-                nonce: '<?php echo wp_create_nonce('toggle_route_status'); ?>'
-            },
-            success: function(response) {
-                if (response.success) {
-                    // Reload the page to show updated status
-                    location.reload();
-                    } else {
-                    alert('Error: ' + (response.data.message || 'Failed to update route status'));
-                    $btn.prop('disabled', false).text($btn.data('original-text'));
-                }
-            },
-            error: function() {
-                alert('Error: Failed to update route status');
-                $btn.prop('disabled', false).text($btn.data('original-text'));
-            }
-        });
-    });
-    
-    // Store original button text
-    $('.route-toggle-btn').each(function() {
-        $(this).data('original-text', $(this).text());
-    });
-});
-</script>
+        <script>
+            jQuery(document).ready(function($) {
+                // Quick toggle functionality for routes
+                $(document).on('click', '.route-toggle-btn', function(e) {
+                    e.preventDefault();
+
+                    const $btn = $(this);
+                    const routeId = $btn.data('route-id');
+                    const newStatus = $btn.data('new-status');
+                    const $row = $btn.closest('tr');
+
+                    // Disable button during request
+                    $btn.prop('disabled', true).text('Updating...');
+
+                    $.ajax({
+                        url: ajaxurl,
+                        type: 'POST',
+                        data: {
+                            action: 'toggle_route_status',
+                            route_id: routeId,
+                            new_status: newStatus,
+                            nonce: '<?php echo wp_create_nonce('toggle_route_status'); ?>'
+                        },
+                        success: function(response) {
+                            if (response.success) {
+                                // Reload the page to show updated status
+                                location.reload();
+                            } else {
+                                alert('Error: ' + (response.data.message || 'Failed to update route status'));
+                                $btn.prop('disabled', false).text($btn.data('original-text'));
+                            }
+                        },
+                        error: function() {
+                            alert('Error: Failed to update route status');
+                            $btn.prop('disabled', false).text($btn.data('original-text'));
+                        }
+                    });
+                });
+
+                // Store original button text
+                $('.route-toggle-btn').each(function() {
+                    $(this).data('original-text', $(this).text());
+                });
+            });
+        </script>
 
         <script>
             function editRoute(routeId) {
@@ -580,7 +582,7 @@ jQuery(document).ready(function($) {
                                 <span style="color:#9ca3af;">/</span>
                                 <span style="color:#374151; font-weight:600;"><?php echo $is_edit_mode ? 'Edit' : 'Create'; ?> Route</span>
                             </div>
-                         
+
                         </div>
 
                         <form id="route-create-form" method="post" action="<?php echo admin_url('admin-ajax.php'); ?>">
@@ -648,11 +650,11 @@ jQuery(document).ready(function($) {
                         var destination = getSelectedText('destination_country');
                         var statusRadio = form.querySelector('input[name="route_status"]:checked');
                         var status = statusRadio ? (statusRadio.value === 'active' ? 'Active' : 'Inactive') : 'Active';
-                        
+
                         var previewOrigin = document.getElementById('preview-origin');
                         var previewDestination = document.getElementById('preview-destination');
                         var previewStatus = document.getElementById('preview-status');
-                        
+
                         if (previewOrigin) previewOrigin.textContent = origin || 'Not set';
                         if (previewDestination) previewDestination.textContent = destination || 'Not set';
                         if (previewStatus) previewStatus.textContent = status;
@@ -673,10 +675,10 @@ jQuery(document).ready(function($) {
                         e.preventDefault();
                         var originInput = form.querySelector('[name="country_id"]');
                         var destinationInput = form.querySelector('[name="destination_country"]');
-                        
+
                         var origin = originInput ? originInput.value : '';
                         var destination = destinationInput ? destinationInput.value : '';
-                        
+
                         if (!origin || !destination) {
                             if (window.KITToast) {
                                 window.KITToast.show('Please select both origin and destination countries.', 'warning', 'Validation');
@@ -881,24 +883,25 @@ jQuery(document).ready(function($) {
     /**
      * AJAX handler for quick route status toggle
      */
-    public static function handle_toggle_route_status() {
+    public static function handle_toggle_route_status()
+    {
         // Verify nonce
         if (!wp_verify_nonce($_POST['nonce'], 'toggle_route_status')) {
             wp_send_json_error(['message' => 'Invalid nonce']);
         }
-        
+
         // Check permissions
         if (!current_user_can('manage_options')) {
             wp_send_json_error(['message' => 'Insufficient permissions']);
         }
-        
+
         global $wpdb;
         $table = $wpdb->prefix . 'kit_shipping_directions';
         $id = intval($_POST['route_id']);
         $new_status = intval($_POST['new_status']);
-        
+
         $result = $wpdb->update($table, ['is_active' => $new_status], ['id' => $id]);
-        
+
         if ($result !== false) {
             wp_send_json_success(['message' => 'Route status updated successfully']);
         } else {

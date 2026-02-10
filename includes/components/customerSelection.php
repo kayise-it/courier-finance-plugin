@@ -15,12 +15,33 @@ $customer_id = isset($customer_id) ? $customer_id : (isset($customer) && isset($
 <input type="hidden" id="cust_id" name="cust_id" value="<?php echo esc_attr($customer_id); ?>">
 
 <?php
-// Use customer data passed from shortcode if available, otherwise load from database
-if (isset($customers_data) && is_array($customers_data)) {
+// Use customer data passed from shortcode if available and non-empty, otherwise load from database.
+// This ensures frontend portal (which may pass an empty customers_data payload) still has full customer data.
+if (isset($customers_data) && is_array($customers_data) && !empty($customers_data)) {
     $customers = $customers_data;
 } else {
     // Use the standalone function that returns properly aliased data
     $customers = tholaMaCustomer();
+}
+
+// If we still have no customers, fall back to the last waybill's customer only.
+if (empty($customers)
+    && class_exists('KIT_Dashboard')
+    && method_exists('KIT_Dashboard', 'get_last_waybill_customer_id')
+    && function_exists('get_customer_details')
+) {
+    $last_cust_id = (int) KIT_Dashboard::get_last_waybill_customer_id();
+    if ($last_cust_id > 0) {
+        $last_customer = get_customer_details($last_cust_id);
+        if ($last_customer) {
+            // Normalise to an array of objects so JSON encoding works the same way
+            if (!is_array($last_customer)) {
+                $customers = [$last_customer];
+            } else {
+                $customers = [$last_customer];
+            }
+        }
+    }
 }
 ?>
 
@@ -397,6 +418,28 @@ if (isset($customers_data) && is_array($customers_data)) {
         const addNewCustomerBtn = document.getElementById('add-new-customer-btn');
         const recentCustomersBtn = document.getElementById('recent-customers-btn');
 
+        // #region agent log: recent customers init (hypotheses A,B)
+        try {
+            fetch('http://127.0.0.1:7243/ingest/eac88981-a808-4140-9871-c5bc5fb2b15c', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    sessionId: 'debug-session',
+                    runId: 'recent-customers-1',
+                    hypothesisId: 'A',
+                    location: 'customerSelection.php:init',
+                    message: 'Recent customers init',
+                    data: {
+                        hasButton: !!recentCustomersBtn,
+                        customersDataType: typeof window.CUSTOMERS_DATA,
+                        customersCount: window.CUSTOMERS_DATA ? Object.keys(window.CUSTOMERS_DATA).length : 0
+                    },
+                    timestamp: Date.now()
+                })
+            }).catch(() => {});
+        } catch (e) {}
+        // #endregion
+
         function getCustomerInput(idBase) {
             return document.getElementById(idBase) ||
                 document.getElementById('a' + idBase) ||
@@ -481,10 +524,80 @@ if (isset($customers_data) && is_array($customers_data)) {
         }
 
         function showRecentCustomers() {
+            // #region agent log: showRecentCustomers entry (hypotheses A,B,C)
+            try {
+                const formForLog = document.getElementById('multi-step-waybill-form') || document.querySelector('form[data-last-waybill-customer-id]');
+                const lastCustIdLog = formForLog ? parseInt(formForLog.getAttribute('data-last-waybill-customer-id') || '0', 10) : 0;
+                fetch('http://127.0.0.1:7243/ingest/eac88981-a808-4140-9871-c5bc5fb2b15c', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sessionId: 'debug-session',
+                        runId: 'recent-customers-1',
+                        hypothesisId: 'B',
+                        location: 'customerSelection.php:showRecentCustomers',
+                        message: 'showRecentCustomers called',
+                        data: {
+                            hasCustomersData: !!window.CUSTOMERS_DATA,
+                            customersCount: window.CUSTOMERS_DATA ? Object.keys(window.CUSTOMERS_DATA).length : 0,
+                            lastCustId: lastCustIdLog
+                        },
+                        timestamp: Date.now()
+                    })
+                }).catch(() => {});
+            } catch (e) {}
+            // #endregion
+
+            // "Recent Customer" = load last waybill's client into the form if available
+            const form = document.getElementById('multi-step-waybill-form') || document.querySelector('form[data-last-waybill-customer-id]');
+            const lastCustId = form ? parseInt(form.getAttribute('data-last-waybill-customer-id'), 10) : 0;
+            if (lastCustId && window.CUSTOMERS_DATA && window.CUSTOMERS_DATA[lastCustId]) {
+                // #region agent log: select last customer (hypothesis C)
+                try {
+                    fetch('http://127.0.0.1:7243/ingest/eac88981-a808-4140-9871-c5bc5fb2b15c', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            sessionId: 'debug-session',
+                            runId: 'recent-customers-1',
+                            hypothesisId: 'C',
+                            location: 'customerSelection.php:showRecentCustomers',
+                            message: 'Selecting last waybill customer',
+                            data: { lastCustId: lastCustId },
+                            timestamp: Date.now()
+                        })
+                    }).catch(() => {});
+                } catch (e) {}
+                // #endregion
+                selectCustomer(window.CUSTOMERS_DATA[lastCustId]);
+                return;
+            }
+            // Fallback: show list of recent customers (by created_at)
             if (!window.CUSTOMERS_DATA) return;
             const recentCustomers = Object.values(window.CUSTOMERS_DATA)
                 .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
                 .slice(0, 10);
+            // #region agent log: fallback recent customers list (hypothesis C)
+            try {
+                fetch('http://127.0.0.1:7243/ingest/eac88981-a808-4140-9871-c5bc5fb2b15c', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sessionId: 'debug-session',
+                        runId: 'recent-customers-1',
+                        hypothesisId: 'C',
+                        location: 'customerSelection.php:showRecentCustomers',
+                        message: 'Showing recent customers list',
+                        data: { recentCount: recentCustomers.length },
+                        timestamp: Date.now()
+                    })
+                }).catch(() => {});
+            } catch (e) {}
+            // #endregion
+            if (!recentCustomers.length) {
+                // No previous customers exist yet – make this explicit to the user
+                alert('No recent customers found. Please add a customer first.');
+            }
             displaySearchResults(recentCustomers);
         }
 

@@ -184,7 +184,7 @@ $smallWidth = isset($atts['small_width']) && $atts['small_width'] === true;
     
     // Prevent multiple initializations
     if (window.KIT_ScheduledDeliveries_Initialized) {
-        console.warn('⚠️ scheduledDeliveries.js already initialized, skipping');
+        // Already initialized – silently skip to avoid duplicate listeners
         return;
     }
     window.KIT_ScheduledDeliveries_Initialized = true;
@@ -252,8 +252,7 @@ $smallWidth = isset($atts['small_width']) && $atts['small_width'] === true;
     
     // If country ID is missing, try to find it by country name in the dropdown
     if (!destinationCountryId || destinationCountryId === '' || destinationCountryId === '0') {
-        console.warn('⚠️ destination_country_id not found on delivery card, trying to find by name:', destinationCountryName);
-        
+        // destination_country_id missing on card – fall back to matching by name
         if (destinationCountryName && destinationCountryField) {
             // Try to find country ID by matching the country name in the dropdown
             for (let option of destinationCountryField.options) {
@@ -291,32 +290,49 @@ $smallWidth = isset($atts['small_width']) && $atts['small_width'] === true;
             pendingOption.checked = false;
             console.log('✅ Unchecked warehouse option because delivery is selected');
         }
-        
-        // Trigger change event to load cities for the selected country
-        const changeEvent = new Event('change', { bubbles: true });
-        destinationCountryField.dispatchEvent(changeEvent);
-        
-        // Also trigger handleCountryChange if available
-        if (typeof handleCountryChange === 'function') {
-            handleCountryChange(destinationCountryId, 'destination');
-        }
+
+        // IMPORTANT: For delivery-card clicks we handle city loading ourselves
+        // (see block below using loadDestinationCities / citiesMap). We MUST NOT
+        // dispatch a 'change' event here, otherwise the global onCountrySelectChange
+        // handler in waybill-pagination.js will call handleCountryChange and
+        // rebuild #destination_city, wiping out any user-selected city.
     } else {
         console.warn('❌ Could not set destination_country_id - missing data. Country name:', destinationCountryName, 'Country ID:', destinationCountryId);
     }
     
     // Get destination city ID from delivery card
     const destinationCityId = cardElement.getAttribute('data-destination-city-id');
+    const citySelect = document.getElementById('destination_city');
+    const existingCityValue = citySelect ? (citySelect.value || '') : '';
+
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/eac88981-a808-4140-9871-c5bc5fb2b15c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'scheduledDeliveries.php:destination-city-before',message:'Before handling city on card click',data:{existingCityValue:existingCityValue || null,destinationCityIdAttr:destinationCityId || null,destinationCountryId:destinationCountryId || null},timestamp:Date.now(),runId:'pre-fix',hypothesisId:'H1'})}).catch(function(){});
+    // #endregion
     
-    // CRITICAL: Also directly load cities (for modal compatibility)
-    // Check if loadDestinationCities function exists (from waybillmultiform)
-    if (typeof loadDestinationCities === 'function' && destinationCountryId) {
-        setTimeout(() => {
-            loadDestinationCities(destinationCountryId, destinationCityId);
-        }, 50);
-    } else if (destinationCountryId) {
-        // Fallback: manually load cities
-        const citySelect = document.getElementById('destination_city');
-        if (citySelect) {
+    // CRITICAL: If the user has already chosen a city, do NOT reload or clear it
+    // when clicking a delivery card. Just keep the current value and re-run
+    // validation so the UI stays in sync.
+    if (citySelect && existingCityValue) {
+        console.log('✅ Keeping existing destination_city selection:', existingCityValue);
+
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/eac88981-a808-4140-9871-c5bc5fb2b15c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'scheduledDeliveries.php:destination-city-keep',message:'Keeping existing destination_city on card click',data:{keptValue:existingCityValue},timestamp:Date.now(),runId:'pre-fix',hypothesisId:'H2'})}).catch(function(){});
+        // #endregion
+
+        const cityChangeEvent = new Event('change', { bubbles: true });
+        citySelect.dispatchEvent(cityChangeEvent);
+    } else {
+        // No city chosen yet – we can safely load cities based on the delivery.
+        // Prefer the delivery's destination city if present.
+        const preferredCityId = destinationCityId || '';
+
+        // Check if loadDestinationCities function exists (from waybillmultiform)
+        if (typeof loadDestinationCities === 'function' && destinationCountryId) {
+            setTimeout(() => {
+                loadDestinationCities(destinationCountryId, preferredCityId);
+            }, 50);
+        } else if (destinationCountryId && citySelect) {
+            // Fallback: manually load cities
             const citiesMap = (window.myPluginAjax && window.myPluginAjax.countryCities) || {};
             const cities = citiesMap && citiesMap[String(destinationCountryId)] ? citiesMap[String(destinationCountryId)] : [];
             
@@ -326,38 +342,32 @@ $smallWidth = isset($atts['small_width']) && $atts['small_width'] === true;
                     const option = document.createElement('option');
                     option.value = city.id;
                     option.textContent = city.city_name;
-                    // Auto-select the city from delivery if it matches
-                    if (destinationCityId && String(city.id) === String(destinationCityId)) {
+                    if (preferredCityId && String(city.id) === String(preferredCityId)) {
                         option.selected = true;
                     }
                     citySelect.appendChild(option);
                 });
                 citySelect.disabled = false;
                 
-                // Auto-select city if we have the city ID from delivery
-                if (destinationCityId && citySelect.value !== destinationCityId) {
-                    citySelect.value = destinationCityId;
-                    console.log('✅ Auto-selected destination city from delivery:', destinationCityId);
-                    
-                    // Trigger change event to ensure form validation recognizes the selection
+                if (preferredCityId && citySelect.value !== String(preferredCityId)) {
+                    citySelect.value = String(preferredCityId);
                     const cityChangeEvent = new Event('change', { bubbles: true });
                     citySelect.dispatchEvent(cityChangeEvent);
                 }
                 
-                console.log('✅ Cities loaded for delivery selection:', cities.length);
+            // Cities loaded for delivery selection
             } else if (typeof handleCountryChange === 'function') {
                 // Try handleCountryChange as fallback
                 handleCountryChange(destinationCountryId, 'destination');
                 
-                // Set city after cities are loaded
-                if (destinationCityId) {
+                if (preferredCityId) {
                     setTimeout(() => {
-                        const citySelect = document.getElementById('destination_city');
-                        if (citySelect) {
-                            citySelect.value = destinationCityId;
+                        const citySelect2 = document.getElementById('destination_city');
+                        if (citySelect2) {
+                            citySelect2.value = preferredCityId;
                             const cityChangeEvent = new Event('change', { bubbles: true });
-                            citySelect.dispatchEvent(cityChangeEvent);
-                            console.log('✅ Auto-selected destination city (delayed):', destinationCityId);
+                            citySelect2.dispatchEvent(cityChangeEvent);
+                            console.log('✅ Auto-selected destination city (delayed):', preferredCityId);
                         }
                     }, 200);
                 }

@@ -849,24 +849,6 @@ function handle_setup_seed_sql()
                             // contain semicolons inside quoted strings.
                             $final_stmt = rtrim($stmt, ';') . ';';
                             $statements[] = $final_stmt;
-                            // #region agent log
-                            $log_file = plugin_dir_path(__FILE__) . '../../.cursor/debug.log';
-                            $log_entry = json_encode([
-                                'timestamp' => microtime(true),
-                                'location' => 'settings.php:split_statements',
-                                'message' => 'Statement split',
-                                'data' => [
-                                    'stmt_length' => strlen($final_stmt),
-                                    'stmt_preview' => substr($final_stmt, 0, 150),
-                                    'starts_with' => substr(trim($final_stmt), 0, 30),
-                                    'in_string_at_split' => $in_string,
-                                    'string_char' => $string_char
-                                ],
-                                'sessionId' => 'debug-session',
-                                'runId' => 'run1'
-                            ]) . "\n";
-                            @file_put_contents($log_file, $log_entry, FILE_APPEND);
-                            // #endregion
                         }
                     }
                 }
@@ -889,28 +871,9 @@ function handle_setup_seed_sql()
         }
         
         $executed = 0; $errors = [];
-        // #region agent log
-        $log_file = plugin_dir_path(__FILE__) . '../../.cursor/debug.log';
-        $log_entry = function($msg, $data = []) use ($log_file) {
-            $entry = json_encode([
-                'timestamp' => microtime(true),
-                'location' => 'settings.php:handle_setup_seed_sql',
-                'message' => $msg,
-                'data' => $data,
-                'sessionId' => 'debug-session',
-                'runId' => 'run1'
-            ]) . "\n";
-            @file_put_contents($log_file, $entry, FILE_APPEND);
-        };
-        $log_entry('Starting statement execution', ['total_statements' => count($statements)]);
-        // #endregion
         foreach ($statements as $idx => $statement) {
             if ($statement === '') { continue; }
-            
-            // #region agent log
-            $original_statement = $statement;
-            // #endregion
-            
+
             // Remove SQL comments (both -- style and /* */ style) before executing
             // This prevents statements with leading comments from being skipped
             $statement = preg_replace('/--.*$/m', '', $statement); // Remove -- comments
@@ -927,14 +890,6 @@ function handle_setup_seed_sql()
             if (!preg_match('/^(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|SET|USE)\b/i', $statement)) {
                 $insert_pos = stripos($statement, 'INSERT INTO ');
                 if ($insert_pos !== false) {
-                    // #region agent log
-                    $log_entry('Trimming statement fragment', [
-                        'idx' => $idx,
-                        'before_length' => strlen($statement),
-                        'fragment' => substr($statement, 0, min(100, $insert_pos)),
-                        'insert_pos' => $insert_pos
-                    ]);
-                    // #endregion
                     $statement = substr($statement, $insert_pos);
                     $statement = ltrim($statement);
                     $was_trimmed = true;
@@ -944,13 +899,6 @@ function handle_setup_seed_sql()
             // If after cleaning the statement still doesn't start with a known SQL
             // verb, skip it to avoid feeding garbage to MySQL.
             if (!preg_match('/^(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|SET|USE)\b/i', $statement)) {
-                // #region agent log
-                $log_entry('Skipping invalid statement', [
-                    'idx' => $idx,
-                    'preview' => substr($statement, 0, 150),
-                    'was_trimmed' => $was_trimmed
-                ]);
-                // #endregion
                 continue;
             }
             
@@ -960,14 +908,6 @@ function handle_setup_seed_sql()
             // then executing it will always be a syntax error, so we skip.
             if (preg_match('/^INSERT\s+INTO\b/i', $statement)) {
                 if (!preg_match('/^INSERT\s+INTO\b.+\)\s+(VALUES|SELECT)\b/si', $statement)) {
-                    // #region agent log
-                    $log_entry('Skipping incomplete INSERT', [
-                        'idx' => $idx,
-                        'preview' => substr($statement, 0, 200),
-                        'has_values' => (bool)preg_match('/\)\s+VALUES\b/si', $statement),
-                        'has_select' => (bool)preg_match('/\)\s+SELECT\b/si', $statement)
-                    ]);
-                    // #endregion
                     continue;
                 }
             }
@@ -987,16 +927,6 @@ function handle_setup_seed_sql()
             if ($result === false) {
                 $err = $wpdb->last_error ?: 'Unknown DB error';
                 $errors[] = $err;
-                // #region agent log
-                $log_entry('SQL execution failed', [
-                    'idx' => $idx,
-                    'error' => $err,
-                    'statement_preview' => substr($statement, 0, 500),
-                    'statement_length' => strlen($statement),
-                    'was_trimmed' => $was_trimmed,
-                    'original_preview' => substr($original_statement, 0, 200)
-                ]);
-                // #endregion
                 if (function_exists('error_log')) {
                     @error_log('[SetupSeed] DB Error: ' . $err . ' | SQL: ' . substr($statement, 0, 300));
                 }
@@ -1004,12 +934,6 @@ function handle_setup_seed_sql()
                 $executed++;
             }
         }
-        // #region agent log
-        $log_entry('Statement execution completed', [
-            'executed' => $executed,
-            'errors_count' => count($errors)
-        ]);
-        // #endregion
 
         if (!empty($errors)) {
             return [
@@ -1184,6 +1108,7 @@ function kit_generate_seed_sql_from_excel(): array
 ?>
 
 <div class="wrap">
+    <div class="<?php echo KIT_Commons::containerClasses(); ?>">
     <?php
     echo KIT_Commons::showingHeader([
         'title' => 'Settings & Configuration',
@@ -1754,6 +1679,7 @@ function kit_generate_seed_sql_from_excel(): array
             </div>
         </div>
     </div>
+</div>
 </div>
 
 <style>

@@ -207,7 +207,20 @@ if (!$totals_match && class_exists('KIT_Waybills') && $waybill_no > 0) {
 }
 
 ?>
-<div class="max-w-6xl mx-auto p-3 md:p-6 space-y-4 md:space-y-6 bg-white rounded-lg shadow-md">
+<style>
+    .waybill-items-container {
+        max-width: 100%;
+        overflow: hidden;
+    }
+
+    .waybill-items-container table {
+        table-layout: auto;
+        width: 100%;
+        max-width: 100%;
+    }
+</style>
+
+<div class="max-w-6xl mx-auto p-3 md:p-6 space-y-4 md:space-y-6 bg-red-500 rounded-lg shadow-md">
 
     <!-- Breadcrumb Navigation -->
     <?php if (isset($breadlinks) && is_array($breadlinks) && !empty($breadlinks)): ?>
@@ -234,7 +247,7 @@ if (!$totals_match && class_exists('KIT_Waybills') && $waybill_no > 0) {
     <div class="flex flex-col space-y-6 justify-between items-start border-b pb-4">
         <h1 class="text-xl md:text-2xl font-bold text-gray-800">Waybill #<?= htmlspecialchars($waybill['waybill_no'] ?? 'N/A') ?>
         </h1>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
             <div>
                 <div class="ss">
                     <?php if (isset($_GET['approval_updated']) && $_GET['approval_updated'] == '1'): ?>
@@ -895,36 +908,3 @@ if (!function_exists('maybe_unserialize')) {
         });
     });
 </script>
-
-<style>
-    /* Fix for overlapping tables in waybill items section */
-    .waybill-items-container {
-        max-width: 100%;
-        overflow: hidden;
-    }
-
-    .waybill-items-container table {
-        table-layout: auto;
-        width: 100%;
-        max-width: 100%;
-    }
-
-    .waybill-items-container .overflow-x-auto {
-        max-width: 100%;
-        overflow-x: auto;
-        overflow-y: visible;
-    }
-
-    /* Ensure grid items don't overflow */
-    .grid.grid-cols-1.lg\\:grid-cols-2>div {
-        min-width: 0;
-        max-width: 100%;
-    }
-
-    /* Responsive table adjustments */
-    @media (max-width: 1024px) {
-        .waybill-items-container {
-            width: 100%;
-        }
-    }
-</style>

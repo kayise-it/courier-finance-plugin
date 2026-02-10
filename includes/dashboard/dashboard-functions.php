@@ -204,6 +204,7 @@ class KIT_Dashboard {
                 w.waybill_no,
                 w.status,
                 w.created_at,
+                w.customer_id AS customer_id,
                 c.name AS customer_name,
                 c.surname AS customer_surname,
                 COALESCE(ci.city_name, oc.country_name, '') AS destination
@@ -216,6 +217,19 @@ class KIT_Dashboard {
              LIMIT " . (int) $limit;
 
         return $wpdb->get_results($sql);
+    }
+
+    /**
+     * Customer ID of the most recent waybill (for "Recent Customer" button on create waybill form).
+     *
+     * @return int Customer ID or 0 if none.
+     */
+    public static function get_last_waybill_customer_id() {
+        $recent = self::get_recent_waybills(1);
+        if (empty($recent) || empty($recent[0]->customer_id)) {
+            return 0;
+        }
+        return (int) $recent[0]->customer_id;
     }
 
     /**

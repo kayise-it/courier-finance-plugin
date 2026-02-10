@@ -41,7 +41,7 @@
 
         <!-- Additional Fees otherz-->
          
-        <?php $optionChoice = 2; // 2 is the option to show the addition charges in the waybill form ?>
+        <?php $optionChoice = 1; // 2 is the option to show the addition charges in the waybill form ?>
         <?php require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/additionCharges.php'); ?>
     </div>
 

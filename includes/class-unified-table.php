@@ -376,7 +376,8 @@ class KIT_Unified_Table
                                     class="block w-full pr-3 py-2.5 h-10 text-sm border border-gray-300 rounded-md bg-white placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
                                     style="padding-left: 2.75rem;"
                                     placeholder="<?php echo esc_attr($options['search_placeholder']); ?>"
-                                    autocomplete="off">
+                                    autocomplete="off"
+                                    aria-label="<?php echo esc_attr($options['search_placeholder']); ?>">
                             </div>
                             <?php if (!empty($options['search_filters'])): ?>
                                 <div class="relative flex-shrink-0">

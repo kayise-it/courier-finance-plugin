@@ -64,7 +64,15 @@ function customStyling()
     $page = isset($_GET['page']) ? sanitize_text_field($_GET['page']) : '';
     $is_routes_page = in_array($page, ['route-management', 'route-create'], true);
     $is_customer_page = in_array($page, ['edit-customer', '08600-add-customer'], true);
-    $is_dashboard = ($page === '08600-dashboard');
+    // Pages that should use the modern dashboard layout (and need dashboard.css)
+    $dashboard_like_pages = array(
+        '08600-dashboard',
+        '08600-waybill-manage',
+        'warehouse-waybills',
+        'kit-deliveries',
+        '08600-customers',
+    );
+    $is_dashboard = in_array($page, $dashboard_like_pages, true);
     $is_plugin_page = ($screen && $screen->id && strpos($screen->id, '08600') !== false) || $is_routes_page || $is_customer_page || $is_dashboard;
     if ($is_plugin_page) {
         wp_enqueue_style('autsincss', plugin_dir_url(__FILE__) . 'assets/css/austin.css', array(), '1.0');
@@ -191,8 +199,26 @@ register_activation_hook(__FILE__, function() {
 function kit_create_employee_portal_pages() {
     $option_key = 'kit_employee_portal_pages_created';
     if (get_option($option_key) === 'yes') {
-        return;
+        // Ensure dashboard page exists even when option was set early (e.g. before dashboard was added)
+    $dashboard_page = get_page_by_path('employee-dashboard', OBJECT, 'page');
+    if (!$dashboard_page) {
+        wp_insert_post([
+            'post_title'   => 'Employee Dashboard',
+            'post_name'    => 'employee-dashboard',
+            'post_content' => '[kit_employee_portal]',
+            'post_status'  => 'publish',
+            'post_type'    => 'page',
+            'post_author'  => 1,
+        ]);
+        flush_rewrite_rules(false);
     }
+    // One-time flush so pretty permalinks work if they were never flushed (e.g. existing installs)
+    if (get_option('kit_employee_portal_rewrite_flushed') !== 'yes') {
+        flush_rewrite_rules(true);
+        update_option('kit_employee_portal_rewrite_flushed', 'yes');
+    }
+    return;
+}
 
     $login_page = get_page_by_path('employee-login', OBJECT, 'page');
     if (!$login_page) {
@@ -211,7 +237,7 @@ function kit_create_employee_portal_pages() {
         wp_insert_post([
             'post_title'   => 'Employee Dashboard',
             'post_name'    => 'employee-dashboard',
-            'post_content' => '[kit_employee_dashboard]',
+            'post_content' => '[kit_employee_portal]',
             'post_status'  => 'publish',
             'post_type'    => 'page',
             'post_author'  => 1,
@@ -219,12 +245,51 @@ function kit_create_employee_portal_pages() {
     }
 
     update_option($option_key, 'yes');
+    flush_rewrite_rules(false);
 }
 add_action('init', function() {
-    if (get_option('kit_employee_portal_pages_created') !== 'yes') {
-        kit_create_employee_portal_pages();
-    }
+    kit_create_employee_portal_pages();
+    kit_employee_portal_migrate_dashboard_shortcode();
 }, 99);
+
+/**
+ * One-time migration: ensure Employee Dashboard page uses [kit_employee_portal] so ?section= works.
+ */
+function kit_employee_portal_migrate_dashboard_shortcode() {
+    if (get_option('kit_employee_portal_shortcode_migrated') === 'yes') {
+        return;
+    }
+    $page = get_page_by_path('employee-dashboard', OBJECT, 'page');
+    if (!$page || $page->post_status !== 'publish') {
+        update_option('kit_employee_portal_shortcode_migrated', 'yes');
+        return;
+    }
+    $content = $page->post_content;
+    if (strpos($content, '[kit_employee_portal]') !== false) {
+        update_option('kit_employee_portal_shortcode_migrated', 'yes');
+        return;
+    }
+    if (strpos($content, '[kit_employee_dashboard]') !== false) {
+        $new_content = str_replace('[kit_employee_dashboard]', '[kit_employee_portal]', $content);
+        wp_update_post(array(
+            'ID'           => $page->ID,
+            'post_content' => $new_content,
+        ));
+    }
+    update_option('kit_employee_portal_shortcode_migrated', 'yes');
+}
+
+// When an admin visits Settings → Permalinks, flush rewrite rules so portal URLs work (fixes 404)
+add_action('load-options-permalink.php', function() {
+    if (!current_user_can('manage_options')) {
+        return;
+    }
+    $dashboard = get_page_by_path('employee-dashboard', OBJECT, 'page');
+    $login = get_page_by_path('employee-login', OBJECT, 'page');
+    if ($dashboard || $login) {
+        flush_rewrite_rules(true);
+    }
+});
 
 // CRITICAL: Register deactivation hook BEFORE any WordPress functions are called
 // This ensures WordPress can find and execute the hook even if plugin fails to load

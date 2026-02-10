@@ -55,17 +55,17 @@ function waybill_page()
 }
 function plugin_Waybill_list_page()
 {
-    
+
     // Handle bulk export to PDF
     if (isset($_GET['export_selected']) && !empty($_GET['export_selected'])) {
         if (!current_user_can('kit_view_waybills')) {
             wp_die('Unauthorized');
         }
-        
+
         $selected_ids_string = sanitize_text_field($_GET['export_selected']);
         $selected_ids_array = array_map('intval', explode(',', $selected_ids_string));
         $selected_ids_array = array_filter($selected_ids_array);
-        
+
         if (!empty($selected_ids_array)) {
             // Redirect to PDF generation with selected_ids parameter
             // Get plugin root URL (go up one level from includes/)
@@ -73,7 +73,7 @@ function plugin_Waybill_list_page()
             $pdf_url = add_query_arg([
                 'selected_ids' => implode(',', $selected_ids_array)
             ], $plugin_url . '/includes/customers/pdf-bulkinvoicing.php');
-            
+
             wp_redirect($pdf_url);
             exit;
         }
@@ -152,7 +152,7 @@ function plugin_Waybill_list_page()
         if (isset($row->customer_name) && isset($row->customer_surname)) {
             $customer_name = trim($row->customer_name . ' ' . $row->customer_surname);
         }
-        
+
         // If customer name is still empty and we have customer_id, try to fetch it
         if (empty($customer_name) && isset($row->customer_id) && $row->customer_id > 0) {
             global $wpdb;
@@ -164,14 +164,14 @@ function plugin_Waybill_list_page()
                 $customer_name = trim(($customer->name ?? '') . ' ' . ($customer->surname ?? ''));
             }
         }
-        
+
         if (empty($customer_name)) {
             $customer_name = 'No Customer Data';
         }
 
         // Check if waybill is in warehouse
         $is_in_warehouse = isset($row->warehouse) && (intval($row->warehouse) == 1 || $row->warehouse === true);
-        
+
         // Build destination: prefer City, Country. Append route if meaningful (not "Warehoused items").
         $route_desc = isset($row->route_description) ? trim((string)$row->route_description) : '';
         $city_name  = isset($row->customer_city) ? trim((string)$row->customer_city) : '';
@@ -191,17 +191,17 @@ function plugin_Waybill_list_page()
             $dest_label = $route_desc . ($dest_label !== '' ? ' — ' . $dest_label : '');
         }
         $waybill_id = isset($row->id) ? intval($row->id) : 0;
-        
+
         // Use waybill_id for the view link and as the id
         $view_id = $waybill_id;
         $view_page = '08600-Waybill-view';
         $view_param = 'waybill_id';
         $bulk_id = $waybill_id;
-        
+
         // Get mass and volume
         $total_mass = isset($row->total_mass_kg) ? floatval($row->total_mass_kg) : 0;
         $total_volume = isset($row->total_volume) ? floatval($row->total_volume) : 0;
-        
+
         $waybillData[] = [
             'id' => $bulk_id, // Required for bulk management checkboxes
             'waybill_id' => $view_id, // For view links
@@ -223,10 +223,10 @@ function plugin_Waybill_list_page()
             'view_param' => $view_param,
             // Calculate total: product_invoice_amount + misc_total from miscellaneous JSON
             // Store as numeric value - column callback will handle formatting
-            'total' => (function($row) {
+            'total' => (function ($row) {
                 $product_invoice_amount = floatval($row->product_invoice_amount ?? 0);
                 $misc_total = 0;
-                
+
                 // Parse miscellaneous JSON to get misc_total
                 $miscellaneous_raw = $row->miscellaneous ?? null;
                 if (!empty($miscellaneous_raw)) {
@@ -235,7 +235,7 @@ function plugin_Waybill_list_page()
                         $misc_total = floatval($misc_data['misc_total']);
                     }
                 }
-                
+
                 return $product_invoice_amount + $misc_total;
             })($row),
             'delivery_status' => $row->delivery_status ?? 'No Delivery',
@@ -264,186 +264,197 @@ function plugin_Waybill_list_page()
     }
     // Debug statement removed - was causing JSON parsing errors
 ?>
-    <div class="wrap" style="max-width: 100vw; overflow-x: hidden;">
-        <?php
-        echo KIT_Commons::showingHeader([
-            'title' => 'Waybill Dashboard',
-            'icon' => KIT_Commons::icon('receipt'),
-            'content' => KIT_Modal::render(
-                'create-waybill-modal',
-                'Create New Waybill',
-                kit_render_waybill_multiform([
-                    'form_action'          => $form_action,
-                    'waybill_id'           => '',
-                    'is_edit_mode'         => '0',
-                    'waybill'              => '{}',
-                    'customer_id'          => '0',
-                    'is_existing_customer' => '0',
-                    'customer'             => $customers,
-                    'is_modal' => true
-                ]),
-                '3xl'
-            )
-        ]);
-        ?>
-        <div class="max-w-7xl mx-auto">
+    <div class="wrap">
+        <div class="<?php echo KIT_Commons::containerClasses(); ?>">
             <?php
-            $waybill_stats = [
-                [
-                    'title' => 'Total Waybills',
-                    'value' => number_format(KIT_Waybills::get_waybill_count()),
-                    'icon' => 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
-                    'color' => 'blue'
-                ],
-                [
-                    'title' => 'Recent Waybills',
-                    'value' => number_format(KIT_Waybills::get_recent_waybill_count()),
-                    'subtitle' => 'Last 7 days',
-                    'icon' => 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
-                    'color' => 'green'
-                ],
-                [
-                    'title' => 'Pending',
-                    'value' => number_format(KIT_Waybills::get_pending_waybill_count()),
-                    'icon' => 'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
-                    'color' => 'yellow'
-                ]
-            ];
-            echo KIT_QuickStats::render($waybill_stats, '', [
-                'grid_cols' => 'grid-cols-1 md:grid-cols-3',
-                'gap' => 'gap-6'
+            echo KIT_Commons::showingHeader([
+                'title' => 'Waybill Dashboard',
+                'icon' => KIT_Commons::icon('receipt'),
+                'content' => KIT_Modal::render(
+                    'create-waybill-modal',
+                    'Create New Waybill',
+                    kit_render_waybill_multiform([
+                        'form_action'          => $form_action,
+                        'waybill_id'           => '',
+                        'is_edit_mode'         => '0',
+                        'waybill'              => '{}',
+                        'customer_id'          => '0',
+                        'is_existing_customer' => '0',
+                        'customer'             => $customers,
+                        'is_modal' => true
+                    ]),
+                    '3xl'
+                )
             ]);
             ?>
-            <div class="space-y-4">
+            <div class="ajaxReload">
                 <?php
-                // Define actions
-                $summary_url = plugins_url('pdf-summary.php', dirname(__FILE__));
-                $actions = [
+                $waybill_stats = [
                     [
-                        'label' => 'Download',
-                        'title' => 'Download summary PDF',
-                        'target' => '_blank',
-                        'href' => $summary_url . '?waybill_no={waybill_no_raw}',
-                        'class' => 'text-xs font-medium text-green-600 hover:text-green-800 hover:underline'
+                        'title' => 'Total Waybills',
+                        'value' => number_format(KIT_Waybills::get_waybill_count()),
+                        'icon' => 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+                        'color' => 'blue'
                     ],
                     [
-                        'label' => 'View',
-                        'title' => 'View waybill',
-                        'target' => '_blank',
-                        'href' => '?page=08600-Waybill-view&waybill_id={waybill_id}',
-                        'class' => 'text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline',
-                        'callback' => function($value, $row, $rowIndex) {
-                            // Use view_page and view_param from row data
-                            $view_page = isset($row['view_page']) ? $row['view_page'] : '08600-Waybill-view';
-                            $view_param = isset($row['view_param']) ? $row['view_param'] : 'waybill_id';
-                            $waybill_id = isset($row['waybill_id']) ? $row['waybill_id'] : 0;
-                            
-                            return '?page=' . esc_attr($view_page) . '&' . esc_attr($view_param) . '=' . intval($waybill_id);
-                        }
+                        'title' => 'Recent Waybills',
+                        'value' => number_format(KIT_Waybills::get_recent_waybill_count()),
+                        'subtitle' => 'Last 7 days',
+                        'icon' => 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
+                        'color' => 'green'
                     ],
                     [
-                        'label' => 'Delete',
-                        'title' => 'Delete waybill',
-                        'href' => '?page=08600-waybill-manage&delete_waybill={waybill_no_raw}',
-                        'class' => 'text-xs font-medium text-red-600 hover:text-red-800 hover:underline',
-                        'onclick' => 'return confirm("Are you sure you want to delete this waybill?")'
+                        'title' => 'Pending',
+                        'value' => number_format(KIT_Waybills::get_pending_waybill_count()),
+                        'icon' => 'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+                        'color' => 'yellow'
                     ]
                 ];
-                // Use standardized column definitions from KIT_Commons
-                // Waybill # automatically includes status badge below
-                $columns = KIT_Commons::getColumns([
-                    'waybill_no',
-                    'mass_and_dimensions',
-                    'destination' => [
-                        'label' => 'City',
+                echo KIT_QuickStats::render($waybill_stats, 'Waybill Overview', [
+                    'grid_cols' => 'grid-cols-1 sm:grid-cols-3 md:grid-cols-3',
+                    'gap' => 'gap-4'
+                ]);
+                ?>
+                <script>
+                document.addEventListener('DOMContentLoaded', function () {
+                    var grid = document.querySelector('.kit-dashboard-kpis .grid') || document.querySelector('.wrap .grid');
+                    if (!grid) return;
+                    // #region agent log
+                    fetch('http://127.0.0.1:7243/ingest/eac88981-a808-4140-9871-c5bc5fb2b15c', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            sessionId: 'debug-session',
+                            runId: 'quickstats-layout',
+                            hypothesisId: 'CSS_GRID_MD',
+                            location: 'admin-pages.php:quickstats',
+                            message: 'QuickStats grid layout on Manage Waybills',
+                            data: {
+                                className: grid.className,
+                                innerWidth: window.innerWidth
+                            },
+                            timestamp: Date.now()
+                        })
+                    }).catch(function () {});
+                    // #endregion
+                });
+                </script>
+                <div class="space-y-4">
+                    <?php
+                    // Define actions
+                    $summary_url = plugins_url('pdf-summary.php', dirname(__FILE__));
+                    $actions = [
+                        [
+                            'label' => 'Download',
+                            'title' => 'Download summary PDF',
+                            'target' => '_blank',
+                            'href' => $summary_url . '?waybill_no={waybill_no_raw}',
+                            'class' => 'text-xs font-medium text-green-600 hover:text-green-800 hover:underline'
+                        ],
+                        [
+                            'label' => 'View',
+                            'title' => 'View waybill',
+                            'target' => '_blank',
+                            'href' => '?page=08600-Waybill-view&waybill_id={waybill_id}',
+                            'class' => 'text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline',
+                            'callback' => function ($value, $row, $rowIndex) {
+                                // Use view_page and view_param from row data
+                                $view_page = isset($row['view_page']) ? $row['view_page'] : '08600-Waybill-view';
+                                $view_param = isset($row['view_param']) ? $row['view_param'] : 'waybill_id';
+                                $waybill_id = isset($row['waybill_id']) ? $row['waybill_id'] : 0;
+
+                                return '?page=' . esc_attr($view_page) . '&' . esc_attr($view_param) . '=' . intval($waybill_id);
+                            }
+                        ],
+                        [
+                            'label' => 'Delete',
+                            'title' => 'Delete waybill',
+                            'href' => '?page=08600-waybill-manage&delete_waybill={waybill_no_raw}',
+                            'class' => 'text-xs font-medium text-red-600 hover:text-red-800 hover:underline',
+                            'onclick' => 'return confirm("Are you sure you want to delete this waybill?")'
+                        ]
+                    ];
+                    // Use standardized column definitions from KIT_Commons
+                    // Waybill # automatically includes status badge below
+                    $columns = KIT_Commons::getColumns([
+                        'waybill_no',
+                        'mass_and_dimensions',
+                        'destination' => [
+                            'label' => 'City',
+                            'callback' => function ($value, $row, $rowIndex) {
+                                $row = is_object($row) ? (array) $row : $row;
+                                $city_name = $row['city'] ?? '';
+                                if (empty($city_name) && !empty($value)) {
+                                    if (strpos($value, ',') !== false) {
+                                        list($country, $city) = array_map('trim', explode(',', $value, 2));
+                                        $city_name = $city;
+                                    } else {
+                                        $city_name = $value;
+                                    }
+                                }
+
+                                $delivery_reference = $row['delivery_reference'] ?? '';
+                                $delivery_id = $row['delivery_id'] ?? 0;
+
+                                $html = '<div class="flex flex-col">';
+                                $html .= '<span class="font-bold text-gray-900">' . esc_html($city_name ?: '—') . '</span>';
+
+                                if (!empty($delivery_reference)) {
+                                    $delivery_url = $delivery_id > 0
+                                        ? admin_url('admin.php?page=kit-deliveries&view_delivery=' . intval($delivery_id))
+                                        : '#';
+                                    $html .= '<a href="' . esc_url($delivery_url) . '" target="_blank" rel="noopener" class="text-[10px] font-bold text-blue-600 hover:text-blue-800 hover:underline">' . esc_html($delivery_reference) . '</a>';
+                                }
+
+                                $html .= '</div>';
+                                return $html;
+                            }
+                        ],
+                        'total' => ['cell_class' => 'text-right text-xs whitespace-nowrap']
+                    ]);
+                    // Insert Description column after Waybill # (so it appears as second data column)
+                    $description_col = [
+                        'label' => 'Description',
+                        'sortable' => true,
+                        'searchable' => true,
+                        'header_class' => 'text-left whitespace-nowrap min-w-[180px]',
+                        'cell_class' => 'text-left text-sm min-w-[180px] max-w-[280px] truncate',
                         'callback' => function ($value, $row, $rowIndex) {
                             $row = is_object($row) ? (array) $row : $row;
-                            $city_name = $row['city'] ?? '';
-                            if (empty($city_name) && !empty($value)) {
-                                if (strpos($value, ',') !== false) {
-                                    list($country, $city) = array_map('trim', explode(',', $value, 2));
-                                    $city_name = $city;
-                                } else {
-                                    $city_name = $value;
-                                }
-                            }
-                            
-                            $delivery_reference = $row['delivery_reference'] ?? '';
-                            $delivery_id = $row['delivery_id'] ?? 0;
-                            
-                            $html = '<div class="flex flex-col">';
-                            $html .= '<span class="font-bold text-gray-900">' . esc_html($city_name ?: '—') . '</span>';
-                            
-                            if (!empty($delivery_reference)) {
-                                $delivery_url = $delivery_id > 0 
-                                    ? admin_url('admin.php?page=kit-deliveries&view_delivery=' . intval($delivery_id))
-                                    : '#';
-                                $html .= '<a href="' . esc_url($delivery_url) . '" target="_blank" rel="noopener" class="text-[10px] font-bold text-blue-600 hover:text-blue-800 hover:underline">' . esc_html($delivery_reference) . '</a>';
-                            }
-                            
-                            $html .= '</div>';
-                            return $html;
+                            $desc = $row['description'] ?? $value ?? '';
+                            return esc_html($desc ?: '—');
                         }
-                    ],
-                    'total' => ['cell_class' => 'text-right text-xs whitespace-nowrap']
-                ]);
-                // Insert Description column after Waybill # (so it appears as second data column)
-                $description_col = [
-                    'label' => 'Description',
-                    'sortable' => true,
-                    'searchable' => true,
-                    'header_class' => 'text-left whitespace-nowrap min-w-[180px]',
-                    'cell_class' => 'text-left text-sm min-w-[180px] max-w-[280px] truncate',
-                    'callback' => function ($value, $row, $rowIndex) {
-                        $row = is_object($row) ? (array) $row : $row;
-                        $desc = $row['description'] ?? $value ?? '';
-                        return esc_html($desc ?: '—');
+                    ];
+                    $columns = array_merge(
+                        array_slice($columns, 0, 1, true),
+                        ['description' => $description_col],
+                        array_slice($columns, 1, null, true)
+                    );
+
+                    // Render table (infinite scroll) and pass actions so they appear in the dedicated Actions column
+                    if (class_exists('KIT_Unified_Table')) {
+                        // #region agent log
+                        $main_table_options = [
+                            'title' => 'All Waybeeills',
+                            'actions' => $actions,
+                            'searchable' => true,
+                            'sortable' => true,
+                            'exportable' => true,
+                            'bulk_management' => true,
+                            'bulk_actions_list' => ['delete', 'export'],
+                            'empty_message' => 'No waybills found',
+                            'groupby' => 'city',
+                            'group_heading_prefix' => '',
+                            'preserve_order' => true,
+                            'group_collapsible' => true,
+                            'group_collapsed' => false,
+                            'table_type' => true
+                        ];
+
+                        echo KIT_Unified_Table::infinite($waybillData, $columns, $main_table_options);
                     }
-                ];
-                $columns = array_merge(
-                    array_slice($columns, 0, 1, true),
-                    ['description' => $description_col],
-                    array_slice($columns, 1, null, true)
-                );
-               
-                // Render table (infinite scroll) and pass actions so they appear in the dedicated Actions column
-                if (class_exists('KIT_Unified_Table')) {
-                    // #region agent log
-                    $main_table_options = [
-                        'title' => 'All Waybeeills',
-                        'actions' => $actions,
-                        'searchable' => true,
-                        'sortable' => true,
-                        'exportable' => true,
-                        'bulk_management' => true,
-                        'bulk_actions_list' => ['delete', 'export'],
-                        'empty_message' => 'No waybills found',
-                        'groupby' => 'city',
-                        'group_heading_prefix' => '',
-                        'preserve_order' => true,
-                        'group_collapsible' => true,
-                        'group_collapsed' => false,
-                        'table_type' => true
-                    ];
-                    $log_data = [
-                        'sessionId' => 'debug-session',
-                        'runId' => 'run1',
-                        'hypothesisId' => 'B',
-                        'location' => 'admin-pages.php:' . __LINE__,
-                        'message' => 'Main waybill table options before render',
-                        'data' => [
-                            'options' => $main_table_options,
-                            'columns_count' => count($columns),
-                            'columns_source' => 'KIT_Commons::getColumns()'
-                        ],
-                        'timestamp' => time() * 1000
-                    ];
-                    file_put_contents('/Applications/MAMP/htdocs/08600/wp-content/plugins/courier-finance-plugin/.cursor/debug.log', json_encode($log_data) . "\n", FILE_APPEND);
-                    // #endregion
-                    
-                    echo KIT_Unified_Table::infinite($waybillData, $columns, $main_table_options);
-                }
-                ?>
+                    ?>
+                </div>
             </div>
         </div>
     </div>

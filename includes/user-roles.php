@@ -314,6 +314,30 @@ class KIT_User_Roles {
     public static function is_manager() {
         return in_array('manager', wp_get_current_user()->roles);
     }
+
+    /**
+     * Check if current user is admin or manager (ADMAN).
+     * Only ADMAN can use: Countries, Drivers, Routes & Destinations pages, and create delivery trucks.
+     * Data capturers are never ADMAN.
+     */
+    public static function is_adman() {
+        $user = wp_get_current_user();
+        if (!$user || !$user->exists()) {
+            return false;
+        }
+        $roles = is_array($user->roles) ? $user->roles : array();
+        if (in_array('data_capturer', $roles)) {
+            return false;
+        }
+        return in_array('administrator', $roles) || in_array('manager', $roles) || current_user_can('manage_options');
+    }
+
+    /**
+     * Check if current user can create a delivery truck (managers and admins only).
+     */
+    public static function can_create_delivery_truck() {
+        return self::is_adman();
+    }
     
     /**
      * Get user role display name

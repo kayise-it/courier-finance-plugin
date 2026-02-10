@@ -13,6 +13,7 @@ class KIT_QuickStats {
      * @return string HTML output
      */
     public static function render($stats = [], $title = '', $options = []) {
+        $stats = is_array($stats) ? $stats : [];
         $grid_cols = $options['grid_cols'] ?? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4';
         $show_icons = $options['show_icons'] ?? true;
         $gap = $options['gap'] ?? 'gap-6';

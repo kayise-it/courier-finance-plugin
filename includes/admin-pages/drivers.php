@@ -143,16 +143,30 @@ if (isset($_POST['action']) && $_POST['action'] === 'save_driver') {
     global $wpdb;
     $table = $wpdb->prefix . 'kit_drivers';
 
+    // Helper: build redirect URL for admin vs frontend portal
+    $build_redirect_url = function(array $args) {
+        // In the employee portal (frontend), use section URLs instead of wp-admin
+        if (function_exists('kit_using_employee_portal') && function_exists('kit_employee_portal_url') && kit_using_employee_portal()) {
+            // Section is always manage-drivers; remove any page param
+            unset($args['page']);
+            return kit_employee_portal_url('manage-drivers', $args);
+        }
+
+        // Default: wp-admin URL
+        return add_query_arg($args, admin_url('admin.php'));
+    };
+
     // Validate required fields
     $name = sanitize_text_field($_POST['name'] ?? '');
     if (empty(trim($name))) {
-        wp_redirect(add_query_arg([
-            'page' => 'manage-drivers',
-            'add' => isset($_POST['driver_id']) ? '' : '1',
-            'edit' => isset($_POST['driver_id']) ? intval($_POST['driver_id']) : '',
+        $redirect_args = [
+            'page'    => 'manage-drivers',
+            'add'     => isset($_POST['driver_id']) ? '' : '1',
+            'edit'    => isset($_POST['driver_id']) ? intval($_POST['driver_id']) : '',
             'message' => urlencode('Driver name is required.'),
-            'success' => '0'
-        ], admin_url('admin.php')));
+            'success' => '0',
+        ];
+        wp_redirect($build_redirect_url($redirect_args));
         exit;
     }
 
@@ -210,11 +224,12 @@ if (isset($_POST['action']) && $_POST['action'] === 'save_driver') {
     }
 
     // Redirect to avoid resubmission (toast will be shown on redirected page)
-    wp_redirect(add_query_arg([
-        'page' => 'manage-drivers',
+    $redirect_args = [
+        'page'    => 'manage-drivers',
         'message' => urlencode($message),
-        'success' => ($result !== false && $result !== 0 ? '1' : '0')
-    ], admin_url('admin.php')));
+        'success' => ($result !== false && $result !== 0 ? '1' : '0'),
+    ];
+    wp_redirect($build_redirect_url($redirect_args));
     exit;
 }
 
@@ -232,11 +247,17 @@ if (isset($_GET['delete']) && isset($_GET['_wpnonce'])) {
     $table = $wpdb->prefix . 'kit_drivers';
     $result = $wpdb->delete($table, ['id' => intval($_GET['delete'])]);
 
-    wp_redirect(add_query_arg([
-        'page' => 'manage-drivers',
+    $redirect_args = [
+        'page'    => 'manage-drivers',
         'message' => urlencode($result !== false ? 'Driver deleted successfully!' : 'Failed to delete driver.'),
-        'success' => ($result !== false ? '1' : '0')
-    ], admin_url('admin.php')));
+        'success' => ($result !== false ? '1' : '0'),
+    ];
+    // Reuse the same helper used in the save handler if available
+    if (isset($build_redirect_url) && is_callable($build_redirect_url)) {
+        wp_redirect($build_redirect_url($redirect_args));
+    } else {
+        wp_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+    }
     exit;
 }
 
@@ -252,11 +273,16 @@ if (isset($_POST['bulk_action']) && isset($_POST['bulk_ids']) && wp_verify_nonce
     $ids = array_filter($ids);
     
     if (empty($ids)) {
-        wp_redirect(add_query_arg([
-            'page' => 'manage-drivers',
+        $redirect_args = [
+            'page'    => 'manage-drivers',
             'message' => urlencode('No drivers selected.'),
-            'success' => '0'
-        ], admin_url('admin.php')));
+            'success' => '0',
+        ];
+        if (isset($build_redirect_url) && is_callable($build_redirect_url)) {
+            wp_redirect($build_redirect_url($redirect_args));
+        } else {
+            wp_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+        }
         exit;
     }
 
@@ -289,19 +315,29 @@ if (isset($_POST['bulk_action']) && isset($_POST['bulk_ids']) && wp_verify_nonce
 
         case 'export':
             // Export will be handled via GET parameter
-            wp_redirect(add_query_arg([
-                'page' => 'manage-drivers',
-                'export_selected' => implode(',', $ids)
-            ], admin_url('admin.php')));
+            $redirect_args = [
+                'page'            => 'manage-drivers',
+                'export_selected' => implode(',', $ids),
+            ];
+            if (isset($build_redirect_url) && is_callable($build_redirect_url)) {
+                wp_redirect($build_redirect_url($redirect_args));
+            } else {
+                wp_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+            }
             exit;
     }
 
     if ($action !== 'export') {
-        wp_redirect(add_query_arg([
-            'page' => 'manage-drivers',
+        $redirect_args = [
+            'page'    => 'manage-drivers',
             'message' => urlencode($message),
-            'success' => ($success ? '1' : '0')
-        ], admin_url('admin.php')));
+            'success' => ($success ? '1' : '0'),
+        ];
+        if (isset($build_redirect_url) && is_callable($build_redirect_url)) {
+            wp_redirect($build_redirect_url($redirect_args));
+        } else {
+            wp_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+        }
         exit;
     }
 }
@@ -334,6 +370,7 @@ if (isset($_GET['message'])) {
 ?>
 
 <div class="wrap">
+    <div class="<?php echo KIT_Commons::containerClasses(); ?>">
     <?php
     echo KIT_Commons::showingHeader([
         'title' => 'Manage Drivers',
@@ -348,6 +385,44 @@ if (isset($_GET['message'])) {
         'icon' => KIT_Commons::icon('user'),
     ]);
     ?>
+            <?php
+        $drivers_stats = [
+            [
+                'title' => 'Total Drivers',
+                'value' => number_format($total_drivers),
+                'icon' => 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
+                'color' => 'blue',
+                'class' => 'drivers-stats-total'
+            ],
+            [
+                'title' => 'Active Drivers',
+                'value' => number_format($active_drivers),
+                'icon' => 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
+                'color' => 'green',
+                'class' => 'drivers-stats-active'
+            ],
+            [
+                'title' => 'Inactive Drivers',
+                'value' => number_format($inactive_drivers),
+                'icon' => 'M13 10V3L4 14h7v7l9-11h-7z',
+                'color' => 'yellow',
+                'class' => 'drivers-stats-inactive'
+            ],
+            [
+                'title' => 'Drivers Served',
+                'value' => number_format($total_countries),
+                'icon' => 'M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+                'color' => 'purple',
+                'class' => 'countries-stats-served'
+            ]
+        ];
+
+        // Render stats
+        echo KIT_QuickStats::render($drivers_stats, '', [
+            'grid_cols' => 'grid-cols-1 sm:grid-cols-4 md:grid-cols-4 lg:grid-cols-4',
+            'gap' => 'gap-4'
+        ]);
+        ?>
     
     <?php if (isset($_GET['add']) || $edit_mode): ?>
         <!-- Add/Edit Driver Form -->
@@ -540,4 +615,5 @@ if (isset($_GET['message'])) {
             ?>
         </div>
     <?php endif; ?>
+</div>
 </div>

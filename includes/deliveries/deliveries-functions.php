@@ -43,7 +43,7 @@ class KIT_Deliveries
         add_action('wp_ajax_restore_delivery_backup', [self::class, 'handle_restore_delivery_backup']);
         add_action('wp_ajax_filter_deliveries', [self::class, 'ajax_filter_deliveries']);
         add_action('wp_ajax_nopriv_filter_deliveries', [self::class, 'ajax_filter_deliveries']);
-        
+
         // Schedule daily task to update past deliveries
         add_action('init', [self::class, 'schedule_daily_delivery_status_update']);
         add_action('kit_daily_update_past_deliveries', [self::class, 'update_past_deliveries_to_unconfirmed']);
@@ -764,7 +764,7 @@ class KIT_Deliveries
             // WordPress cron uses server time, so we schedule it for 00:00
             $timestamp = strtotime('tomorrow midnight');
             wp_schedule_event($timestamp, 'daily', 'kit_daily_update_past_deliveries');
-            
+
             error_log('KIT Deliveries: Scheduled daily delivery status update cron job');
         }
     }
@@ -893,7 +893,7 @@ class KIT_Deliveries
             require_once plugin_dir_path(__FILE__) . '../components/toast.php';
         }
         KIT_Toast::ensure_toast_loads();
-        
+
         if (isset($_GET['delivery_success']) && $_GET['delivery_success'] === '1') {
             $message = isset($_GET['message']) ? urldecode($_GET['message']) : 'Operation completed successfully!';
             echo KIT_Toast::success($message, 'Success');
@@ -980,628 +980,647 @@ class KIT_Deliveries
 
         ?>
 
-        <div class="wrap">
-            <?php
-            // Initialize variables for modal if not already set
-            if (!isset($form_action)) {
-                $form_action = admin_url('admin-post.php?action=add_waybill_action');
-            }
-            if (!isset($customers_encoded)) {
-                $customers = tholaMaCustomer();
-                $customers_encoded = base64_encode(json_encode($customers));
-            }
-            if (!isset($delivery_id)) {
-                $delivery_id = intval($_GET['delivery_id'] ?? 0);
-            }
-
-            echo KIT_Commons::showingHeader([
-                'title'   => 'Delivery Details',
-                'icon'    => KIT_Commons::icon('receipt'),
-                'content' => KIT_Modal::render(
-                    'create-waybill-modal',
-                    'Create New Waybill',
-                    '<!-- DEBUG: Modal content start -->' . kit_render_waybill_multiform([
-                        'form_action'          => $form_action,
-                        'waybill_id'           => '',
-                        'is_edit_mode'         => '0',
-                        'waybill'              => '{}',
-                        'customer_id'          => '0',
-                        'delivery_id'          => $delivery_id,
-                        'is_existing_customer' => '0',
-                        'customer'             => $customers_encoded,
-                    ]) . '<!-- DEBUG: Modal content end -->',
-                    '6xl'
-                ),
-            ]);
-            ?>
-            
-            <script>
-            jQuery(document).ready(function($) {
-                const deliveryId = <?php echo intval($delivery_id); ?>;
-                const deliveryData = <?php echo json_encode([
-                    'id' => $delivery->id ?? 0,
-                    'direction_id' => $delivery->direction_id ?? 0,
-                    'destination_country_id' => $delivery->destination_country_id ?? 0,
-                    'destination_city_id' => $delivery->destination_city_id ?? 0,
-                    'destination_country' => isset($delivery->destination_country) ? $delivery->destination_country : ''
-                ]); ?>;
-                
-                // Verification function to ensure all required fields are set
-                function verifyFieldsSet() {
-                    const directionIdField = document.getElementById('direction_id');
-                    const selectedDeliveryId = document.getElementById('selected_delivery_id');
-                    const destinationCountrySelect = document.getElementById('stepDestinationSelect') || 
-                                                    document.querySelector('select[name="destination_country"]');
-                    const destinationCountryBackup = document.getElementById('destination_country_backup');
-                    const destinationCity = document.getElementById('destination_city');
-                    
-                    const directionId = directionIdField ? directionIdField.value.trim() : '';
-                    const deliveryId = selectedDeliveryId ? selectedDeliveryId.value.trim() : '';
-                    const countryId = destinationCountrySelect ? destinationCountrySelect.value : 
-                                    (destinationCountryBackup ? destinationCountryBackup.value : '');
-                    const cityId = destinationCity ? destinationCity.value.trim() : '';
-                    
-                    const allFieldsSet = directionId && deliveryId && countryId && cityId;
-                    
-                    console.log('🔍 Field verification:', {
-                        directionId: directionId || 'MISSING',
-                        deliveryId: deliveryId || 'MISSING',
-                        countryId: countryId || 'MISSING',
-                        cityId: cityId || 'MISSING',
-                        allFieldsSet: allFieldsSet ? '✅' : '❌'
-                    });
-                    
-                    if (!allFieldsSet) {
-                        // Try to fix missing fields
-                        if (!countryId && deliveryData.destination_country_id) {
-                            if (destinationCountrySelect) {
-                                destinationCountrySelect.value = deliveryData.destination_country_id;
-                                const changeEvent = new Event('change', { bubbles: true });
-                                destinationCountrySelect.dispatchEvent(changeEvent);
-                                console.log('🔧 Fixed: Set destination country');
-                            }
-                            if (destinationCountryBackup) {
-                                destinationCountryBackup.value = deliveryData.destination_country_id;
-                                console.log('🔧 Fixed: Set destination_country_backup');
-                            }
-                        }
-                        
-                        if (!cityId && deliveryData.destination_city_id) {
-                            if (destinationCity) {
-                                // Check if cities are loaded
-                                if (destinationCity.options.length > 1) {
-                                    destinationCity.value = deliveryData.destination_city_id;
-                                    const cityChangeEvent = new Event('change', { bubbles: true });
-                                    destinationCity.dispatchEvent(cityChangeEvent);
-                                    console.log('🔧 Fixed: Set destination city');
-                                } else {
-                                    // Cities not loaded yet, retry verification
-                                    setTimeout(verifyFieldsSet, 500);
-                                    return;
-                                }
-                            }
-                        }
-                        
-                        if (!directionId && deliveryData.direction_id) {
-                            if (directionIdField) {
-                                directionIdField.value = deliveryData.direction_id;
-                                console.log('🔧 Fixed: Set direction_id');
-                            }
-                        }
-                        
-                        if (!deliveryId && deliveryData.id) {
-                            if (selectedDeliveryId) {
-                                selectedDeliveryId.value = deliveryData.id;
-                                console.log('🔧 Fixed: Set selected_delivery_id to:', deliveryData.id);
-                            }
-                        }
-                        
-                        // Re-verify after fixes
-                        setTimeout(verifyFieldsSet, 500);
-                    } else {
-                        console.log('✅ All required fields verified and set!');
-                    }
+        <div class="wrap deliveries-page">
+            <div class="<?php echo KIT_Commons::containerClasses(); ?>">
+                <?php
+                // Initialize variables for modal if not already set
+                if (!isset($form_action)) {
+                    $form_action = admin_url('admin-post.php?action=add_waybill_action');
                 }
-                
-                // Listen for modal opening - prepare step 4 in background but keep step 1 visible
-                function prepareStep4AndDelivery() {
-                    // CRITICAL: Ensure step 1 is active and visible
-                    const step1 = document.getElementById('step-1');
-                    const step4 = document.getElementById('step-4');
-                    
-                    if (step1 && step4) {
-                        // Force step 1 to be active and visible
-                        step1.classList.remove('hidden');
-                        step1.classList.add('active');
-                        step4.classList.remove('active');
-                        step4.classList.add('hidden');
-                        console.log('✅ Ensured step-1 is active, step-4 is hidden');
-                    }
-                    
-                    // Wait for form to be fully rendered
-                    setTimeout(function() {
-                        if (!step4) {
-                            console.warn('⚠️ Could not find step-4 element, retrying...');
-                            setTimeout(prepareStep4AndDelivery, 200);
-                            return;
-                        }
-                        
-                        // Double-check step 1 is still active
-                        if (step1) {
-                            step1.classList.remove('hidden');
-                            step1.classList.add('active');
-                        }
-                        if (step4) {
-                            step4.classList.remove('active');
-                            step4.classList.add('hidden');
-                        }
-                        
-                        console.log('✅ Preparing step-4 in background (user still sees step-1)');
-                        
-                        // Function to find and select delivery card with retries
-                        function findAndSelectDeliveryCard(retryCount = 0) {
-                            const maxRetries = 10;
-                            const retryDelay = 200;
-                            
-                            // Wait for scheduled deliveries to be initialized
-                            if (typeof initializeScheduledDeliveries === 'function' && !window.scheduledDeliveriesInitialized) {
-                                if (retryCount < maxRetries) {
-                                    setTimeout(function() {
-                                        findAndSelectDeliveryCard(retryCount + 1);
-                                    }, retryDelay);
-                                    return;
-                                }
-                            }
-                            
-                            // Try multiple selectors to find the delivery card
-                            let deliveryCard = document.querySelector('.delivery-card[data-delivery-id="' + deliveryId + '"]');
-                            
-                            if (!deliveryCard && deliveryData.direction_id) {
-                                deliveryCard = document.querySelector('.delivery-card[data-direction-id="' + deliveryData.direction_id + '"]');
-                            }
-                            
-                            if (!deliveryCard && deliveryData.id) {
-                                deliveryCard = document.querySelector('.delivery-card[data-index="' + deliveryData.id + '"]');
-                            }
-                            
-                            // Also try finding by matching the delivery reference or other attributes
-                            if (!deliveryCard) {
-                                const allCards = document.querySelectorAll('.delivery-card');
-                                allCards.forEach(function(card) {
-                                    const cardDeliveryId = card.getAttribute('data-delivery-id');
-                                    const cardDirectionId = card.getAttribute('data-direction-id');
-                                    const cardIndex = card.getAttribute('data-index');
-                                    
-                                    if (cardDeliveryId == deliveryId || 
-                                        cardDirectionId == deliveryData.direction_id ||
-                                        cardIndex == deliveryId ||
-                                        cardIndex == deliveryData.id) {
-                                        deliveryCard = card;
-                                    }
-                                });
-                            }
-                            
-                            if (deliveryCard) {
-                                console.log('✅ Found delivery card for delivery_id:', deliveryId);
-                                
-                                const directionId = deliveryCard.getAttribute('data-direction-id') || 
-                                                   deliveryCard.getAttribute('data-index') ||
-                                                   deliveryData.direction_id;
-                                
-                                // Get city ID from card
-                                const destinationCityId = deliveryCard.getAttribute('data-destination-city-id') || 
-                                                         deliveryData.destination_city_id;
-                                
-                                // CRITICAL: Set hidden fields FIRST before selecting card
-                                const selectedDeliveryId = document.getElementById('selected_delivery_id');
-                                const directionIdField = document.getElementById('direction_id');
-                                
-                                if (selectedDeliveryId) {
-                                    selectedDeliveryId.value = deliveryId;
-                                    console.log('✅ Set selected_delivery_id to:', deliveryId);
-                                }
-                                if (directionIdField && directionId) {
-                                    directionIdField.value = directionId;
-                                    console.log('✅ Set direction_id to:', directionId);
-                                }
-                                
-                                // Get and set destination country
-                                const destinationCountryId = deliveryCard.getAttribute('data-destination-country-id') || 
-                                                           deliveryData.destination_country_id;
-                                if (destinationCountryId) {
-                                    const destinationCountrySelect = document.getElementById('stepDestinationSelect') || 
-                                                                    document.querySelector('select[name="destination_country"]');
-                                    const destinationCountryBackup = document.getElementById('destination_country_backup');
-                                    
+                if (!isset($customers_encoded)) {
+                    $customers = tholaMaCustomer();
+                    $customers_encoded = base64_encode(json_encode($customers));
+                }
+                if (!isset($delivery_id)) {
+                    $delivery_id = intval($_GET['delivery_id'] ?? 0);
+                }
+
+                echo KIT_Commons::showingHeader([
+                    'title'   => 'Delivery Details',
+                    'icon'    => KIT_Commons::icon('receipt'),
+                    'content' => KIT_Modal::render(
+                        'create-waybill-modal',
+                        'Create New Waybill',
+                        '<!-- DEBUG: Modal content start -->' . kit_render_waybill_multiform([
+                            'form_action'          => $form_action,
+                            'waybill_id'           => '',
+                            'is_edit_mode'         => '0',
+                            'waybill'              => '{}',
+                            'customer_id'          => '0',
+                            'delivery_id'          => $delivery_id,
+                            'is_existing_customer' => '0',
+                            'customer'             => $customers_encoded,
+                        ]) . '<!-- DEBUG: Modal content end -->',
+                        '6xl'
+                    ),
+                ]);
+                ?>
+
+                <script>
+                    jQuery(document).ready(function($) {
+                        const deliveryId = <?php echo intval($delivery_id); ?>;
+                        const deliveryData = <?php echo json_encode([
+                                                    'id' => $delivery->id ?? 0,
+                                                    'direction_id' => $delivery->direction_id ?? 0,
+                                                    'destination_country_id' => $delivery->destination_country_id ?? 0,
+                                                    'destination_city_id' => $delivery->destination_city_id ?? 0,
+                                                    'destination_country' => isset($delivery->destination_country) ? $delivery->destination_country : ''
+                                                ]); ?>;
+
+                        // Verification function to ensure all required fields are set
+                        function verifyFieldsSet() {
+                            const directionIdField = document.getElementById('direction_id');
+                            const selectedDeliveryId = document.getElementById('selected_delivery_id');
+                            const destinationCountrySelect = document.getElementById('stepDestinationSelect') ||
+                                document.querySelector('select[name="destination_country"]');
+                            const destinationCountryBackup = document.getElementById('destination_country_backup');
+                            const destinationCity = document.getElementById('destination_city');
+
+                            const directionId = directionIdField ? directionIdField.value.trim() : '';
+                            const deliveryId = selectedDeliveryId ? selectedDeliveryId.value.trim() : '';
+                            const countryId = destinationCountrySelect ? destinationCountrySelect.value :
+                                (destinationCountryBackup ? destinationCountryBackup.value : '');
+                            const cityId = destinationCity ? destinationCity.value.trim() : '';
+
+                            const allFieldsSet = directionId && deliveryId && countryId && cityId;
+
+                            console.log('🔍 Field verification:', {
+                                directionId: directionId || 'MISSING',
+                                deliveryId: deliveryId || 'MISSING',
+                                countryId: countryId || 'MISSING',
+                                cityId: cityId || 'MISSING',
+                                allFieldsSet: allFieldsSet ? '✅' : '❌'
+                            });
+
+                            if (!allFieldsSet) {
+                                // Try to fix missing fields
+                                if (!countryId && deliveryData.destination_country_id) {
                                     if (destinationCountrySelect) {
-                                        destinationCountrySelect.value = destinationCountryId;
-                                        
-                                        // Trigger change event to load cities
-                                        const changeEvent = new Event('change', { bubbles: true });
+                                        destinationCountrySelect.value = deliveryData.destination_country_id;
+                                        const changeEvent = new Event('change', {
+                                            bubbles: true
+                                        });
                                         destinationCountrySelect.dispatchEvent(changeEvent);
-                                        
-                                        // Also try loadDestinationCities if available
-                                        if (typeof window.loadDestinationCities === 'function') {
-                                            window.loadDestinationCities(destinationCountryId);
-                                        }
-                                        
-                                        console.log('✅ Set stepDestinationSelect to:', destinationCountryId, 'and triggered city loading');
+                                        console.log('🔧 Fixed: Set destination country');
                                     }
                                     if (destinationCountryBackup) {
-                                        destinationCountryBackup.value = destinationCountryId;
-                                        console.log('✅ Set destination_country_backup to:', destinationCountryId);
+                                        destinationCountryBackup.value = deliveryData.destination_country_id;
+                                        console.log('🔧 Fixed: Set destination_country_backup');
                                     }
                                 }
-                                
-                                // Visually select the card (add selected class)
-                                deliveryCard.classList.add('selected');
-                                console.log('✅ Added selected class to delivery card');
-                                
-                                // Use selectDeliveryCard if available (preferred method) - don't skip details to ensure city loads
-                                if (typeof selectDeliveryCard === 'function') {
-                                    selectDeliveryCard(deliveryCard, directionId, false); // false = show details and load city
-                                } else if (typeof window.selectDeliveryCard === 'function') {
-                                    window.selectDeliveryCard(deliveryCard, directionId, false);
-                                } else if (typeof handleDeliveryClick === 'function') {
-                                    handleDeliveryClick(deliveryCard, directionId, false);
-                                } else if (typeof window.handleDeliveryClick === 'function') {
-                                    window.handleDeliveryClick(deliveryCard, directionId, false);
-                                } else {
-                                    // Fallback: manually click the card
-                                    deliveryCard.click();
-                                }
-                                
-                                console.log('✅ Auto-selected delivery card');
-                                
-                                // Ensure city is selected after cities are loaded
-                                if (destinationCityId) {
-                                    // First, ensure cities are loaded using the global loadDestinationCities function
-                                    const countryId = deliveryCard.getAttribute('data-destination-country-id') || deliveryData.destination_country_id;
-                                    
-                                    // Use loadDestinationCities if available (from waybillmultiform.php)
-                                    if (typeof window.loadDestinationCities === 'function') {
-                                        console.log('🔄 Loading cities using loadDestinationCities function');
-                                        window.loadDestinationCities(countryId, destinationCityId);
-                                    } else {
-                                        // Fallback: trigger country change to load cities
-                                        if (destinationCountrySelect) {
-                                            const changeEvent = new Event('change', { bubbles: true });
-                                            destinationCountrySelect.dispatchEvent(changeEvent);
-                                        }
-                                    }
-                                    
-                                    function setCityValue(cityId, retryCount = 0) {
-                                        const maxRetries = 20; // Increased retries
-                                        const citySelect = document.getElementById('destination_city');
-                                        
-                                        if (!citySelect) {
-                                            if (retryCount < maxRetries) {
-                                                setTimeout(() => setCityValue(cityId, retryCount + 1), 200);
-                                            } else {
-                                                console.warn('⚠️ destination_city select not found after retries');
-                                            }
+
+                                if (!cityId && deliveryData.destination_city_id) {
+                                    if (destinationCity) {
+                                        // Check if cities are loaded
+                                        if (destinationCity.options.length > 1) {
+                                            destinationCity.value = deliveryData.destination_city_id;
+                                            const cityChangeEvent = new Event('change', {
+                                                bubbles: true
+                                            });
+                                            destinationCity.dispatchEvent(cityChangeEvent);
+                                            console.log('🔧 Fixed: Set destination city');
+                                        } else {
+                                            // Cities not loaded yet, retry verification
+                                            setTimeout(verifyFieldsSet, 500);
                                             return;
                                         }
-                                        
-                                        // Check if cities are loaded (more than just "Select City" option)
-                                        if (citySelect.options.length > 1) {
-                                            // Find the option with matching value
-                                            const optionExists = Array.from(citySelect.options).some(opt => String(opt.value) === String(cityId));
-                                            
-                                            if (optionExists) {
-                                                citySelect.value = cityId;
-                                                const cityChangeEvent = new Event('change', { bubbles: true });
-                                                citySelect.dispatchEvent(cityChangeEvent);
-                                                
-                                                // Verify the value was actually set
-                                                if (citySelect.value === String(cityId)) {
-                                                    console.log('✅ Set destination city to:', cityId, '(verified)');
-                                                    // Trigger final verification
-                                                    setTimeout(function() {
-                                                        verifyFieldsSet();
-                                                    }, 300);
-                                                    return;
-                                                } else {
-                                                    console.warn('⚠️ City value not set correctly, retrying...');
+                                    }
+                                }
+
+                                if (!directionId && deliveryData.direction_id) {
+                                    if (directionIdField) {
+                                        directionIdField.value = deliveryData.direction_id;
+                                        console.log('🔧 Fixed: Set direction_id');
+                                    }
+                                }
+
+                                if (!deliveryId && deliveryData.id) {
+                                    if (selectedDeliveryId) {
+                                        selectedDeliveryId.value = deliveryData.id;
+                                        console.log('🔧 Fixed: Set selected_delivery_id to:', deliveryData.id);
+                                    }
+                                }
+
+                                // Re-verify after fixes
+                                setTimeout(verifyFieldsSet, 500);
+                            } else {
+                                console.log('✅ All required fields verified and set!');
+                            }
+                        }
+
+                        // Listen for modal opening - prepare step 4 in background but keep step 1 visible
+                        function prepareStep4AndDelivery() {
+                            // CRITICAL: Ensure step 1 is active and visible
+                            const step1 = document.getElementById('step-1');
+                            const step4 = document.getElementById('step-4');
+
+                            if (step1 && step4) {
+                                // Force step 1 to be active and visible
+                                step1.classList.remove('hidden');
+                                step1.classList.add('active');
+                                step4.classList.remove('active');
+                                step4.classList.add('hidden');
+                                console.log('✅ Ensured step-1 is active, step-4 is hidden');
+                            }
+
+                            // Wait for form to be fully rendered
+                            setTimeout(function() {
+                                if (!step4) {
+                                    console.warn('⚠️ Could not find step-4 element, retrying...');
+                                    setTimeout(prepareStep4AndDelivery, 200);
+                                    return;
+                                }
+
+                                // Double-check step 1 is still active
+                                if (step1) {
+                                    step1.classList.remove('hidden');
+                                    step1.classList.add('active');
+                                }
+                                if (step4) {
+                                    step4.classList.remove('active');
+                                    step4.classList.add('hidden');
+                                }
+
+                                console.log('✅ Preparing step-4 in background (user still sees step-1)');
+
+                                // Function to find and select delivery card with retries
+                                function findAndSelectDeliveryCard(retryCount = 0) {
+                                    const maxRetries = 10;
+                                    const retryDelay = 200;
+
+                                    // Wait for scheduled deliveries to be initialized
+                                    if (typeof initializeScheduledDeliveries === 'function' && !window.scheduledDeliveriesInitialized) {
+                                        if (retryCount < maxRetries) {
+                                            setTimeout(function() {
+                                                findAndSelectDeliveryCard(retryCount + 1);
+                                            }, retryDelay);
+                                            return;
+                                        }
+                                    }
+
+                                    // Try multiple selectors to find the delivery card
+                                    let deliveryCard = document.querySelector('.delivery-card[data-delivery-id="' + deliveryId + '"]');
+
+                                    if (!deliveryCard && deliveryData.direction_id) {
+                                        deliveryCard = document.querySelector('.delivery-card[data-direction-id="' + deliveryData.direction_id + '"]');
+                                    }
+
+                                    if (!deliveryCard && deliveryData.id) {
+                                        deliveryCard = document.querySelector('.delivery-card[data-index="' + deliveryData.id + '"]');
+                                    }
+
+                                    // Also try finding by matching the delivery reference or other attributes
+                                    if (!deliveryCard) {
+                                        const allCards = document.querySelectorAll('.delivery-card');
+                                        allCards.forEach(function(card) {
+                                            const cardDeliveryId = card.getAttribute('data-delivery-id');
+                                            const cardDirectionId = card.getAttribute('data-direction-id');
+                                            const cardIndex = card.getAttribute('data-index');
+
+                                            if (cardDeliveryId == deliveryId ||
+                                                cardDirectionId == deliveryData.direction_id ||
+                                                cardIndex == deliveryId ||
+                                                cardIndex == deliveryData.id) {
+                                                deliveryCard = card;
+                                            }
+                                        });
+                                    }
+
+                                    if (deliveryCard) {
+                                        console.log('✅ Found delivery card for delivery_id:', deliveryId);
+
+                                        const directionId = deliveryCard.getAttribute('data-direction-id') ||
+                                            deliveryCard.getAttribute('data-index') ||
+                                            deliveryData.direction_id;
+
+                                        // Get city ID from card
+                                        const destinationCityId = deliveryCard.getAttribute('data-destination-city-id') ||
+                                            deliveryData.destination_city_id;
+
+                                        // CRITICAL: Set hidden fields FIRST before selecting card
+                                        const selectedDeliveryId = document.getElementById('selected_delivery_id');
+                                        const directionIdField = document.getElementById('direction_id');
+
+                                        if (selectedDeliveryId) {
+                                            selectedDeliveryId.value = deliveryId;
+                                            console.log('✅ Set selected_delivery_id to:', deliveryId);
+                                        }
+                                        if (directionIdField && directionId) {
+                                            directionIdField.value = directionId;
+                                            console.log('✅ Set direction_id to:', directionId);
+                                        }
+
+                                        // Get and set destination country
+                                        const destinationCountryId = deliveryCard.getAttribute('data-destination-country-id') ||
+                                            deliveryData.destination_country_id;
+                                        if (destinationCountryId) {
+                                            const destinationCountrySelect = document.getElementById('stepDestinationSelect') ||
+                                                document.querySelector('select[name="destination_country"]');
+                                            const destinationCountryBackup = document.getElementById('destination_country_backup');
+
+                                            if (destinationCountrySelect) {
+                                                destinationCountrySelect.value = destinationCountryId;
+
+                                                // Trigger change event to load cities
+                                                const changeEvent = new Event('change', {
+                                                    bubbles: true
+                                                });
+                                                destinationCountrySelect.dispatchEvent(changeEvent);
+
+                                                // Also try loadDestinationCities if available
+                                                if (typeof window.loadDestinationCities === 'function') {
+                                                    window.loadDestinationCities(destinationCountryId);
+                                                }
+
+                                                console.log('✅ Set stepDestinationSelect to:', destinationCountryId, 'and triggered city loading');
+                                            }
+                                            if (destinationCountryBackup) {
+                                                destinationCountryBackup.value = destinationCountryId;
+                                                console.log('✅ Set destination_country_backup to:', destinationCountryId);
+                                            }
+                                        }
+
+                                        // Visually select the card (add selected class)
+                                        deliveryCard.classList.add('selected');
+                                        console.log('✅ Added selected class to delivery card');
+
+                                        // Use selectDeliveryCard if available (preferred method) - don't skip details to ensure city loads
+                                        if (typeof selectDeliveryCard === 'function') {
+                                            selectDeliveryCard(deliveryCard, directionId, false); // false = show details and load city
+                                        } else if (typeof window.selectDeliveryCard === 'function') {
+                                            window.selectDeliveryCard(deliveryCard, directionId, false);
+                                        } else if (typeof handleDeliveryClick === 'function') {
+                                            handleDeliveryClick(deliveryCard, directionId, false);
+                                        } else if (typeof window.handleDeliveryClick === 'function') {
+                                            window.handleDeliveryClick(deliveryCard, directionId, false);
+                                        } else {
+                                            // Fallback: manually click the card
+                                            deliveryCard.click();
+                                        }
+
+                                        console.log('✅ Auto-selected delivery card');
+
+                                        // Ensure city is selected after cities are loaded
+                                        if (destinationCityId) {
+                                            // First, ensure cities are loaded using the global loadDestinationCities function
+                                            const countryId = deliveryCard.getAttribute('data-destination-country-id') || deliveryData.destination_country_id;
+
+                                            // Use loadDestinationCities if available (from waybillmultiform.php)
+                                            if (typeof window.loadDestinationCities === 'function') {
+                                                console.log('🔄 Loading cities using loadDestinationCities function');
+                                                window.loadDestinationCities(countryId, destinationCityId);
+                                            } else {
+                                                // Fallback: trigger country change to load cities
+                                                if (destinationCountrySelect) {
+                                                    const changeEvent = new Event('change', {
+                                                        bubbles: true
+                                                    });
+                                                    destinationCountrySelect.dispatchEvent(changeEvent);
+                                                }
+                                            }
+
+                                            function setCityValue(cityId, retryCount = 0) {
+                                                const maxRetries = 20; // Increased retries
+                                                const citySelect = document.getElementById('destination_city');
+
+                                                if (!citySelect) {
                                                     if (retryCount < maxRetries) {
                                                         setTimeout(() => setCityValue(cityId, retryCount + 1), 200);
+                                                    } else {
+                                                        console.warn('⚠️ destination_city select not found after retries');
                                                     }
+                                                    return;
                                                 }
-                                            } else {
-                                                // Option doesn't exist yet, retry
-                                                if (retryCount < maxRetries) {
-                                                    setTimeout(() => setCityValue(cityId, retryCount + 1), 200);
-                                                } else {
-                                                    console.warn('⚠️ City option not found after retries, trying direct population');
-                                                    // Last resort: try to populate from preloaded map
-                                                    const citiesMap = (window.myPluginAjax && window.myPluginAjax.countryCities) || {};
-                                                    const cities = citiesMap && citiesMap[String(countryId)] ? citiesMap[String(countryId)] : [];
-                                                    
-                                                    if (Array.isArray(cities) && cities.length) {
-                                                        citySelect.innerHTML = '<option value="">Select City</option>';
-                                                        cities.forEach(function(city) {
-                                                            const option = document.createElement('option');
-                                                            option.value = city.id;
-                                                            option.textContent = city.city_name;
-                                                            if (String(city.id) === String(cityId)) {
-                                                                option.selected = true;
-                                                            }
-                                                            citySelect.appendChild(option);
-                                                        });
+
+                                                // Check if cities are loaded (more than just "Select City" option)
+                                                if (citySelect.options.length > 1) {
+                                                    // Find the option with matching value
+                                                    const optionExists = Array.from(citySelect.options).some(opt => String(opt.value) === String(cityId));
+
+                                                    if (optionExists) {
                                                         citySelect.value = cityId;
-                                                        const cityChangeEvent = new Event('change', { bubbles: true });
+                                                        const cityChangeEvent = new Event('change', {
+                                                            bubbles: true
+                                                        });
                                                         citySelect.dispatchEvent(cityChangeEvent);
-                                                        
+
                                                         // Verify the value was actually set
                                                         if (citySelect.value === String(cityId)) {
-                                                            console.log('✅ Set destination city (direct population):', cityId, '(verified)');
+                                                            console.log('✅ Set destination city to:', cityId, '(verified)');
+                                                            // Trigger final verification
                                                             setTimeout(function() {
                                                                 verifyFieldsSet();
                                                             }, 300);
+                                                            return;
                                                         } else {
-                                                            console.warn('⚠️ City value not set correctly after direct population');
+                                                            console.warn('⚠️ City value not set correctly, retrying...');
+                                                            if (retryCount < maxRetries) {
+                                                                setTimeout(() => setCityValue(cityId, retryCount + 1), 200);
+                                                            }
                                                         }
+                                                    } else {
+                                                        // Option doesn't exist yet, retry
+                                                        if (retryCount < maxRetries) {
+                                                            setTimeout(() => setCityValue(cityId, retryCount + 1), 200);
+                                                        } else {
+                                                            console.warn('⚠️ City option not found after retries, trying direct population');
+                                                            // Last resort: try to populate from preloaded map
+                                                            const citiesMap = (window.myPluginAjax && window.myPluginAjax.countryCities) || {};
+                                                            const cities = citiesMap && citiesMap[String(countryId)] ? citiesMap[String(countryId)] : [];
+
+                                                            if (Array.isArray(cities) && cities.length) {
+                                                                citySelect.innerHTML = '<option value="">Select City</option>';
+                                                                cities.forEach(function(city) {
+                                                                    const option = document.createElement('option');
+                                                                    option.value = city.id;
+                                                                    option.textContent = city.city_name;
+                                                                    if (String(city.id) === String(cityId)) {
+                                                                        option.selected = true;
+                                                                    }
+                                                                    citySelect.appendChild(option);
+                                                                });
+                                                                citySelect.value = cityId;
+                                                                const cityChangeEvent = new Event('change', {
+                                                                    bubbles: true
+                                                                });
+                                                                citySelect.dispatchEvent(cityChangeEvent);
+
+                                                                // Verify the value was actually set
+                                                                if (citySelect.value === String(cityId)) {
+                                                                    console.log('✅ Set destination city (direct population):', cityId, '(verified)');
+                                                                    setTimeout(function() {
+                                                                        verifyFieldsSet();
+                                                                    }, 300);
+                                                                } else {
+                                                                    console.warn('⚠️ City value not set correctly after direct population');
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                } else {
+                                                    // Cities not loaded yet, retry
+                                                    if (retryCount < maxRetries) {
+                                                        setTimeout(() => setCityValue(cityId, retryCount + 1), 200);
+                                                    } else {
+                                                        console.warn('⚠️ Cities still not loaded after retries');
                                                     }
                                                 }
                                             }
+
+                                            // Start trying to set city after a delay (increased delay to allow cities to load)
+                                            setTimeout(() => setCityValue(destinationCityId, 0), 800);
+
+                                            // Verify all fields are set after city is set (with longer timeout)
+                                            setTimeout(function() {
+                                                verifyFieldsSet();
+                                            }, 3000);
                                         } else {
-                                            // Cities not loaded yet, retry
-                                            if (retryCount < maxRetries) {
-                                                setTimeout(() => setCityValue(cityId, retryCount + 1), 200);
-                                            } else {
-                                                console.warn('⚠️ Cities still not loaded after retries');
-                                            }
+                                            // No city ID, but still verify other fields
+                                            setTimeout(function() {
+                                                verifyFieldsSet();
+                                            }, 1000);
                                         }
-                                    }
-                                    
-                                    // Start trying to set city after a delay (increased delay to allow cities to load)
-                                    setTimeout(() => setCityValue(destinationCityId, 0), 800);
-                                    
-                                    // Verify all fields are set after city is set (with longer timeout)
-                                    setTimeout(function() {
-                                        verifyFieldsSet();
-                                    }, 3000);
-                                } else {
-                                    // No city ID, but still verify other fields
-                                    setTimeout(function() {
-                                        verifyFieldsSet();
-                                    }, 1000);
-                                }
-                            } else if (retryCount < maxRetries) {
-                                // Retry if card not found yet
-                                setTimeout(function() {
-                                    findAndSelectDeliveryCard(retryCount + 1);
-                                }, retryDelay);
-                            } else {
-                                // Final fallback: populate fields directly from delivery data
-                                console.warn('⚠️ Could not find delivery card after retries, populating fields directly');
-                                
-                                if (deliveryData.destination_country_id) {
-                                    const destinationCountrySelect = document.getElementById('stepDestinationSelect') || 
-                                                                    document.querySelector('select[name="destination_country"]');
-                                    const destinationCountryBackup = document.getElementById('destination_country_backup');
-                                    
-                                    if (destinationCountrySelect) {
-                                        destinationCountrySelect.value = deliveryData.destination_country_id;
-                                        
-                                        // Trigger change event to load cities
-                                        const changeEvent = new Event('change', { bubbles: true });
-                                        destinationCountrySelect.dispatchEvent(changeEvent);
-                                        
-                                        // Also try handleCountryChange if available
-                                        if (typeof handleCountryChange === 'function') {
-                                            handleCountryChange(deliveryData.destination_country_id, 'destination');
-                                        }
-                                        
-                                        console.log('✅ Set destination country to:', deliveryData.destination_country_id);
-                                    }
-                                    
-                                    if (destinationCountryBackup) {
-                                        destinationCountryBackup.value = deliveryData.destination_country_id;
-                                        console.log('✅ Set destination_country_backup to:', deliveryData.destination_country_id);
-                                    }
-                                    
-                                    // Set city after cities are loaded with retry logic
-                                    if (deliveryData.destination_city_id) {
-                                        // Use loadDestinationCities if available
-                                        if (typeof window.loadDestinationCities === 'function') {
-                                            console.log('🔄 Loading cities using loadDestinationCities function (fallback)');
-                                            window.loadDestinationCities(deliveryData.destination_country_id, deliveryData.destination_city_id);
-                                        }
-                                        
-                                        function setCityValueFallback(cityId, retryCount = 0) {
-                                            const maxRetries = 20; // Increased retries
-                                            const citySelect = document.getElementById('destination_city');
-                                            
-                                            if (!citySelect) {
-                                                if (retryCount < maxRetries) {
-                                                    setTimeout(() => setCityValueFallback(cityId, retryCount + 1), 200);
+                                    } else if (retryCount < maxRetries) {
+                                        // Retry if card not found yet
+                                        setTimeout(function() {
+                                            findAndSelectDeliveryCard(retryCount + 1);
+                                        }, retryDelay);
+                                    } else {
+                                        // Final fallback: populate fields directly from delivery data
+                                        console.warn('⚠️ Could not find delivery card after retries, populating fields directly');
+
+                                        if (deliveryData.destination_country_id) {
+                                            const destinationCountrySelect = document.getElementById('stepDestinationSelect') ||
+                                                document.querySelector('select[name="destination_country"]');
+                                            const destinationCountryBackup = document.getElementById('destination_country_backup');
+
+                                            if (destinationCountrySelect) {
+                                                destinationCountrySelect.value = deliveryData.destination_country_id;
+
+                                                // Trigger change event to load cities
+                                                const changeEvent = new Event('change', {
+                                                    bubbles: true
+                                                });
+                                                destinationCountrySelect.dispatchEvent(changeEvent);
+
+                                                // Also try handleCountryChange if available
+                                                if (typeof handleCountryChange === 'function') {
+                                                    handleCountryChange(deliveryData.destination_country_id, 'destination');
                                                 }
-                                                return;
+
+                                                console.log('✅ Set destination country to:', deliveryData.destination_country_id);
                                             }
-                                            
-                                            if (citySelect.options.length > 1) {
-                                                // Check if option exists
-                                                const optionExists = Array.from(citySelect.options).some(opt => String(opt.value) === String(cityId));
-                                                
-                                                if (optionExists) {
-                                                    citySelect.value = cityId;
-                                                    const cityChangeEvent = new Event('change', { bubbles: true });
-                                                    citySelect.dispatchEvent(cityChangeEvent);
-                                                    
-                                                    // Verify the value was actually set
-                                                    if (citySelect.value === String(cityId)) {
-                                                        console.log('✅ Set destination city (fallback):', cityId, '(verified)');
-                                                        setTimeout(function() {
-                                                            verifyFieldsSet();
-                                                        }, 300);
+
+                                            if (destinationCountryBackup) {
+                                                destinationCountryBackup.value = deliveryData.destination_country_id;
+                                                console.log('✅ Set destination_country_backup to:', deliveryData.destination_country_id);
+                                            }
+
+                                            // Set city after cities are loaded with retry logic
+                                            if (deliveryData.destination_city_id) {
+                                                // Use loadDestinationCities if available
+                                                if (typeof window.loadDestinationCities === 'function') {
+                                                    console.log('🔄 Loading cities using loadDestinationCities function (fallback)');
+                                                    window.loadDestinationCities(deliveryData.destination_country_id, deliveryData.destination_city_id);
+                                                }
+
+                                                function setCityValueFallback(cityId, retryCount = 0) {
+                                                    const maxRetries = 20; // Increased retries
+                                                    const citySelect = document.getElementById('destination_city');
+
+                                                    if (!citySelect) {
+                                                        if (retryCount < maxRetries) {
+                                                            setTimeout(() => setCityValueFallback(cityId, retryCount + 1), 200);
+                                                        }
                                                         return;
+                                                    }
+
+                                                    if (citySelect.options.length > 1) {
+                                                        // Check if option exists
+                                                        const optionExists = Array.from(citySelect.options).some(opt => String(opt.value) === String(cityId));
+
+                                                        if (optionExists) {
+                                                            citySelect.value = cityId;
+                                                            const cityChangeEvent = new Event('change', {
+                                                                bubbles: true
+                                                            });
+                                                            citySelect.dispatchEvent(cityChangeEvent);
+
+                                                            // Verify the value was actually set
+                                                            if (citySelect.value === String(cityId)) {
+                                                                console.log('✅ Set destination city (fallback):', cityId, '(verified)');
+                                                                setTimeout(function() {
+                                                                    verifyFieldsSet();
+                                                                }, 300);
+                                                                return;
+                                                            } else if (retryCount < maxRetries) {
+                                                                setTimeout(() => setCityValueFallback(cityId, retryCount + 1), 200);
+                                                            }
+                                                        } else if (retryCount < maxRetries) {
+                                                            // Option doesn't exist yet, retry
+                                                            setTimeout(() => setCityValueFallback(cityId, retryCount + 1), 200);
+                                                        } else {
+                                                            // Last resort: try direct population
+                                                            const citiesMap = (window.myPluginAjax && window.myPluginAjax.countryCities) || {};
+                                                            const cities = citiesMap && citiesMap[String(deliveryData.destination_country_id)] ? citiesMap[String(deliveryData.destination_country_id)] : [];
+
+                                                            if (Array.isArray(cities) && cities.length) {
+                                                                citySelect.innerHTML = '<option value="">Select City</option>';
+                                                                cities.forEach(function(city) {
+                                                                    const option = document.createElement('option');
+                                                                    option.value = city.id;
+                                                                    option.textContent = city.city_name;
+                                                                    if (String(city.id) === String(cityId)) {
+                                                                        option.selected = true;
+                                                                    }
+                                                                    citySelect.appendChild(option);
+                                                                });
+                                                                citySelect.value = cityId;
+                                                                const cityChangeEvent = new Event('change', {
+                                                                    bubbles: true
+                                                                });
+                                                                citySelect.dispatchEvent(cityChangeEvent);
+
+                                                                if (citySelect.value === String(cityId)) {
+                                                                    console.log('✅ Set destination city (fallback direct population):', cityId, '(verified)');
+                                                                    setTimeout(function() {
+                                                                        verifyFieldsSet();
+                                                                    }, 300);
+                                                                }
+                                                            }
+                                                        }
                                                     } else if (retryCount < maxRetries) {
                                                         setTimeout(() => setCityValueFallback(cityId, retryCount + 1), 200);
                                                     }
-                                                } else if (retryCount < maxRetries) {
-                                                    // Option doesn't exist yet, retry
-                                                    setTimeout(() => setCityValueFallback(cityId, retryCount + 1), 200);
-                                                } else {
-                                                    // Last resort: try direct population
-                                                    const citiesMap = (window.myPluginAjax && window.myPluginAjax.countryCities) || {};
-                                                    const cities = citiesMap && citiesMap[String(deliveryData.destination_country_id)] ? citiesMap[String(deliveryData.destination_country_id)] : [];
-                                                    
-                                                    if (Array.isArray(cities) && cities.length) {
-                                                        citySelect.innerHTML = '<option value="">Select City</option>';
-                                                        cities.forEach(function(city) {
-                                                            const option = document.createElement('option');
-                                                            option.value = city.id;
-                                                            option.textContent = city.city_name;
-                                                            if (String(city.id) === String(cityId)) {
-                                                                option.selected = true;
-                                                            }
-                                                            citySelect.appendChild(option);
-                                                        });
-                                                        citySelect.value = cityId;
-                                                        const cityChangeEvent = new Event('change', { bubbles: true });
-                                                        citySelect.dispatchEvent(cityChangeEvent);
-                                                        
-                                                        if (citySelect.value === String(cityId)) {
-                                                            console.log('✅ Set destination city (fallback direct population):', cityId, '(verified)');
-                                                            setTimeout(function() {
-                                                                verifyFieldsSet();
-                                                            }, 300);
-                                                        }
-                                                    }
                                                 }
-                                            } else if (retryCount < maxRetries) {
-                                                setTimeout(() => setCityValueFallback(cityId, retryCount + 1), 200);
+
+                                                setTimeout(() => setCityValueFallback(deliveryData.destination_city_id, 0), 800);
                                             }
                                         }
-                                        
-                                        setTimeout(() => setCityValueFallback(deliveryData.destination_city_id, 0), 800);
+
+                                        // Set hidden fields - CRITICAL for validation
+                                        const selectedDeliveryId = document.getElementById('selected_delivery_id');
+                                        const directionIdField = document.getElementById('direction_id');
+
+                                        if (selectedDeliveryId) {
+                                            selectedDeliveryId.value = deliveryId;
+                                            console.log('✅ Set selected_delivery_id (fallback) to:', deliveryId);
+                                        }
+                                        if (directionIdField) {
+                                            const dirId = deliveryData.direction_id || deliveryId;
+                                            directionIdField.value = dirId;
+                                            console.log('✅ Set direction_id (fallback) to:', dirId);
+                                        }
+
+                                        // Verify all fields are set after fallback population
+                                        setTimeout(function() {
+                                            verifyFieldsSet();
+                                        }, 2000);
                                     }
                                 }
-                                
-                                // Set hidden fields - CRITICAL for validation
-                                const selectedDeliveryId = document.getElementById('selected_delivery_id');
-                                const directionIdField = document.getElementById('direction_id');
-                                
-                                if (selectedDeliveryId) {
-                                    selectedDeliveryId.value = deliveryId;
-                                    console.log('✅ Set selected_delivery_id (fallback) to:', deliveryId);
-                                }
-                                if (directionIdField) {
-                                    const dirId = deliveryData.direction_id || deliveryId;
-                                    directionIdField.value = dirId;
-                                    console.log('✅ Set direction_id (fallback) to:', dirId);
-                                }
-                                
-                                // Verify all fields are set after fallback population
-                                setTimeout(function() {
-                                    verifyFieldsSet();
-                                }, 2000);
-                            }
-                        }
-                        
-                        // Start looking for the delivery card after a short delay
-                        setTimeout(function() {
-                            findAndSelectDeliveryCard(0);
-                        }, 500);
-                    }, 500);
-                }
-                
-                // Listen for modal opening event
-                $(document).on('modal:opened', function(e, openedModal) {
-                    if (openedModal && openedModal.length && openedModal.attr('id') === 'create-waybill-modal') {
-                        prepareStep4AndDelivery();
-                    }
-                });
-                
-                // Also listen directly on the modal element
-                $('#create-waybill-modal').on('modal:opened', function() {
-                    prepareStep4AndDelivery();
-                });
-                
-                // Fallback: check if modal is already open when script loads
-                setTimeout(function() {
-                    const modal = $('#create-waybill-modal');
-                    if (modal.length && !modal.hasClass('hidden')) {
-                        prepareStep4AndDelivery();
-                    }
-                }, 1000);
-            });
-            </script>
-            <?php
-            // Display success message if waybill was created
-            if (isset($_GET['waybill_created']) && $_GET['waybill_created'] === '1') {
-                if (!class_exists('KIT_Toast')) {
-                    require_once plugin_dir_path(__FILE__) . '../components/toast.php';
-                }
-                KIT_Toast::ensure_toast_loads();
-                $waybill_no = isset($_GET['waybill_no']) ? sanitize_text_field($_GET['waybill_no']) : '';
-                $message    = isset($_GET['message']) ? sanitize_text_field($_GET['message']) : 'Waybill created successfully!';
-                echo KIT_Toast::success($message, 'Success');
-            }
-            ?>
 
-            <div class="<?php echo KIT_Commons::container() ?>">
-                <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
-                    <div class="md:col-span-4 min-w-0">
-                        <div class="bg-white rounded-lg shadow border border-gray-200 p-3 sm:p-4 md:p-6 space-y-3 md:space-y-6">
-                            <div class="flex items-center justify-between mb-4">
-                                <h2 class="text-base sm:text-lg md:text-md font-semibold text-gray-700">Truck Details</h2>
-                            </div>
-                            <hr>
-                            <table class="min-w-full divide-y divide-gray-200 text-xs md:text-sm">
-                                <tbody class="bg-white divide-y divide-gray-100">
-                                    <tr>
-                                        <th
-                                            class="text-left py-1.5 md:py-2 pr-2 md:pr-4 text-black font-medium whitespace-nowrap w-1/3">
-                                            Reference</th>
-                                        <td class="py-1.5 md:py-2 text-gray-900 break-words">
-                                            <?php echo esc_html($delivery->delivery_reference); ?></td>
-                                    </tr>
-                                    <tr>
-                                        <th
-                                            class="text-left py-1.5 md:py-2 pr-2 md:pr-4 text-black font-medium whitespace-nowrap w-1/3">
-                                            Origin</th>
-                                        <td class="py-1.5 md:py-2 text-gray-900 break-words">
-                                            <?php echo esc_html($delivery->origin_country); ?></td>
-                                    </tr>
-                                    <tr>
-                                        <th
-                                            class="text-left py-1.5 md:py-2 pr-2 md:pr-4 text-black font-medium whitespace-nowrap w-1/3">
-                                            Destination</th>
-                                        <td class="py-1.5 md:py-2 text-gray-900 break-words">
-                                            <?php echo esc_html($delivery->destination_country); ?></td>
-                                    </tr>
-                                    <tr>
-                                        <th
-                                            class="text-left py-1.5 md:py-2 pr-2 md:pr-4 text-black font-medium whitespace-nowrap w-1/3">
-                                            Departure</th>
-                                        <td class="py-1.5 md:py-2 text-gray-900">
-                                            <?php echo esc_html(date('Y-m-d', strtotime($delivery->dispatch_date))); ?></td>
-                                    </tr>
-                                    <tr>
-                                        <th
-                                            class="text-left py-1.5 md:py-2 pr-2 md:pr-4 text-black font-medium whitespace-nowrap w-1/3">
-                                            Driver</th>
-                                        <td class="py-1.5 md:py-2 text-gray-900">
-                                            <?php
-                                            if (isset($delivery->driver_name) && !empty($delivery->driver_name)) {
-                                                echo esc_html($delivery->driver_name);
-                                                if (!empty($delivery->driver_phone)) {
-                                                    echo ' <span class="text-gray-500">(' . esc_html($delivery->driver_phone) . ')</span>';
+                                // Start looking for the delivery card after a short delay
+                                setTimeout(function() {
+                                    findAndSelectDeliveryCard(0);
+                                }, 500);
+                            }, 500);
+                        }
+
+                        // Listen for modal opening event
+                        $(document).on('modal:opened', function(e, openedModal) {
+                            if (openedModal && openedModal.length && openedModal.attr('id') === 'create-waybill-modal') {
+                                prepareStep4AndDelivery();
+                            }
+                        });
+
+                        // Also listen directly on the modal element
+                        $('#create-waybill-modal').on('modal:opened', function() {
+                            prepareStep4AndDelivery();
+                        });
+
+                        // Fallback: check if modal is already open when script loads
+                        setTimeout(function() {
+                            const modal = $('#create-waybill-modal');
+                            if (modal.length && !modal.hasClass('hidden')) {
+                                prepareStep4AndDelivery();
+                            }
+                        }, 1000);
+                    });
+                </script>
+                <?php
+                // Display success message if waybill was created
+                if (isset($_GET['waybill_created']) && $_GET['waybill_created'] === '1') {
+                    if (!class_exists('KIT_Toast')) {
+                        require_once plugin_dir_path(__FILE__) . '../components/toast.php';
+                    }
+                    KIT_Toast::ensure_toast_loads();
+                    $waybill_no = isset($_GET['waybill_no']) ? sanitize_text_field($_GET['waybill_no']) : '';
+                    $message    = isset($_GET['message']) ? sanitize_text_field($_GET['message']) : 'Waybill created successfully!';
+                    echo KIT_Toast::success($message, 'Success');
+                }
+                ?>
+
+                <div class="<?php echo KIT_Commons::container() ?>">
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
+                        <div class="md:col-span-4 min-w-0">
+                            <div class="bg-white rounded-lg shadow border border-gray-200 p-3 sm:p-4 md:p-6 space-y-3 md:space-y-6">
+                                <div class="flex items-center justify-between mb-4">
+                                    <h2 class="text-base sm:text-lg md:text-md font-semibold text-gray-700">Truck Details</h2>
+                                </div>
+                                <hr>
+                                <table class="min-w-full divide-y divide-gray-200 text-xs md:text-sm">
+                                    <tbody class="bg-white divide-y divide-gray-100">
+                                        <tr>
+                                            <th
+                                                class="text-left py-1.5 md:py-2 pr-2 md:pr-4 text-black font-medium whitespace-nowrap w-1/3">
+                                                Reference</th>
+                                            <td class="py-1.5 md:py-2 text-gray-900 break-words">
+                                                <?php echo esc_html($delivery->delivery_reference); ?></td>
+                                        </tr>
+                                        <tr>
+                                            <th
+                                                class="text-left py-1.5 md:py-2 pr-2 md:pr-4 text-black font-medium whitespace-nowrap w-1/3">
+                                                Origin</th>
+                                            <td class="py-1.5 md:py-2 text-gray-900 break-words">
+                                                <?php echo esc_html($delivery->origin_country); ?></td>
+                                        </tr>
+                                        <tr>
+                                            <th
+                                                class="text-left py-1.5 md:py-2 pr-2 md:pr-4 text-black font-medium whitespace-nowrap w-1/3">
+                                                Destination</th>
+                                            <td class="py-1.5 md:py-2 text-gray-900 break-words">
+                                                <?php echo esc_html($delivery->destination_country); ?></td>
+                                        </tr>
+                                        <tr>
+                                            <th
+                                                class="text-left py-1.5 md:py-2 pr-2 md:pr-4 text-black font-medium whitespace-nowrap w-1/3">
+                                                Departure</th>
+                                            <td class="py-1.5 md:py-2 text-gray-900">
+                                                <?php echo esc_html(date('Y-m-d', strtotime($delivery->dispatch_date))); ?></td>
+                                        </tr>
+                                        <tr>
+                                            <th
+                                                class="text-left py-1.5 md:py-2 pr-2 md:pr-4 text-black font-medium whitespace-nowrap w-1/3">
+                                                Driver</th>
+                                            <td class="py-1.5 md:py-2 text-gray-900">
+                                                <?php
+                                                if (isset($delivery->driver_name) && !empty($delivery->driver_name)) {
+                                                    echo esc_html($delivery->driver_name);
+                                                    if (!empty($delivery->driver_phone)) {
+                                                        echo ' <span class="text-gray-500">(' . esc_html($delivery->driver_phone) . ')</span>';
+                                                    }
+                                                } else {
+                                                    echo '<span class="text-gray-400">No driver assigned</span>';
                                                 }
-                                            } else {
-                                                echo '<span class="text-gray-400">No driver assigned</span>';
-                                            }
-                                            ?>
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <th
-                                            class="text-left py-1.5 md:py-2 pr-2 md:pr-4 text-black font-medium whitespace-nowrap w-1/3">
-                                            Status</th>
-                                        <td class="py-1.5 md:py-2">
-                                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
+                                                ?>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <th
+                                                class="text-left py-1.5 md:py-2 pr-2 md:pr-4 text-black font-medium whitespace-nowrap w-1/3">
+                                                Status</th>
+                                            <td class="py-1.5 md:py-2">
+                                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
                             <?php
                             echo $delivery->status === 'delivered'
                                 ? 'bg-green-100 text-green-800'
@@ -1609,205 +1628,207 @@ class KIT_Deliveries
                                     ? 'bg-yellow-100 text-yellow-800'
                                     : 'bg-blue-100 text-blue-800');
                             ?>">
-                                                <?php echo esc_html(ucfirst(str_replace('_', ' ', (string) ($delivery->status ?? '')))); ?>
-                                            </span>
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <th
-                                            class="text-left py-1.5 md:py-2 pr-2 md:pr-4 text-black font-medium whitespace-nowrap w-1/3">
-                                            Created By</th>
-                                        <td class="py-1.5 md:py-2 text-gray-900">
-                                            <?php echo esc_html(self::get_customer_name($delivery->created_by)); ?>
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                            <hr>
-                            <!-- Button to generate PDF of this delivery and its waybills, showing the waybills and the city names of the waybills -->
-                            <div class="flex justify-between">
-                                <div class="">
-                                    <?php
-                                    // Render Edit Delivery Modal
-                                    $edit_delivery_form = self::deliveryForm($delivery_id, true);
-                                    echo KIT_Commons::renderButton(
-                                        'EDIT',
-                                        'primary',
-                                        'lg',
-                                        [
-                                            'onclick'     => sprintf("editDeliveryTruck('%s')", esc_js($delivery_id)),
-                                            'classes'     => 'gap-2',
-                                            'icon'        => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />',
-                                            'iconPosition' => 'left',
-                                        ]
-                                    );
-                                    
-                                    ?>
+                                                    <?php echo esc_html(ucfirst(str_replace('_', ' ', (string) ($delivery->status ?? '')))); ?>
+                                                </span>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <th
+                                                class="text-left py-1.5 md:py-2 pr-2 md:pr-4 text-black font-medium whitespace-nowrap w-1/3">
+                                                Created By</th>
+                                            <td class="py-1.5 md:py-2 text-gray-900">
+                                                <?php echo esc_html(self::get_customer_name($delivery->created_by)); ?>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                                <hr>
+                                <!-- Button to generate PDF of this delivery and its waybills, showing the waybills and the city names of the waybills -->
+                                <div class="flex justify-between">
+                                    <div class="">
+                                        <?php
+                                        // Render Edit Delivery Modal
+                                        $edit_delivery_form = self::deliveryForm($delivery_id, true);
+                                        echo KIT_Commons::renderButton(
+                                            'EDIT',
+                                            'primary',
+                                            'lg',
+                                            [
+                                                'onclick'     => sprintf("editDeliveryTruck('%s')", esc_js($delivery_id)),
+                                                'classes'     => 'gap-2',
+                                                'icon'        => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />',
+                                                'iconPosition' => 'left',
+                                            ]
+                                        );
+
+                                        ?>
+                                    </div>
+                                    <div class="">
+                                        <?php
+                                        $delivery_pdf_url = add_query_arg(
+                                            [
+                                                'delivery_id'   => $delivery_id,
+                                                'delivery_nonce' => wp_create_nonce('delivery_truck_pdf'),
+                                            ],
+                                            plugin_dir_url(__FILE__) . '../../delivery-truck-pdf.php'
+                                        );
+                                        ?>
+                                        <?php
+                                        echo KIT_Commons::renderButton(
+                                            'PDF',
+                                            'primary',
+                                            'lg',
+                                            [
+                                                'href'        => esc_url($delivery_pdf_url),
+                                                'target'      => '_blank',
+                                                'rel'         => 'noopener noreferrer',
+                                                'classes'     => 'gap-2',
+                                                'icon'        => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />',
+                                                'iconPosition' => 'left',
+                                                'gradient'    => true,
+                                            ]
+                                        );
+                                        ?>
+                                    </div>
                                 </div>
-                                <div class="">
-                                    <?php
-                                    $delivery_pdf_url = add_query_arg(
-                                        [
-                                            'delivery_id'   => $delivery_id,
-                                            'delivery_nonce' => wp_create_nonce('delivery_truck_pdf'),
-                                        ],
-                                        plugin_dir_url(__FILE__) . '../../delivery-truck-pdf.php'
-                                    );
-                                    ?>
-                                    <?php
-                                    echo KIT_Commons::renderButton(
-                                        'PDF',
-                                        'primary',
-                                        'lg',
-                                        [
-                                            'href'        => esc_url($delivery_pdf_url),
-                                            'target'      => '_blank',
-                                            'rel'         => 'noopener noreferrer',
-                                            'classes'     => 'gap-2',
-                                            'icon'        => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />',
-                                            'iconPosition' => 'left',
-                                            'gradient'    => true,
-                                        ]
-                                    );
-                                    ?>
+
+                            </div>
+                        </div>
+                        <div class="md:col-span-8 min-w-0 bg-white rounded-lg shadow border border-gray-200 p-3 sm:p-4 md:p-6">
+                            <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-3 md:mb-4">
+                                <h2 class="text-base sm:text-lg md:text-xl font-semibold text-gray-700">Waybills on Truck</h2>
+                                <div class="text-xs sm:text-sm text-gray-500">
+                                    Showing: <?php echo is_array($waybillsandItems) ? count($waybillsandItems) : 0; ?> waybills
                                 </div>
                             </div>
 
-                        </div>
-                    </div>
-                    <div class="md:col-span-8 min-w-0 bg-white rounded-lg shadow border border-gray-200 p-3 sm:p-4 md:p-6">
-                        <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-3 md:mb-4">
-                            <h2 class="text-base sm:text-lg md:text-xl font-semibold text-gray-700">Waybills on Truck</h2>
-                            <div class="text-xs sm:text-sm text-gray-500">
-                                Showing: <?php echo is_array($waybillsandItems) ? count($waybillsandItems) : 0; ?> waybills
-                            </div>
-                        </div>
-
-                        <!-- Totals Summary Row -->
-                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-2 sm:p-3 md:p-4 mb-3 md:mb-4">
-                            <div class="flex flex-wrap justify-between items-center gap-2 md:gap-4 text-center">
-                                <div class="flex-1 min-w-[100px] px-1">
-                                    <div class="text-xs md:text-sm font-medium text-blue-800 truncate">Total Waybills</div>
-                                    <div class="text-lg md:text-2xl font-bold text-blue-900 truncate">
-                                        <?php echo KIT_Waybills::calculate_total_waybills($delivery_id); ?></div>
-                                </div>
-                                <div class="flex-1 min-w-[100px] px-1">
-                                    <div class="text-xs md:text-sm font-medium text-blue-800 truncate">Total Weight</div>
-                                    <div class="text-sm md:text-2xl font-bold text-blue-900 truncate">
-                                        <?php echo number_format(KIT_Waybills::calculate_total_mass($delivery_id), 1); ?> KG
-                                    </div>
-                                </div>
-                                <div class="flex-1 min-w-[100px] px-1">
-                                    <div class="text-xs md:text-sm font-medium text-blue-800 truncate">Total Volume</div>
-                                    <div class="text-sm md:text-2xl font-bold text-blue-900 truncate">
-                                        <?php echo number_format(KIT_Waybills::calculate_total_volume($delivery_id), 1); ?> m³
-                                    </div>
-                                </div>
-                                <?php if (class_exists('KIT_User_Roles') && !KIT_User_Roles::can_see_prices()): ?>
-
-                                <?php else: ?>
+                            <!-- Totals Summary Row -->
+                            <div class="bg-blue-50 border border-blue-200 rounded-lg p-2 sm:p-3 md:p-4 mb-3 md:mb-4">
+                                <div class="flex flex-wrap justify-between items-center gap-2 md:gap-4 text-center">
                                     <div class="flex-1 min-w-[100px] px-1">
-                                        <div class="text-xs md:text-sm font-medium text-blue-800 truncate">Total Amount</div>
+                                        <div class="text-xs md:text-sm font-medium text-blue-800 truncate">Total Waybills</div>
+                                        <div class="text-lg md:text-2xl font-bold text-blue-900 truncate">
+                                            <?php echo KIT_Waybills::calculate_total_waybills($delivery_id); ?></div>
+                                    </div>
+                                    <div class="flex-1 min-w-[100px] px-1">
+                                        <div class="text-xs md:text-sm font-medium text-blue-800 truncate">Total Weight</div>
                                         <div class="text-sm md:text-2xl font-bold text-blue-900 truncate">
-                                            <?php echo KIT_Commons::currency() . ' ' . number_format(KIT_Waybills::calculate_total_amount($delivery_id), 2); ?>
+                                            <?php echo number_format(KIT_Waybills::calculate_total_mass($delivery_id), 1); ?> KG
                                         </div>
                                     </div>
-                                <?php endif; ?>
+                                    <div class="flex-1 min-w-[100px] px-1">
+                                        <div class="text-xs md:text-sm font-medium text-blue-800 truncate">Total Volume</div>
+                                        <div class="text-sm md:text-2xl font-bold text-blue-900 truncate">
+                                            <?php echo number_format(KIT_Waybills::calculate_total_volume($delivery_id), 1); ?> m³
+                                        </div>
+                                    </div>
+                                    <?php if (class_exists('KIT_User_Roles') && !KIT_User_Roles::can_see_prices()): ?>
+
+                                    <?php else: ?>
+                                        <div class="flex-1 min-w-[100px] px-1">
+                                            <div class="text-xs md:text-sm font-medium text-blue-800 truncate">Total Amount</div>
+                                            <div class="text-sm md:text-2xl font-bold text-blue-900 truncate">
+                                                <?php echo KIT_Commons::currency() . ' ' . number_format(KIT_Waybills::calculate_total_amount($delivery_id), 2); ?>
+                                            </div>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
                             </div>
-                        </div>
 
-                        <?php
-                        // Use standardized columns - waybill_no includes status badge below it (universal)
-                        // Name & Surname column removed; Mass & Dims and Volume (m³) combined in one cell
-                        $columns = KIT_Commons::getColumns([
-                            'waybill_no',
-                            'description',
-                        ]);
-                        // Description: biggest column for space
-                        $columns['description']['header_class'] = ($columns['description']['header_class'] ?? '') . ' whitespace-nowrap text-left min-w-[180px]';
-                        $columns['description']['cell_class']   = ($columns['description']['cell_class'] ?? '') . ' text-left text-sm min-w-[180px] max-w-none';
+                            <?php
+                            // Use standardized columns - waybill_no includes status badge below it (universal)
+                            // Name & Surname column removed; Mass & Dims and Volume (m³) combined in one cell
+                            $columns = KIT_Commons::getColumns([
+                                'waybill_no',
+                                'description',
+                            ]);
+                            // Description: biggest column for space
+                            $columns['description']['header_class'] = ($columns['description']['header_class'] ?? '') . ' whitespace-nowrap text-left min-w-[180px]';
+                            $columns['description']['cell_class']   = ($columns['description']['cell_class'] ?? '') . ' text-left text-sm min-w-[180px] max-w-none';
 
-                        // Mass & Dims and Volume (m³) combined in one cell
-                        $columns['total_mass_kg'] = array(
-                            'label'        => 'Mass, Dims & Vol (m³)',
-                            'header_class' => 'whitespace-nowrap',
-                            'callback'     => function ($value, $row, $rowIndex) {
-                                $mass = $value ?? 0;
-                                $length = isset($row['item_length']) ? floatval($row['item_length']) : 0;
-                                $width = isset($row['item_width']) ? floatval($row['item_width']) : 0;
-                                $height = isset($row['item_height']) ? floatval($row['item_height']) : 0;
-                                $volume = isset($row['total_volume']) ? floatval($row['total_volume']) : 0;
-
-                                $mass_display = ($mass > 0) ? number_format($mass, 1) . ' kg' : '0 kg';
-                                $dimensions_display = ($length > 0 && $width > 0 && $height > 0)
-                                    ? number_format($length, 0) . ' x ' . number_format($width, 0) . ' x ' . number_format($height, 0)
-                                    : '0 x 0 x 0';
-                                $volume_display = ($volume > 0) ? number_format($volume, 3) . ' m³' : '0 m³';
-
-                                return '<div class="text-xs text-gray-500">' .
-                                       esc_html($mass_display) . ' <br> ' .
-                                       esc_html($dimensions_display) . ' <br> ' .
-                                       esc_html($volume_display) . '</div>';
-                            },
-                        );
-                        $columns['destination_city'] = array(
-                            'label'    => 'Destination City',
-                            'header_class' => 'whitespace-nowrap text-left',
-                            'cell_class'   => 'whitespace-nowrap text-left',
-                            'callback' => function ($value, $row, $rowIndex) {
-                                $city_name = isset($row['customer_city']) ? trim($row['customer_city']) : '';
-                                if (empty($city_name)) {
-                                    $city_id = $row['city_id'] ?? 0;
-                                    if ($city_id > 0) {
-                                        $city_name = KIT_Routes::get_city_name_by_id($city_id);
-                                    }
-                                }
-                                return !empty($city_name) ? esc_html($city_name) : '<span class="text-gray-400">N/A</span>';
-                            },
-                        );
-
-                        // Conditionally add total column based on user permissions
-                        if (class_exists('KIT_User_Roles') && KIT_User_Roles::can_see_prices()) {
-                            $columns['total'] = array(
-                                'label'        => 'Total',
-                                'header_class' => 'whitespace-nowrap text-right',
-                                'cell_class'   => 'whitespace-nowrap text-right',
+                            // Mass & Dims and Volume (m³) combined in one cell
+                            $columns['total_mass_kg'] = array(
+                                'label'        => 'Mass, Dims & Vol (m³)',
+                                'header_class' => 'whitespace-nowrap',
                                 'callback'     => function ($value, $row, $rowIndex) {
-                                    $total = $value ?? 0;
-                                    if (!is_numeric($total)) {
-                                        return $total;
-                                    }
-                                    return KIT_Commons::currency() . ' ' . number_format(floatval($total), 2);
+                                    $mass = $value ?? 0;
+                                    $length = isset($row['item_length']) ? floatval($row['item_length']) : 0;
+                                    $width = isset($row['item_width']) ? floatval($row['item_width']) : 0;
+                                    $height = isset($row['item_height']) ? floatval($row['item_height']) : 0;
+                                    $volume = isset($row['total_volume']) ? floatval($row['total_volume']) : 0;
+
+                                    $mass_display = ($mass > 0) ? number_format($mass, 1) . ' kg' : '0 kg';
+                                    $dimensions_display = ($length > 0 && $width > 0 && $height > 0)
+                                        ? number_format($length, 0) . ' x ' . number_format($width, 0) . ' x ' . number_format($height, 0)
+                                        : '0 x 0 x 0';
+                                    $volume_display = ($volume > 0) ? number_format($volume, 3) . ' m³' : '0 m³';
+
+                                    return '<div class="text-xs text-gray-500">' .
+                                        esc_html($mass_display) . ' <br> ' .
+                                        esc_html($dimensions_display) . ' <br> ' .
+                                        esc_html($volume_display) . '</div>';
                                 },
                             );
-                        }
-                        // Debug: Check how many waybills we have
-                        $waybill_count = is_array($waybillsandItems) ? count($waybillsandItems) : 0;
-                        ?>
-                        <div class="">
-                            <?php
-                            //customer dropdown trigger truck waybills
-                            $dropdowns = true;
+                            $columns['destination_city'] = array(
+                                'label'    => 'Destination City',
+                                'header_class' => 'whitespace-nowrap text-left',
+                                'cell_class'   => 'whitespace-nowrap text-left',
+                                'callback' => function ($value, $row, $rowIndex) {
+                                    $city_name = isset($row['customer_city']) ? trim($row['customer_city']) : '';
+                                    if (empty($city_name)) {
+                                        $city_id = $row['city_id'] ?? 0;
+                                        if ($city_id > 0) {
+                                            $city_name = KIT_Routes::get_city_name_by_id($city_id);
+                                        }
+                                    }
+                                    return !empty($city_name) ? esc_html($city_name) : '<span class="text-gray-400">N/A</span>';
+                                },
+                            );
 
-                            echo KIT_Unified_Table::infinite($waybillsandItems, $columns, [
-                                'title'                 => 'Waybills on Truck',
-                                'subtitle'              => 'Showing: ' . $waybill_count . ' waybills',
-                                'empty_message'         => 'No waybills assigned',
-                                'class'                 => 'min-w-full divide-y divide-gray-200',
-                                'table_class'           => 'w-full border-collapse',
-                                'groupby'               => 'city',
-                                'group_heading_prefix'  => '',
-                                'preserve_order'        => true,
-                                'group_collapsible'     => true,
-                                'group_collapsed'       => true,
-                            ]);
+                            // Conditionally add total column based on user permissions
+                            if (class_exists('KIT_User_Roles') && KIT_User_Roles::can_see_prices()) {
+                                $columns['total'] = array(
+                                    'label'        => 'Total',
+                                    'header_class' => 'whitespace-nowrap text-right',
+                                    'cell_class'   => 'whitespace-nowrap text-right',
+                                    'callback'     => function ($value, $row, $rowIndex) {
+                                        $total = $value ?? 0;
+                                        if (!is_numeric($total)) {
+                                            return $total;
+                                        }
+                                        return KIT_Commons::currency() . ' ' . number_format(floatval($total), 2);
+                                    },
+                                );
+                            }
+                            // Debug: Check how many waybills we have
+                            $waybill_count = is_array($waybillsandItems) ? count($waybillsandItems) : 0;
+                            ?>
+                            <div class="">
+                                <?php
+                                //customer dropdown trigger truck waybills
+                                $dropdowns = true;
+
+                                echo KIT_Unified_Table::infinite($waybillsandItems, $columns, [
+                                    'title'                 => 'Waybills on Truck',
+                                    'subtitle'              => 'Showing: ' . $waybill_count . ' waybills',
+                                    'empty_message'         => 'No waybills assigned',
+                                    'class'                 => 'min-w-full divide-y divide-gray-200',
+                                    'table_class'           => 'w-full border-collapse',
+                                    'groupby'               => 'city',
+                                    'group_heading_prefix'  => '',
+                                    'preserve_order'        => true,
+                                    'group_collapsible'     => true,
+                                    'group_collapsed'       => true,
+                                ]);
+                                ?>
+                            </div>
+                            <?php
                             ?>
                         </div>
-                        <?php
-                        ?>
                     </div>
                 </div>
             </div>
+        </div>
         </div>
         <?php
     }
@@ -1961,6 +1982,12 @@ class KIT_Deliveries
         $delivery = null;
         if ($delivery_id) {
             $delivery = self::get_delivery($delivery_id);
+        }
+
+        // Only managers and admins can create a new delivery truck
+        if (! $delivery && class_exists('KIT_User_Roles') && ! KIT_User_Roles::can_create_delivery_truck()) {
+            $msg = __('Request management to create a delivery truck.', '08600-services-quotations');
+            return '<div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg">' . esc_html($msg) . '</div>';
         }
 
         ob_start();
@@ -2271,203 +2298,203 @@ class KIT_Deliveries
             </form>
 
             <script>
-            (function() {
-                let currentStep = 1;
-                const totalSteps = 3;
-                const form = document.getElementById('edit-delivery-form');
-                
-                if (!form) return;
+                (function() {
+                    let currentStep = 1;
+                    const totalSteps = 3;
+                    const form = document.getElementById('edit-delivery-form');
 
-                function updateStepIndicators(step) {
-                    // Update step indicators
-                    document.querySelectorAll('.step-indicator').forEach((indicator, index) => {
-                        const stepNum = index + 1;
-                        const stepNumber = indicator.querySelector('.step-number');
-                        const stepCheck = indicator.querySelector('.step-check');
-                        
-                        if (stepNum < step) {
-                            // Completed step
-                            indicator.classList.remove('border-gray-300', 'bg-white', 'text-gray-500');
-                            indicator.classList.add('border-blue-500', 'bg-blue-500', 'text-white');
-                            if (stepNumber) stepNumber.classList.add('hidden');
-                            if (stepCheck) stepCheck.classList.remove('hidden');
-                        } else if (stepNum === step) {
-                            // Current step
-                            indicator.classList.remove('border-gray-300', 'bg-white', 'text-gray-500');
-                            indicator.classList.add('border-blue-500', 'bg-blue-500', 'text-white');
-                            if (stepNumber) stepNumber.classList.remove('hidden');
-                            if (stepCheck) stepCheck.classList.add('hidden');
-                        } else {
-                            // Future step
-                            indicator.classList.remove('border-blue-500', 'bg-blue-500', 'text-white');
-                            indicator.classList.add('border-gray-300', 'bg-white', 'text-gray-500');
-                            if (stepNumber) stepNumber.classList.remove('hidden');
-                            if (stepCheck) stepCheck.classList.add('hidden');
-                        }
-                    });
+                    if (!form) return;
 
-                    // Update progress bars
-                    document.querySelectorAll('.step-progress').forEach((progress, index) => {
-                        if (index + 1 < step) {
-                            progress.style.width = '100%';
-                        } else {
-                            progress.style.width = '0%';
-                        }
-                    });
-                }
+                    function updateStepIndicators(step) {
+                        // Update step indicators
+                        document.querySelectorAll('.step-indicator').forEach((indicator, index) => {
+                            const stepNum = index + 1;
+                            const stepNumber = indicator.querySelector('.step-number');
+                            const stepCheck = indicator.querySelector('.step-check');
 
-                function showStep(step) {
-                    // Hide all steps with display: none
-                    document.querySelectorAll('.delivery-step').forEach(stepEl => {
-                        stepEl.style.display = 'none';
-                        stepEl.classList.add('hidden');
-                    });
-                    
-                    // Show current step
-                    const currentStepEl = document.querySelector(`.delivery-step[data-step="${step}"]`);
-                    if (currentStepEl) {
-                        currentStepEl.style.display = 'block';
-                        currentStepEl.classList.remove('hidden');
+                            if (stepNum < step) {
+                                // Completed step
+                                indicator.classList.remove('border-gray-300', 'bg-white', 'text-gray-500');
+                                indicator.classList.add('border-blue-500', 'bg-blue-500', 'text-white');
+                                if (stepNumber) stepNumber.classList.add('hidden');
+                                if (stepCheck) stepCheck.classList.remove('hidden');
+                            } else if (stepNum === step) {
+                                // Current step
+                                indicator.classList.remove('border-gray-300', 'bg-white', 'text-gray-500');
+                                indicator.classList.add('border-blue-500', 'bg-blue-500', 'text-white');
+                                if (stepNumber) stepNumber.classList.remove('hidden');
+                                if (stepCheck) stepCheck.classList.add('hidden');
+                            } else {
+                                // Future step
+                                indicator.classList.remove('border-blue-500', 'bg-blue-500', 'text-white');
+                                indicator.classList.add('border-gray-300', 'bg-white', 'text-gray-500');
+                                if (stepNumber) stepNumber.classList.remove('hidden');
+                                if (stepCheck) stepCheck.classList.add('hidden');
+                            }
+                        });
+
+                        // Update progress bars
+                        document.querySelectorAll('.step-progress').forEach((progress, index) => {
+                            if (index + 1 < step) {
+                                progress.style.width = '100%';
+                            } else {
+                                progress.style.width = '0%';
+                            }
+                        });
                     }
 
-                    // Update navigation buttons
-                    const prevBtn = document.getElementById('prev-step-btn');
+                    function showStep(step) {
+                        // Hide all steps with display: none
+                        document.querySelectorAll('.delivery-step').forEach(stepEl => {
+                            stepEl.style.display = 'none';
+                            stepEl.classList.add('hidden');
+                        });
+
+                        // Show current step
+                        const currentStepEl = document.querySelector(`.delivery-step[data-step="${step}"]`);
+                        if (currentStepEl) {
+                            currentStepEl.style.display = 'block';
+                            currentStepEl.classList.remove('hidden');
+                        }
+
+                        // Update navigation buttons
+                        const prevBtn = document.getElementById('prev-step-btn');
+                        const nextBtn = document.getElementById('next-step-btn');
+                        const submitBtn = document.getElementById('submit-delivery-btn');
+
+                        if (prevBtn) {
+                            if (step > 1) {
+                                prevBtn.style.display = 'flex';
+                                prevBtn.classList.remove('hidden');
+                            } else {
+                                prevBtn.style.display = 'none';
+                                prevBtn.classList.add('hidden');
+                            }
+                        }
+
+                        if (nextBtn && submitBtn) {
+                            if (step < totalSteps) {
+                                nextBtn.style.display = 'flex';
+                                nextBtn.classList.remove('hidden');
+                                submitBtn.style.display = 'none';
+                                submitBtn.classList.add('hidden');
+                            } else {
+                                nextBtn.style.display = 'none';
+                                nextBtn.classList.add('hidden');
+                                submitBtn.style.display = 'flex';
+                                submitBtn.classList.remove('hidden');
+                            }
+                        }
+
+                        updateStepIndicators(step);
+                    }
+
+                    function validateStep(step) {
+                        if (step === 1) {
+                            // Step 1: Reference is auto-generated, always valid
+                            return true;
+                        } else if (step === 2) {
+                            // Step 2: Validate route information
+                            const originCountry = document.getElementById('origin_country_select');
+                            const originCity = document.getElementById('origin_city_select');
+                            const destCountry = document.getElementById('destination_country_select');
+                            const destCity = document.getElementById('destination_city_select');
+
+                            if (!originCountry || !originCountry.value) {
+                                alert('Please select an origin country');
+                                return false;
+                            }
+                            if (!originCity || !originCity.value) {
+                                alert('Please select an origin city');
+                                return false;
+                            }
+                            if (!destCountry || !destCountry.value) {
+                                alert('Please select a destination country');
+                                return false;
+                            }
+                            if (!destCity || !destCity.value) {
+                                alert('Please select a destination city');
+                                return false;
+                            }
+                            return true;
+                        } else if (step === 3) {
+                            // Step 3: Validate delivery details
+                            const dispatchDate = document.getElementById('dispatch_date');
+                            const driverId = document.getElementById('driver_id');
+
+                            if (!dispatchDate || !dispatchDate.value) {
+                                alert('Please select a departure date');
+                                dispatchDate?.focus();
+                                return false;
+                            }
+                            if (!driverId || !driverId.value) {
+                                alert('Please select a driver');
+                                driverId?.focus();
+                                return false;
+                            }
+                            return true;
+                        }
+                        return true;
+                    }
+
+                    // Next button handler
                     const nextBtn = document.getElementById('next-step-btn');
-                    const submitBtn = document.getElementById('submit-delivery-btn');
+                    if (nextBtn) {
+                        nextBtn.addEventListener('click', function() {
+                            if (validateStep(currentStep)) {
+                                currentStep++;
+                                if (currentStep > totalSteps) currentStep = totalSteps;
+                                showStep(currentStep);
+                            }
+                        });
+                    }
 
+                    // Previous button handler
+                    const prevBtn = document.getElementById('prev-step-btn');
                     if (prevBtn) {
-                        if (step > 1) {
-                            prevBtn.style.display = 'flex';
-                            prevBtn.classList.remove('hidden');
-                        } else {
-                            prevBtn.style.display = 'none';
-                            prevBtn.classList.add('hidden');
-                        }
-                    }
-
-                    if (nextBtn && submitBtn) {
-                        if (step < totalSteps) {
-                            nextBtn.style.display = 'flex';
-                            nextBtn.classList.remove('hidden');
-                            submitBtn.style.display = 'none';
-                            submitBtn.classList.add('hidden');
-                        } else {
-                            nextBtn.style.display = 'none';
-                            nextBtn.classList.add('hidden');
-                            submitBtn.style.display = 'flex';
-                            submitBtn.classList.remove('hidden');
-                        }
-                    }
-
-                    updateStepIndicators(step);
-                }
-
-                function validateStep(step) {
-                    if (step === 1) {
-                        // Step 1: Reference is auto-generated, always valid
-                        return true;
-                    } else if (step === 2) {
-                        // Step 2: Validate route information
-                        const originCountry = document.getElementById('origin_country_select');
-                        const originCity = document.getElementById('origin_city_select');
-                        const destCountry = document.getElementById('destination_country_select');
-                        const destCity = document.getElementById('destination_city_select');
-                        
-                        if (!originCountry || !originCountry.value) {
-                            alert('Please select an origin country');
-                            return false;
-                        }
-                        if (!originCity || !originCity.value) {
-                            alert('Please select an origin city');
-                            return false;
-                        }
-                        if (!destCountry || !destCountry.value) {
-                            alert('Please select a destination country');
-                            return false;
-                        }
-                        if (!destCity || !destCity.value) {
-                            alert('Please select a destination city');
-                            return false;
-                        }
-                        return true;
-                    } else if (step === 3) {
-                        // Step 3: Validate delivery details
-                        const dispatchDate = document.getElementById('dispatch_date');
-                        const driverId = document.getElementById('driver_id');
-                        
-                        if (!dispatchDate || !dispatchDate.value) {
-                            alert('Please select a departure date');
-                            dispatchDate?.focus();
-                            return false;
-                        }
-                        if (!driverId || !driverId.value) {
-                            alert('Please select a driver');
-                            driverId?.focus();
-                            return false;
-                        }
-                        return true;
-                    }
-                    return true;
-                }
-
-                // Next button handler
-                const nextBtn = document.getElementById('next-step-btn');
-                if (nextBtn) {
-                    nextBtn.addEventListener('click', function() {
-                        if (validateStep(currentStep)) {
-                            currentStep++;
-                            if (currentStep > totalSteps) currentStep = totalSteps;
+                        prevBtn.addEventListener('click', function() {
+                            currentStep--;
+                            if (currentStep < 1) currentStep = 1;
                             showStep(currentStep);
-                        }
-                    });
-                }
-
-                // Previous button handler
-                const prevBtn = document.getElementById('prev-step-btn');
-                if (prevBtn) {
-                    prevBtn.addEventListener('click', function() {
-                        currentStep--;
-                        if (currentStep < 1) currentStep = 1;
-                        showStep(currentStep);
-                    });
-                }
-
-                // Step indicator click handler
-                document.querySelectorAll('.step-indicator').forEach((indicator, index) => {
-                    indicator.addEventListener('click', function() {
-                        const targetStep = index + 1;
-                        if (targetStep <= currentStep || targetStep === 1) {
-                            currentStep = targetStep;
-                            showStep(currentStep);
-                        }
-                    });
-                });
-
-                // Copy to clipboard function
-                window.copyToClipboard = function(inputId) {
-                    const input = document.getElementById(inputId);
-                    if (input) {
-                        input.select();
-                        input.setSelectionRange(0, 99999); // For mobile devices
-                        document.execCommand('copy');
-                        
-                        // Show feedback
-                        const btn = event.target.closest('button');
-                        if (btn) {
-                            const originalHTML = btn.innerHTML;
-                            btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>';
-                            btn.classList.add('text-green-500');
-                            setTimeout(() => {
-                                btn.innerHTML = originalHTML;
-                                btn.classList.remove('text-green-500');
-                            }, 2000);
-                        }
+                        });
                     }
-                };
 
-                // Initialize
-                showStep(1);
-            })();
+                    // Step indicator click handler
+                    document.querySelectorAll('.step-indicator').forEach((indicator, index) => {
+                        indicator.addEventListener('click', function() {
+                            const targetStep = index + 1;
+                            if (targetStep <= currentStep || targetStep === 1) {
+                                currentStep = targetStep;
+                                showStep(currentStep);
+                            }
+                        });
+                    });
+
+                    // Copy to clipboard function
+                    window.copyToClipboard = function(inputId) {
+                        const input = document.getElementById(inputId);
+                        if (input) {
+                            input.select();
+                            input.setSelectionRange(0, 99999); // For mobile devices
+                            document.execCommand('copy');
+
+                            // Show feedback
+                            const btn = event.target.closest('button');
+                            if (btn) {
+                                const originalHTML = btn.innerHTML;
+                                btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>';
+                                btn.classList.add('text-green-500');
+                                setTimeout(() => {
+                                    btn.innerHTML = originalHTML;
+                                    btn.classList.remove('text-green-500');
+                                }, 2000);
+                            }
+                        }
+                    };
+
+                    // Initialize
+                    showStep(1);
+                })();
             </script>
             <?php if (!$is_modal): ?>
             </div>
@@ -2567,6 +2594,23 @@ class KIT_Deliveries
         // Auto-update past deliveries to unconfirmed before loading the page
         self::auto_update_past_deliveries();
 
+        // Show delivery_error / delivery_success from redirects (e.g. create_delivery denied)
+        if (isset($_GET['delivery_error']) || isset($_GET['delivery_success'])) {
+            if (file_exists(plugin_dir_path(__FILE__) . '../components/toast.php')) {
+                require_once plugin_dir_path(__FILE__) . '../components/toast.php';
+            }
+            if (class_exists('KIT_Toast')) {
+                KIT_Toast::ensure_toast_loads();
+                if (isset($_GET['delivery_success']) && $_GET['delivery_success'] === '1') {
+                    $message = isset($_GET['message']) ? urldecode($_GET['message']) : __('Operation completed successfully!', '08600-services-quotations');
+                    echo KIT_Toast::success($message, 'Success');
+                }
+                if (isset($_GET['delivery_error'])) {
+                    echo KIT_Toast::error(urldecode($_GET['delivery_error']), 'Error');
+                }
+            }
+        }
+
         // Check if we're viewing a specific delivery
         if (isset($_GET['view_delivery']) && is_numeric($_GET['view_delivery'])) {
             // Set the delivery_id parameter for the view_deliveries_page function
@@ -2600,319 +2644,326 @@ class KIT_Deliveries
         });
         $delivered_count     = count($delivered_deliveries);
         $delivered_countries = array_unique(array_column($deliveries, 'destination_country_name'));
-        $countries_count     = count($delivered_countries);
-    ?>
+        $countries_count     = count($delivered_countries); ?>
 
         <div class="wrap deliveries-page">
-            <?php
-            // Get delivery form content for modal
-            $delivery_form_content = self::deliveryForm(null, true);
+            <div class="<?php echo KIT_Commons::containerClasses(); ?>">
+                <?php
+                // Nonce for Edit Delivery modal AJAX (get_delivery) – required when #delivery-form / #edit-delivery-form not present (e.g. user cannot create)
+                $deliveries_ajax_nonce = wp_create_nonce('get_waybills_nonce');
+                ?>
+                <input type="hidden" id="deliveries-ajax-nonce" value="<?php echo esc_attr($deliveries_ajax_nonce); ?>" data-nonce-action="get_waybills_nonce" />
+                <?php
+                $can_create = class_exists('KIT_User_Roles') && KIT_User_Roles::can_create_delivery_truck();
+                if ($can_create) {
+                    $delivery_form_content = self::deliveryForm(null, true);
+                    $add_delivery_modal = KIT_Modal::render(
+                        'add-delivery-truck-modal',
+                        'Add Delivery Truck',
+                        $delivery_form_content,
+                        '4xl',
+                        true,
+                        'Add Delivery Truck'
+                    );
+                    $header_content = $add_delivery_modal;
+                } else {
+                    $header_content = '<p class="text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 text-sm">' . esc_html__('Request management to create a delivery truck.', '08600-services-quotations') . '</p>';
+                }
+                echo KIT_Commons::showingHeader([
+                    'title'   => 'Deliveries Management',
+                    'desc'    => 'Manage and track all delivery operations',
+                    'icon'    => KIT_Commons::icon('truck'),
+                    'content' => $header_content,
+                ]);
+                ?>
 
-            // Render Add Delivery Truck Modal (button + hidden modal)
-            $add_delivery_modal = KIT_Modal::render(
-                'add-delivery-truck-modal',
-                'Add Delivery Truck',
-                $delivery_form_content,
-                '4xl',
-                true,
-                'Add Delivery Truck'
-            );
+                <!-- Statistics Cards -->
+                <?php
+                $delivery_stats = [
+                    [
+                        'title' => 'Total Deliveries',
+                        'value' => number_format($total_deliveries),
+                        'icon' => 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
+                        'color' => 'blue',
+                        'class' => 'deliveries-stats-total'
+                    ],
+                    [
+                        'title' => 'Scheduled',
+                        'value' => number_format($scheduled_count),
+                        'icon' => 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
+                        'color' => 'green',
+                        'class' => 'deliveries-stats-scheduled'
+                    ],
+                    [
+                        'title' => 'In Transit',
+                        'value' => number_format($in_transit_count),
+                        'icon' => 'M13 10V3L4 14h7v7l9-11h-7z',
+                        'color' => 'yellow',
+                        'class' => 'deliveries-stats-in-transit'
+                    ],
+                    [
+                        'title' => 'Countries Served',
+                        'value' => number_format($countries_count),
+                        'icon' => 'M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+                        'color' => 'purple',
+                        'class' => 'deliveries-stats-countries'
+                    ]
+                ];
 
-            // Render both modals in header
-            echo KIT_Commons::showingHeader([
-                'title'   => 'Deliveries Management',
-                'desc'    => 'Manage and track all delivery operations',
-                'icon'    => KIT_Commons::icon('truck'),
-                'content' => $add_delivery_modal,
-            ]);
-            ?>
+                // Render stats
+                echo KIT_QuickStats::render($delivery_stats, '', [
+                    'grid_cols' => 'grid-cols-2 md:grid-cols-2 lg:grid-cols-4',
+                    'gap' => 'gap-6'
+                ]);
+                ?>
 
-            <!-- Statistics Cards -->
-            <?php
-            $delivery_stats = [
-                [
-                    'title' => 'Total Deliveries',
-                    'value' => number_format($total_deliveries),
-                    'icon' => 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
-                    'color' => 'blue',
-                    'class' => 'deliveries-stats-total'
-                ],
-                [
-                    'title' => 'Scheduled',
-                    'value' => number_format($scheduled_count),
-                    'icon' => 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
-                    'color' => 'green',
-                    'class' => 'deliveries-stats-scheduled'
-                ],
-                [
-                    'title' => 'In Transit',
-                    'value' => number_format($in_transit_count),
-                    'icon' => 'M13 10V3L4 14h7v7l9-11h-7z',
-                    'color' => 'yellow',
-                    'class' => 'deliveries-stats-in-transit'
-                ],
-                [
-                    'title' => 'Countries Served',
-                    'value' => number_format($countries_count),
-                    'icon' => 'M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
-                    'color' => 'purple',
-                    'class' => 'deliveries-stats-countries'
-                ]
-            ];
-            
-            // Render stats
-            echo KIT_QuickStats::render($delivery_stats, '', [
-                'grid_cols' => 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4',
-                'gap' => 'gap-6'
-            ]);
-            ?>
-
-            <!-- Tabbed Interface -->
-            <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+                <!-- Tabbed Interface -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200">
 
 
-                <!-- Tab Content -->
-                <div class="p-6">
-                    <!-- Tab 1: Show All Deliveries -->
-                    <!-- Table View -->
-                    <div id="table-view">
-                        <?php
-                        // Convert deliveries to array format for unified table
-                        $deliveries_data = [];
-                        foreach ($deliveries as $delivery) {
-                            // Combine route and dispatch date
-                            $origin = $delivery->origin_country_name ?? 'N/A';
-                            $dest = $delivery->destination_country_name ?? 'N/A';
-                            $route = "$origin → $dest";
-                            
-                            $dispatch_date = 'N/A';
-                            if (!empty($delivery->dispatch_date) && $delivery->dispatch_date !== '0000-00-00') {
-                                $dispatch_date = date('M j, Y', strtotime($delivery->dispatch_date));
+                    <!-- Tab Content -->
+                    <div class="p-6">
+                        <!-- Tab 1: Show All Deliveries -->
+                        <!-- Table View -->
+                        <div id="table-view">
+                            <?php
+                            // Convert deliveries to array format for unified table
+                            $deliveries_data = [];
+                            foreach ($deliveries as $delivery) {
+                                // Combine route and dispatch date
+                                $origin = $delivery->origin_country_name ?? 'N/A';
+                                $dest = $delivery->destination_country_name ?? 'N/A';
+                                $route = "$origin → $dest";
+
+                                $dispatch_date = 'N/A';
+                                if (!empty($delivery->dispatch_date) && $delivery->dispatch_date !== '0000-00-00') {
+                                    $dispatch_date = date('M j, Y', strtotime($delivery->dispatch_date));
+                                }
+                                $route_with_date = $route . '<br><span class="text-xs text-gray-500">' . esc_html($dispatch_date) . '</span>';
+
+                                $deliveries_data[] = [
+                                    'id' => $delivery->id,
+                                    'delivery_reference' => $delivery->delivery_reference ?? 'N/A',
+                                    'status' => $delivery->status ?? 'unknown',
+                                    'route' => $route,
+                                    'dispatch_date' => $dispatch_date,
+                                    'route_with_date' => $route_with_date,
+                                    'truck_number' => $delivery->truck_number ?? 'N/A',
+                                    'driver_name' => $delivery->driver_name ?? 'N/A',
+                                    'waybill_count' => $delivery->waybill_count ?? 0,
+                                ];
                             }
-                            $route_with_date = $route . '<br><span class="text-xs text-gray-500">' . esc_html($dispatch_date) . '</span>';
-                            
-                            $deliveries_data[] = [
-                                'id' => $delivery->id,
-                                'delivery_reference' => $delivery->delivery_reference ?? 'N/A',
-                                'status' => $delivery->status ?? 'unknown',
-                                'route' => $route,
-                                'dispatch_date' => $dispatch_date,
-                                'route_with_date' => $route_with_date,
-                                'truck_number' => $delivery->truck_number ?? 'N/A',
-                                'driver_name' => $delivery->driver_name ?? 'N/A',
-                                'waybill_count' => $delivery->waybill_count ?? 0,
-                            ];
-                        }
 
-                        // Define columns for the unified table with proper widths
-                        $columns = [
-                            'delivery_reference' => [
-                                'label' => 'Reference',
-                                'header_class' => 'min-w-[180px]',
-                                'cell_class' => 'min-w-[180px]',
-                                'callback' => function($value, $row) {
-                                    $status = $row['status'] ?? 'unknown';
-                                    $status_class = match ($status) {
-                                        'scheduled'  => 'bg-blue-100 text-blue-800',
-                                        'in_transit' => 'bg-yellow-100 text-yellow-800',
-                                        'delivered'  => 'bg-green-100 text-green-800',
-                                        'cancelled'  => 'bg-red-100 text-red-800',
-                                        default      => 'bg-gray-100 text-gray-800'
-                                    };
-                                    $status_text = ucfirst($status);
-                                    
-                                    return '<div>
+                            // Define columns for the unified table with proper widths
+                            $columns = [
+                                'delivery_reference' => [
+                                    'label' => 'Reference',
+                                    'header_class' => 'min-w-[180px]',
+                                    'cell_class' => 'min-w-[180px]',
+                                    'callback' => function ($value, $row) {
+                                        $status = $row['status'] ?? 'unknown';
+                                        $status_class = match ($status) {
+                                            'scheduled'  => 'bg-blue-100 text-blue-800',
+                                            'in_transit' => 'bg-yellow-100 text-yellow-800',
+                                            'delivered'  => 'bg-green-100 text-green-800',
+                                            'cancelled'  => 'bg-red-100 text-red-800',
+                                            default      => 'bg-gray-100 text-gray-800'
+                                        };
+                                        $status_text = ucfirst($status);
+
+                                        return '<div>
                                         <div class="text-sm font-medium text-gray-900">' . esc_html($value) . '</div>
                                         <span class="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full mt-1 ' . $status_class . '">
                                             ' . esc_html($status_text) . '
                                         </span>
                                     </div>';
-                                }
-                            ],
-                            'route_with_date' => [
-                                'label' => 'Route & Dispatch Date',
-                                'header_class' => 'min-w-[300px] whitespace-normal',
-                                'cell_class' => 'min-w-[300px] whitespace-normal',
-                                'callback' => function($value, $row) {
-                                    return '<div class="text-sm text-gray-900 whitespace-normal leading-relaxed">' . $value . '</div>';
-                                }
-                            ],
-                            'truck_number' => [
-                                'label' => 'Truck',
-                                'header_class' => 'min-w-[100px]',
-                                'cell_class' => 'min-w-[100px]'
-                            ],
-                            'driver_name' => [
-                                'label' => 'Driver',
-                                'header_class' => 'min-w-[120px]',
-                                'cell_class' => 'min-w-[120px]'
-                            ],
-                            'waybill_count' => [
-                                'label' => 'Waybills',
-                                'header_class' => 'min-w-[80px] text-center',
-                                'cell_class' => 'min-w-[80px] text-center'
-                            ],
-                        ];
-
-                        // Define actions for the table
-                        $actions = [
-                            [
-                                'label' => 'View',
-                                'href' => admin_url('admin.php?page=view-deliveries&delivery_id={id}'),
-                                'class' => 'inline-flex items-center px-2.5 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors'
-                            ],
-                            [
-                                'label' => 'Edit',
-                                'callback' => function($href, $row) {
-                                    $delivery_id = is_array($row) ? ($row['id'] ?? '') : (is_object($row) ? ($row->id ?? '') : '');
-                                    return 'javascript:void(0)';
-                                },
-                                'class' => 'inline-flex items-center px-2.5 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors cursor-pointer',
-                                'onclick' => 'return editDelivery({id});'
-                            ],
-                            [
-                                'label' => 'Delete',
-                                'callback' => function($href, $row) {
-                                    $delivery_id = is_array($row) ? ($row['id'] ?? '') : (is_object($row) ? ($row->id ?? '') : '');
-                                    return 'javascript:void(0)';
-                                },
-                                'class' => 'inline-flex items-center px-2.5 py-1.5 text-sm font-medium text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md transition-colors cursor-pointer',
-                                'onclick' => 'deleteDelivery({id}, event); return false;'
-                            ]
-                        ];
-
-                        // Render table with pretty heading
-                        echo KIT_Commons::prettyHeading([
-                            'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>',
-                            'words' => 'All Deliveries',
-                            'size' => 'lg',
-                            'color' => 'blue',
-                            'classes' => 'mb-4'
-                        ]);
-                        
-                        // Render unified table with dynamic column layout
-                        echo KIT_Unified_Table::infinite($deliveries_data, $columns, [
-                            'title' => '',
-                            'actions' => $actions,
-                            'searchable' => true,
-                            'sortable' => true,
-                            'pagination' => true,
-                            'items_per_page' => 20,
-                            'empty_message' => 'No deliveries found.',
-                            'search_placeholder' => 'Search deliveries...',
-                            'search_filters' => [
-                                ['value' => 'delivery_reference', 'label' => 'Reference', 'placeholder' => 'Search by reference...'],
-                                ['value' => 'route', 'label' => 'Route', 'placeholder' => 'Search by route...'],
-                                ['value' => 'truck_number', 'label' => 'Truck', 'placeholder' => 'Search by truck...'],
-                                ['value' => 'driver_name', 'label' => 'Driver', 'placeholder' => 'Search by driver...']
-                            ],
-                            'search_default_filter' => 'delivery_reference',
-                            'table_class' => 'w-full table-auto border-collapse', // Changed from table-fixed to table-auto for dynamic columns
-                            'actions_cell_class' => 'px-3 py-2 text-sm font-medium text-gray-900 whitespace-nowrap align-top w-[180px] min-w-[180px] flex items-center gap-2', // Fixed width for actions column with flex layout
-                            'row_attrs_callback' => function($row, $rowIndex) {
-                                $id = is_array($row) ? ($row['id'] ?? '') : (is_object($row) ? ($row->id ?? '') : '');
-                                return ['data-delivery-id' => $id];
-                            }
-                        ]);
-                        ?>
-                        <script>
-                        // Replace {id} placeholders in onclick handlers after table render
-                        jQuery(document).ready(function($) {
-                            $('a[onclick*="{id}"]').each(function() {
-                                var $link = $(this);
-                                var onclick = $link.attr('onclick');
-                                // Get ID from row's data attribute
-                                var $row = $link.closest('tr');
-                                var id = $row.data('delivery-id') || '';
-                                // Fallback: try to get ID from href if it has delivery_id
-                                if (!id) {
-                                    var href = $link.attr('href');
-                                    if (href && href.indexOf('delivery_id=') !== -1) {
-                                        var match = href.match(/delivery_id=(\d+)/);
-                                        if (match) id = match[1];
                                     }
+                                ],
+                                'route_with_date' => [
+                                    'label' => 'Route & Dispatch Date',
+                                    'header_class' => 'min-w-[300px] whitespace-normal',
+                                    'cell_class' => 'min-w-[300px] whitespace-normal',
+                                    'callback' => function ($value, $row) {
+                                        return '<div class="text-sm text-gray-900 whitespace-normal leading-relaxed">' . $value . '</div>';
+                                    }
+                                ],
+                                'truck_number' => [
+                                    'label' => 'Truck',
+                                    'header_class' => 'min-w-[100px]',
+                                    'cell_class' => 'min-w-[100px]'
+                                ],
+                                'driver_name' => [
+                                    'label' => 'Driver',
+                                    'header_class' => 'min-w-[120px]',
+                                    'cell_class' => 'min-w-[120px]'
+                                ],
+                                'waybill_count' => [
+                                    'label' => 'Waybills',
+                                    'header_class' => 'min-w-[80px] text-center',
+                                    'cell_class' => 'min-w-[80px] text-center'
+                                ],
+                            ];
+
+                            // Define actions for the table
+                            $actions = [
+                                [
+                                    'label' => 'View',
+                                    'href' => admin_url('admin.php?page=view-deliveries&delivery_id={id}'),
+                                    'class' => 'inline-flex items-center px-2.5 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors'
+                                ],
+                                [
+                                    'label' => 'Edit',
+                                    'callback' => function ($href, $row) {
+                                        $delivery_id = is_array($row) ? ($row['id'] ?? '') : (is_object($row) ? ($row->id ?? '') : '');
+                                        return 'javascript:void(0)';
+                                    },
+                                    'class' => 'inline-flex items-center px-2.5 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors cursor-pointer',
+                                    'onclick' => 'return editDelivery({id});'
+                                ],
+                                [
+                                    'label' => 'Delete',
+                                    'callback' => function ($href, $row) {
+                                        $delivery_id = is_array($row) ? ($row['id'] ?? '') : (is_object($row) ? ($row->id ?? '') : '');
+                                        return 'javascript:void(0)';
+                                    },
+                                    'class' => 'inline-flex items-center px-2.5 py-1.5 text-sm font-medium text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md transition-colors cursor-pointer',
+                                    'onclick' => 'deleteDelivery({id}, event); return false;'
+                                ]
+                            ];
+
+                            // Render table with pretty heading
+                            echo KIT_Commons::prettyHeading([
+                                'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>',
+                                'words' => 'All Deliveries',
+                                'size' => 'lg',
+                                'color' => 'blue',
+                                'classes' => 'mb-4'
+                            ]);
+
+                            // Render unified table with dynamic column layout
+                            echo KIT_Unified_Table::infinite($deliveries_data, $columns, [
+                                'title' => '',
+                                'actions' => $actions,
+                                'searchable' => true,
+                                'sortable' => true,
+                                'pagination' => true,
+                                'items_per_page' => 20,
+                                'empty_message' => 'No deliveries found.',
+                                'search_placeholder' => 'Search deliveries...',
+                                'search_filters' => [
+                                    ['value' => 'delivery_reference', 'label' => 'Reference', 'placeholder' => 'Search by reference...'],
+                                    ['value' => 'route', 'label' => 'Route', 'placeholder' => 'Search by route...'],
+                                    ['value' => 'truck_number', 'label' => 'Truck', 'placeholder' => 'Search by truck...'],
+                                    ['value' => 'driver_name', 'label' => 'Driver', 'placeholder' => 'Search by driver...']
+                                ],
+                                'search_default_filter' => 'delivery_reference',
+                                'table_class' => 'w-full table-auto border-collapse', // Changed from table-fixed to table-auto for dynamic columns
+                                'actions_cell_class' => 'px-3 py-2 text-sm font-medium text-gray-900 whitespace-nowrap align-top w-[180px] min-w-[180px] flex items-center gap-2', // Fixed width for actions column with flex layout
+                                'row_attrs_callback' => function ($row, $rowIndex) {
+                                    $id = is_array($row) ? ($row['id'] ?? '') : (is_object($row) ? ($row->id ?? '') : '');
+                                    return ['data-delivery-id' => $id];
                                 }
-                                // Replace {id} in onclick
-                                if (onclick && id) {
-                                    onclick = onclick.replace(/{id}/g, id);
-                                    $link.attr('onclick', onclick);
-                                }
-                            });
-                        });
-                        </script>
+                            ]);
+                            ?>
+                            <script>
+                                // Replace {id} placeholders in onclick handlers after table render
+                                jQuery(document).ready(function($) {
+                                    $('a[onclick*="{id}"]').each(function() {
+                                        var $link = $(this);
+                                        var onclick = $link.attr('onclick');
+                                        // Get ID from row's data attribute
+                                        var $row = $link.closest('tr');
+                                        var id = $row.data('delivery-id') || '';
+                                        // Fallback: try to get ID from href if it has delivery_id
+                                        if (!id) {
+                                            var href = $link.attr('href');
+                                            if (href && href.indexOf('delivery_id=') !== -1) {
+                                                var match = href.match(/delivery_id=(\d+)/);
+                                                if (match) id = match[1];
+                                            }
+                                        }
+                                        // Replace {id} in onclick
+                                        if (onclick && id) {
+                                            onclick = onclick.replace(/{id}/g, id);
+                                            $link.attr('onclick', onclick);
+                                        }
+                                    });
+                                });
+                            </script>
+                        </div>
                     </div>
                 </div>
-            </div>
 
 
-            <!-- Quick Actions Section - Bottom of Page -->
-            <div class="mt-8">
-                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <a href="?page=08600-waybill-create"
-                            class="flex items-center p-4 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition-colors group">
-                            <div
-                                class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-200">
-                                <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
-                                    </path>
-                                </svg>
-                            </div>
-                            <div>
-                                <h4 class="font-medium text-gray-900">Create Waybill</h4>
-                                <p class="text-sm text-gray-600">Generate new waybill</p>
-                            </div>
-                        </a>
+                <!-- Quick Actions Section - Bottom of Page -->
+                <div class="mt-8">
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <a href="?page=08600-waybill-create"
+                                class="flex items-center p-4 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition-colors group">
+                                <div
+                                    class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-200">
+                                    <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                                        </path>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h4 class="font-medium text-gray-900">Create Waybill</h4>
+                                    <p class="text-sm text-gray-600">Generate new waybill</p>
+                                </div>
+                            </a>
 
-                        <a href="?page=08600-customers"
-                            class="flex items-center p-4 bg-green-50 hover:bg-green-100 rounded-lg border border-green-200 transition-colors group">
-                            <div
-                                class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-green-200">
-                                <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z">
-                                    </path>
-                                </svg>
-                            </div>
-                            <div>
-                                <h4 class="font-medium text-gray-900">Manage Customers</h4>
-                                <p class="text-sm text-gray-600">View and edit customers</p>
-                            </div>
-                        </a>
+                            <a href="?page=08600-customers"
+                                class="flex items-center p-4 bg-green-50 hover:bg-green-100 rounded-lg border border-green-200 transition-colors group">
+                                <div
+                                    class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-green-200">
+                                    <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z">
+                                        </path>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h4 class="font-medium text-gray-900">Manage Customers</h4>
+                                    <p class="text-sm text-gray-600">View and edit customers</p>
+                                </div>
+                            </a>
 
-                        <a href="?page=route-management"
-                            class="flex items-center p-4 bg-purple-50 hover:bg-purple-100 rounded-lg border border-purple-200 transition-colors group">
-                            <div
-                                class="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-purple-200">
-                                <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-1.447-.894L15 4m0 13V4m-6 3l6-3">
-                                    </path>
-                                </svg>
-                            </div>
-                            <div>
-                                <h4 class="font-medium text-gray-900">Manage Routes</h4>
-                                <p class="text-sm text-gray-600">Configure shipping routes</p>
-                            </div>
-                        </a>
+                            <a href="?page=route-management"
+                                class="flex items-center p-4 bg-purple-50 hover:bg-purple-100 rounded-lg border border-purple-200 transition-colors group">
+                                <div
+                                    class="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-purple-200">
+                                    <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-1.447-.894L15 4m0 13V4m-6 3l6-3">
+                                        </path>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h4 class="font-medium text-gray-900">Manage Routes</h4>
+                                    <p class="text-sm text-gray-600">Configure shipping routes</p>
+                                </div>
+                            </a>
 
-                        <a href="?page=warehouse-waybills"
-                            class="flex items-center p-4 bg-orange-50 hover:bg-orange-100 rounded-lg border border-orange-200 transition-colors group">
-                            <div
-                                class="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-orange-200">
-                                <svg class="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4">
-                                    </path>
-                                </svg>
-                            </div>
-                            <div>
-                                <h4 class="font-medium text-gray-900">Warehouse</h4>
-                                <p class="text-sm text-gray-600">Manage warehouse waybills</p>
-                            </div>
-                        </a>
+                            <a href="?page=warehouse-waybills"
+                                class="flex items-center p-4 bg-orange-50 hover:bg-orange-100 rounded-lg border border-orange-200 transition-colors group">
+                                <div
+                                    class="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-orange-200">
+                                    <svg class="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4">
+                                        </path>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h4 class="font-medium text-gray-900">Warehouse</h4>
+                                    <p class="text-sm text-gray-600">Manage warehouse waybills</p>
+                                </div>
+                            </a>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2938,49 +2989,104 @@ class KIT_Deliveries
             }
         </style>
 
-        <!-- Edit Delivery Modal -->
-        <div id="edit-delivery-modal"
-            class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4"
-            style="display: none;">
-            <div class="relative mx-auto w-11/12 md:w-3/4 lg:w-1/2 shadow-xl rounded-xl bg-white max-h-[90vh] overflow-y-auto">
-                <!-- Header -->
-                <div class="flex items-center justify-between p-6 border-b border-gray-200">
-                    <h3 class="text-xl font-semibold text-gray-900" id="modal-title">Edit Delivery</h3>
-                    <?php
-                    echo KIT_Commons::renderButton(
-                        '',
-                        'ghost',
-                        'lg',
-                        [
-                            'type'        => 'button',
-                            'id'          => 'close-modal',
-                            'classes'     => 'w-10 h-10 p-0 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 justify-center',
-                            'icon'        => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />',
-                            'iconPosition' => 'left',
-                            'ariaLabel'   => __('Close modal', 'courier-finance-plugin'),
-                        ]
-                    );
-                    ?>
-                </div>
-
-                <!-- Content -->
-                <div class="p-6">
-                    <div id="modal-content" class="overflow-y-auto">
-                        <!-- Modal content will be loaded here -->
-                        <div class="flex items-center justify-center py-12">
-                            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <?php
+        $edit_delivery_modal_bootstrap = function_exists('kit_using_employee_portal') && kit_using_employee_portal();
+        ?>
+        <!-- Edit Delivery Modal (Bootstrap on frontend / employee dashboard, custom in admin) -->
+        <?php if ($edit_delivery_modal_bootstrap) : ?>
+            <div id="edit-delivery-modal" class="modal fade" tabindex="-1" aria-labelledby="edit-delivery-modal-label" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-scrollable modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="edit-delivery-modal-label">Edit Delivery</h5>
+                            <?php
+                            echo KIT_Commons::renderButton(
+                                '',
+                                'ghost',
+                                'lg',
+                                [
+                                    'type'            => 'button',
+                                    'id'              => 'close-modal',
+                                    'classes'         => 'btn-close-placeholder',
+                                    'ariaLabel'       => __('Close modal', 'courier-finance-plugin'),
+                                    'iconOnly'        => true,
+                                    'icon'            => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />',
+                                    'data-bs-dismiss' => 'modal',
+                                ]
+                            );
+                            ?>
+                        </div>
+                        <div class="modal-body">
+                            <div id="modal-content" class="overflow-y-auto">
+                                <div class="flex items-center justify-center py-12">
+                                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
+        <?php else : ?>
+            <div id="edit-delivery-modal"
+                class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4"
+                style="display: none;">
+                <div class="relative mx-auto w-11/12 md:w-3/4 lg:w-1/2 shadow-xl rounded-xl bg-white max-h-[90vh] overflow-y-auto">
+                    <div class="flex items-center justify-between p-6 border-b border-gray-200">
+                        <h3 class="text-xl font-semibold text-gray-900" id="modal-title">Edit Delivery</h3>
+                        <?php
+                        echo KIT_Commons::renderButton(
+                            '',
+                            'ghost',
+                            'lg',
+                            [
+                                'type'        => 'button',
+                                'id'          => 'close-modal',
+                                'classes'     => 'w-10 h-10 p-0 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 justify-center',
+                                'icon'        => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />',
+                                'iconPosition' => 'left',
+                                'ariaLabel'   => __('Close modal', 'courier-finance-plugin'),
+                            ]
+                        );
+                        ?>
+                    </div>
+                    <div class="p-6">
+                        <div id="modal-content" class="overflow-y-auto">
+                            <div class="flex items-center justify-center py-12">
+                                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        <?php endif; ?>
 
         <script>
             // Define ajaxurl for WordPress admin
             var ajaxurl = '<?php echo admin_url('admin-ajax.php'); ?>';
+            var editDeliveryModalBootstrap = <?php echo $edit_delivery_modal_bootstrap ? 'true' : 'false'; ?>;
+
+            function closeEditDeliveryModal() {
+                if (editDeliveryModalBootstrap && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                    var el = document.getElementById('edit-delivery-modal');
+                    if (el) try {
+                        bootstrap.Modal.getOrCreateInstance(el).hide();
+                    } catch (err) {}
+                } else {
+                    $('#edit-delivery-modal').addClass('hidden').hide();
+                }
+            }
 
             // Tab functionality
             document.addEventListener('DOMContentLoaded', function() {
+                // Ensure Edit Delivery modal stays closed on load (custom modal only; Bootstrap handles its own)
+                if (!editDeliveryModalBootstrap) {
+                    var editModal = document.getElementById('edit-delivery-modal');
+                    if (editModal) {
+                        editModal.style.display = 'none';
+                        editModal.classList.add('hidden');
+                    }
+                }
+
                 const tabButtons = document.querySelectorAll('.tab-button');
                 const tabContents = document.querySelectorAll('.tab-content');
 
@@ -3033,6 +3139,11 @@ class KIT_Deliveries
 
 
             jQuery(document).ready(function($) {
+                // Ensure Edit Delivery modal is closed on page load (custom modal only)
+                if (!editDeliveryModalBootstrap) {
+                    $('#edit-delivery-modal').addClass('hidden').hide().css('display', 'none');
+                }
+
                 // Allow past dates for catch-up delivery creation
                 // No minimum date restriction - allow past dates
 
@@ -3083,14 +3194,13 @@ class KIT_Deliveries
                                     '<div class="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50">Delivery saved successfully!</div>'
                                 );
                                 $('body').append(successMsg);
-                                    setTimeout(function() {
+                                setTimeout(function() {
                                     successMsg.fadeOut(function() {
                                         $(this).remove();
                                     });
                                     // Refresh the table via AJAX instead of reloading the page
                                     refreshDeliveriesTable();
-                                    // Close modal if open
-                                    $('#edit-delivery-modal').addClass('hidden').hide();
+                                    closeEditDeliveryModal();
                                 }, 1000);
                             } else {
                                 alert('Error: ' + (response.data || 'Unknown error occurred'));
@@ -3135,12 +3245,25 @@ class KIT_Deliveries
 
                     console.log('Opening modal for delivery ID:', deliveryId);
 
-                    // Show modal
-                    $('#edit-delivery-modal').removeClass('hidden').show();
+                    // Show modal (Bootstrap on frontend / employee dashboard, custom in admin)
+                    if (editDeliveryModalBootstrap && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                        var modalEl = document.getElementById('edit-delivery-modal');
+                        if (modalEl) bootstrap.Modal.getOrCreateInstance(modalEl).show();
+                    } else {
+                        $('#edit-delivery-modal').removeClass('hidden').show();
+                    }
 
-                    // Get the AJAX URL - try multiple sources
+                    // Get the AJAX URL - try multiple sources (frontend portal has window.ajaxurl set for kit-deliveries)
                     const ajaxUrl = window.ajaxurl || (window.myPluginAjax && window.myPluginAjax.ajax_url) ||
                         '/wp-admin/admin-ajax.php';
+                    // Nonce: from add form if present, else from page-level hidden input (required on frontend when user cannot create)
+                    const nonce = $('#delivery-form input[name="nonce"]').val() ||
+                        $('#edit-delivery-form input[name="nonce"]').val() ||
+                        $('#deliveries-ajax-nonce').val() ||
+                        '';
+                    if (!nonce) {
+                        console.error('Edit Delivery: nonce not found. Ensure #deliveries-ajax-nonce or delivery form is on the page.');
+                    }
                     console.log('Using AJAX URL:', ajaxUrl);
 
                     // Load delivery data via AJAX
@@ -3151,7 +3274,7 @@ class KIT_Deliveries
                             action: 'kit_deliveries_crud',
                             task: 'get_delivery',
                             id: deliveryId,
-                            nonce: $('#delivery-form input[name="nonce"]').val()
+                            nonce: nonce
                         },
                         success: function(response) {
                             console.log('AJAX response:', response);
@@ -3161,7 +3284,7 @@ class KIT_Deliveries
                             } else {
                                 alert('Error loading delivery data: ' + (response.data ||
                                     'Unknown error'));
-                                $('#edit-delivery-modal').addClass('hidden').hide();
+                                closeEditDeliveryModal();
                             }
                         },
                         error: function(xhr, status, error) {
@@ -3171,7 +3294,7 @@ class KIT_Deliveries
                             console.error('XHR:', xhr);
                             alert(
                                 'Network error occurred while loading delivery data. Please check the console for details.');
-                            $('#edit-delivery-modal').addClass('hidden').hide();
+                            closeEditDeliveryModal();
                         }
                     });
                 };
@@ -3183,20 +3306,20 @@ class KIT_Deliveries
                         if (!str) return '';
                         return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
                     }
-                    
+
                     // Escape values for template literal (prevent backtick and ${ injection)
                     function escapeTemplate(str) {
                         if (!str) return '';
                         return String(str).replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\${/g, '\\${');
                     }
-                    
+
                     // Create form HTML
                     const formHtml = `
                         <form id="modal-delivery-form" class="space-y-8" method="post" action="${ajaxurl.replace('admin-ajax.php', 'admin-post.php')}">
                             <input type="hidden" name="action" value="kit_deliveries_crud">
                             <input type="hidden" name="delivery_id" value="${deliveryId}">
                             <input type="hidden" name="task" value="update_delivery">
-                            <input type="hidden" name="nonce" value="${escapeHtml($('#delivery-form input[name="nonce"]').val() || '')}">
+                            <input type="hidden" name="nonce" value="${escapeHtml($('#delivery-form input[name="nonce"]').val() || $('#edit-delivery-form input[name="nonce"]').val() || $('#deliveries-ajax-nonce').val() || '')}">
 
                             <!-- Reference Number -->
                             <div class="form-field">
@@ -3403,7 +3526,7 @@ class KIT_Deliveries
 
                             // Also load via AJAX as fallback/backup
                             const ajaxUrl = window.ajaxurl || '/wp-admin/admin-ajax.php';
-                            const nonce = $('#delivery-form input[name="nonce"]').val() || '';
+                            const nonce = $('#delivery-form input[name="nonce"]').val() || $('#edit-delivery-form input[name="nonce"]').val() || $('#deliveries-ajax-nonce').val() || $('#modal-delivery-form input[name="nonce"]').val() || '';
 
                             $.ajax({
                                 url: ajaxUrl,
@@ -3506,20 +3629,18 @@ class KIT_Deliveries
 
                     // Handle cancel button
                     $('#modal-cancel-btn').on('click', function() {
-                        $('#edit-delivery-modal').addClass('hidden').hide();
+                        closeEditDeliveryModal();
                     });
                 }
 
-                // Handle modal close
+                // Handle modal close (#close-modal has data-bs-dismiss on Bootstrap, but still bind for custom)
                 $('#close-modal').on('click', function() {
-                    $('#edit-delivery-modal').addClass('hidden').hide();
+                    closeEditDeliveryModal();
                 });
 
-                // Close modal when clicking outside
+                // Close modal when clicking outside (custom modal only; Bootstrap handles backdrop)
                 $('#edit-delivery-modal').on('click', function(e) {
-                    if (e.target === this) {
-                        $(this).addClass('hidden').hide();
-                    }
+                    if (e.target === this) closeEditDeliveryModal();
                 });
 
                 // Function to refresh deliveries table via AJAX
@@ -3529,10 +3650,10 @@ class KIT_Deliveries
                         console.warn('Deliveries table body not found');
                         return;
                     }
-                    
+
                     // Show loading indicator
                     tableBody.html('<tr><td colspan="8" class="px-6 py-4 text-center text-gray-500">Loading...</td></tr>');
-                    
+
                     $.ajax({
                         url: ajaxurl,
                         type: 'POST',
@@ -3557,7 +3678,7 @@ class KIT_Deliveries
                         }
                     });
                 };
-                
+
                 // Function to update statistics cards
                 function updateStatistics(stats) {
                     if (stats.total !== undefined) {
@@ -3583,14 +3704,14 @@ class KIT_Deliveries
                         const deleteBtn = event ? event.target : $('button[onclick*="deleteDelivery(' + deliveryId + ')"]')[0];
                         const $deleteBtn = $(deleteBtn);
                         const $row = $deleteBtn.closest('tr');
-                        
+
                         // Show visual feedback on the row being deleted
                         $row.css({
                             'opacity': '0.5',
                             'background-color': '#fee2e2',
                             'transition': 'all 0.3s ease'
                         });
-                        
+
                         // Disable all buttons in this row
                         $row.find('button').prop('disabled', true);
                         const originalText = $deleteBtn.html();
@@ -3610,9 +3731,9 @@ class KIT_Deliveries
                                 if (response.success) {
                                     // Show success message with backup info
                                     const backupInfo = response.data.backup || response.data;
-                                    const backupMsg = backupInfo ? 
-                                        '\\n\\nBackup created:\\n- File: ' + (backupInfo.file || 'N/A') + 
-                                        '\\n- Waybills: ' + (backupInfo.waybills_count || 0) + 
+                                    const backupMsg = backupInfo ?
+                                        '\\n\\nBackup created:\\n- File: ' + (backupInfo.file || 'N/A') +
+                                        '\\n- Waybills: ' + (backupInfo.waybills_count || 0) +
                                         '\\n- Items: ' + (backupInfo.items_count || 0) : '';
                                     alert('Delivery deleted successfully!' + backupMsg);
 
@@ -3697,6 +3818,11 @@ class KIT_Deliveries
             }
 
             $task = $_POST['task'] ?? 'update_delivery';
+            if ($task === 'create_delivery' && class_exists('KIT_User_Roles') && ! KIT_User_Roles::can_create_delivery_truck()) {
+                $redirect = wp_get_referer() ?: admin_url('admin.php?page=kit-deliveries');
+                wp_safe_redirect(add_query_arg('delivery_error', urlencode(__('Request management to create a delivery truck.', '08600-services-quotations')), $redirect));
+                exit;
+            }
             $data = $_POST;
 
             if (empty($task)) {
@@ -3744,6 +3870,10 @@ class KIT_Deliveries
 
         if (empty($task)) {
             wp_send_json_error('Task parameter missing');
+        }
+
+        if ($task === 'create_delivery' && class_exists('KIT_User_Roles') && ! KIT_User_Roles::can_create_delivery_truck()) {
+            wp_send_json_error(__('Request management to create a delivery truck.', '08600-services-quotations'));
         }
 
         switch ($task) {
@@ -3881,6 +4011,10 @@ class KIT_Deliveries
 
         if (empty($task)) {
             wp_send_json_error('Task parameter missing');
+        }
+
+        if ($task === 'create_delivery' && class_exists('KIT_User_Roles') && ! KIT_User_Roles::can_create_delivery_truck()) {
+            wp_send_json_error(__('Request management to create a delivery truck.', '08600-services-quotations'));
         }
 
         switch ($task) {
@@ -4765,7 +4899,7 @@ class KIT_Deliveries
                 <?php endforeach; ?>
             <?php endif; ?>
         </select>
-<?php
+        <?php
         return ob_get_clean();
     }
 
@@ -4853,7 +4987,7 @@ class KIT_Deliveries
         // Generate table rows HTML
         ob_start();
         foreach ($deliveries as $delivery):
-            ?>
+        ?>
             <tr class="hover:bg-gray-50">
                 <td class="px-6 py-4 whitespace-nowrap">
                     <div class="text-sm font-medium text-gray-900">
@@ -4947,7 +5081,7 @@ class KIT_Deliveries
                     </div>
                 </td>
             </tr>
-            <?php
+<?php
         endforeach;
         $html = ob_get_clean();
 

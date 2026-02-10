@@ -182,18 +182,18 @@ class KIT_Customers
         } elseif (isset($_POST['country_id']) && $_POST['country_id'] !== '' && $_POST['country_id'] !== '0') {
             $country_id_value = intval($_POST['country_id']);
         }
-        
+
         if ($country_id_value !== null && $country_id_value > 0) {
             $data['country_id'] = $country_id_value;
         }
-        
+
         $city_id_value = null;
         if (isset($_POST['origin_city']) && $_POST['origin_city'] !== '' && $_POST['origin_city'] !== '0') {
             $city_id_value = intval($_POST['origin_city']);
         } elseif (isset($_POST['city_id']) && $_POST['city_id'] !== '' && $_POST['city_id'] !== '0') {
             $city_id_value = intval($_POST['city_id']);
         }
-        
+
         if ($city_id_value !== null && $city_id_value > 0) {
             $data['city_id'] = $city_id_value;
         }
@@ -843,18 +843,18 @@ class KIT_Customers
                 } elseif (isset($_POST['country_id']) && $_POST['country_id'] !== '' && $_POST['country_id'] !== '0') {
                     $country_id_value = intval($_POST['country_id']);
                 }
-                
+
                 if ($country_id_value !== null && $country_id_value > 0) {
                     $update_data['country_id'] = $country_id_value;
                 }
-                
+
                 $city_id_value = null;
                 if (isset($_POST['origin_city']) && $_POST['origin_city'] !== '' && $_POST['origin_city'] !== '0') {
                     $city_id_value = intval($_POST['origin_city']);
                 } elseif (isset($_POST['city_id']) && $_POST['city_id'] !== '' && $_POST['city_id'] !== '0') {
                     $city_id_value = intval($_POST['city_id']);
                 }
-                
+
                 if ($city_id_value !== null && $city_id_value > 0) {
                     $update_data['city_id'] = $city_id_value;
                 }
@@ -921,150 +921,189 @@ class KIT_Customers
 
 
     ?>
-        <div class="wrap" style="max-width: 100vw; overflow-x: hidden;">
-            <?php
-            // Include modal component
-            require_once plugin_dir_path(__FILE__) . '../components/modal.php';
+        <div class="wrap customers-page">
+            <div class="<?php echo KIT_Commons::containerClasses(); ?>">
+                <?php
+                // Include modal component
+                require_once plugin_dir_path(__FILE__) . '../components/modal.php';
 
-            // Render customer form for modal
-            $customer_form_content = self::render_customer_form();
+                // Render customer form for modal
+                $customer_form_content = self::render_customer_form();
 
-            // Render Add Customer Modal
-            $add_customer_modal = KIT_Modal::render(
-                'add-customer-modal',
-                'Add New Customer',
-                $customer_form_content,
-                '3xl',
-                true,
-                'Add Customer'
-            );
+                // Render Add Customer Modal
+                $add_customer_modal = KIT_Modal::render(
+                    'add-customer-modal',
+                    'Add New Customer',
+                    $customer_form_content,
+                    '3xl',
+                    true,
+                    'Add Customer'
+                );
 
-            echo KIT_Commons::showingHeader([
-                'title' => 'Customers Dashboard',
-                'desc'  => '',
-                'content' => $add_customer_modal,
-                'icon' => KIT_Commons::icon('user-group'),
-            ]);
+                echo KIT_Commons::showingHeader([
+                    'title' => 'Customers Management',
+                    'desc'  => '',
+                    'content' => $add_customer_modal,
+                    'icon' => KIT_Commons::icon('user-group'),
+                ]);
 
-            // Sort customers by name A-Z by default (only if no sort parameter is set)
-            if (!isset($_GET['orderby']) || empty($_GET['orderby'])) {
-                usort($customers, function ($a, $b) {
-                    // Handle both customer_name/customer_surname and name/surname formats
-                    $name_a = trim(($a->customer_name ?? $a->name ?? '') . ' ' . ($a->customer_surname ?? $a->surname ?? ''));
-                    $name_b = trim(($b->customer_name ?? $b->name ?? '') . ' ' . ($b->customer_surname ?? $b->surname ?? ''));
-                    return strcasecmp($name_a, $name_b);
-                });
-            }
-
-            // Get current page and items per page for pagination
-            $current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
-            $items_per_page = isset($_GET['items_per_page']) ? max(5, min(100, intval($_GET['items_per_page']))) : 10;
-
-            // Define columns - Name first, then Company, then Country, then Total Waybills (styled like waybills table)
-            $columns = [
-                'customer_name' => [
-                    'label' => 'Name',
-                    'sortable' => true,
-                    'searchable' => true,
-                    'header_class' => 'w-48 text-left max-w-48',
-                    'cell_class' => 'text-left w-48 max-w-48 text-xs',
-                    'callback' => function ($value, $row, $rowIndex) {
-                        // Handle both object and array formats, and both property naming conventions
-                        $name = '';
-                        $surname = '';
-                        if (is_object($row)) {
-                            $name = $row->customer_name ?? $row->name ?? '';
-                            $surname = $row->customer_surname ?? $row->surname ?? '';
-                        } elseif (is_array($row)) {
-                            $name = $row['customer_name'] ?? $row['name'] ?? '';
-                            $surname = $row['customer_surname'] ?? $row['surname'] ?? '';
-                        }
-                        $full_name = trim($name . ' ' . $surname);
-                        return esc_html($full_name ?: '—');
-                    }
-                ],
-                'company_name' => [
-                    'label' => 'Company',
-                    'sortable' => true,
-                    'searchable' => true,
-                    'header_class' => 'w-52 text-left max-w-52',
-                    'cell_class' => 'text-left w-52 max-w-52 text-xs truncate',
-                ],
-                'country_name' => [
-                    'label' => 'Country',
-                    'sortable' => true,
-                    'searchable' => true,
-                    'header_class' => 'w-32 text-left max-w-32',
-                    'cell_class' => 'text-left w-32 max-w-32 text-xs',
-                ],
-                'total_waybills' => [
-                    'label' => 'Total Waybills',
-                    'sortable' => true,
-                    'searchable' => false,
-                    'header_class' => 'w-24 text-center max-w-24',
-                    'cell_class' => 'text-center w-24 max-w-24 text-xs',
-                    'callback' => function ($value, $row, $rowIndex) {
-                        $count = 0;
-                        if (is_object($row)) {
-                            $count = intval($row->total_waybills ?? 0);
-                        } elseif (is_array($row)) {
-                            $count = intval($row['total_waybills'] ?? 0);
-                        }
-                        return '<span class="font-semibold">' . esc_html($count) . '</span>';
-                    }
-                ],
-            ];
-
-            // Render table with fallback if unified table class is not available
-            if (class_exists('KIT_Unified_Table')) {
-
-                echo KIT_Unified_Table::infinite($customers, $columns, [
-                    'actions' => [
-                        [
-                            'label' => '<span class="sr-only">Edit</span>' . KIT_Icon::svg('edit', 16),
-                            'is_html' => true,
-                            'title' => 'Edit customer',
-                            'href' => '?page=edit-customer&edit_customer={cust_id}',
-                            'class' => KIT_Icon::buttonClasses('blue', 'sm')
-                        ],
-                        'view' => [
-                            'label' => '<span class="sr-only">View</span>' . KIT_Icon::svg('eye', 16),
-                            'is_html' => true,
-                            'title' => 'View customer',
-                            'href' => '?page=08600-customers&view_customer={cust_id}',
-                            'class' => KIT_Icon::buttonClasses('green', 'sm')
-                        ],
-                        [
-                            'label' => '<span class="sr-only">Delete</span>' . KIT_Icon::svg('trash', 16),
-                            'is_html' => true,
-                            'title' => 'Delete customer',
-                            'href' => '?page=08600-customers&delete_customer={cust_id}',
-                            'class' => KIT_Icon::buttonClasses('red', 'sm'),
-                            'onclick' => 'return confirm("Are you sure you want to delete this customer? This will also delete all associated waybills.")'
-                        ]
+                $customers_stats = [
+                    [
+                        'title' => 'Total Customers',
+                        'value' => number_format($total_customers),
+                        'icon' => 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
+                        'color' => 'blue',
+                        'class' => 'customers-stats-total'
                     ],
-                    'searchable' => true,
-                    'sortable' => true,
-                    'selectable' => true,
-                    'bulk_actions' => true,
-                    'items_per_page' => $items_per_page,
-                    'current_page' => $current_page,
-                    'show_items_per_page' => true,
-                    'exportable' => true,
-                    'empty_message' => 'No customers found',
-                    'pagination' => true // Enable pagination
+                    [
+                        'title' => 'Active Customers',
+                        'value' => number_format($active_customers_count),
+                        'icon' => 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
+                        'color' => 'green',
+                        'class' => 'customers-stats-active'
+                    ],
+                    [
+                        'title' => 'Inactive Customers',
+                        'value' => number_format($inactive_customers),
+                        'icon' => 'M13 10V3L4 14h7v7l9-11h-7z',
+                        'color' => 'yellow',
+                        'class' => 'customers-stats-inactive'
+                    ],
+                    [
+                        'title' => 'Customers Served',
+                        'value' => number_format($total_customers),
+                        'icon' => 'M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+                        'color' => 'purple',
+                        'class' => 'customers-stats-served'
+                    ]
+                ];
+        
+                // Render stats
+                echo KIT_QuickStats::render($customers_stats, '', [
+                    'grid_cols' => 'grid-cols-1 sm:grid-cols-4 md:grid-cols-4 lg:grid-cols-4',
+                    'gap' => 'gap-4'
                 ]);
-            } else {
-                echo '<div class="overflow-x-auto">';
-                echo KIT_Unified_Table::infinite($customers, $columns, [
-                    'title' => 'Customers',
-                    'actions' => $actions,
-                ]);
-                echo '</div>';
-                echo '</div>';
-            }
 
-            ?>
+                // Sort customers by name A-Z by default (only if no sort parameter is set)
+                if (!isset($_GET['orderby']) || empty($_GET['orderby'])) {
+                    usort($customers, function ($a, $b) {
+                        // Handle both customer_name/customer_surname and name/surname formats
+                        $name_a = trim(($a->customer_name ?? $a->name ?? '') . ' ' . ($a->customer_surname ?? $a->surname ?? ''));
+                        $name_b = trim(($b->customer_name ?? $b->name ?? '') . ' ' . ($b->customer_surname ?? $b->surname ?? ''));
+                        return strcasecmp($name_a, $name_b);
+                    });
+                }
+
+                // Get current page and items per page for pagination
+                $current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
+                $items_per_page = isset($_GET['items_per_page']) ? max(5, min(100, intval($_GET['items_per_page']))) : 10;
+
+                // Define columns - Name first, then Company, then Country, then Total Waybills (styled like waybills table)
+                $columns = [
+                    'customer_name' => [
+                        'label' => 'Name',
+                        'sortable' => true,
+                        'searchable' => true,
+                        'header_class' => 'w-48 text-left max-w-48',
+                        'cell_class' => 'text-left w-48 max-w-48 text-xs',
+                        'callback' => function ($value, $row, $rowIndex) {
+                            // Handle both object and array formats, and both property naming conventions
+                            $name = '';
+                            $surname = '';
+                            if (is_object($row)) {
+                                $name = $row->customer_name ?? $row->name ?? '';
+                                $surname = $row->customer_surname ?? $row->surname ?? '';
+                            } elseif (is_array($row)) {
+                                $name = $row['customer_name'] ?? $row['name'] ?? '';
+                                $surname = $row['customer_surname'] ?? $row['surname'] ?? '';
+                            }
+                            $full_name = trim($name . ' ' . $surname);
+                            return esc_html($full_name ?: '—');
+                        }
+                    ],
+                    'company_name' => [
+                        'label' => 'Company',
+                        'sortable' => true,
+                        'searchable' => true,
+                        'header_class' => 'w-52 text-left max-w-52',
+                        'cell_class' => 'text-left w-52 max-w-52 text-xs truncate',
+                    ],
+                    'country_name' => [
+                        'label' => 'Country',
+                        'sortable' => true,
+                        'searchable' => true,
+                        'header_class' => 'w-32 text-left max-w-32',
+                        'cell_class' => 'text-left w-32 max-w-32 text-xs',
+                    ],
+                    'total_waybills' => [
+                        'label' => 'Total Waybills',
+                        'sortable' => true,
+                        'searchable' => false,
+                        'header_class' => 'w-24 text-center max-w-24',
+                        'cell_class' => 'text-center w-24 max-w-24 text-xs',
+                        'callback' => function ($value, $row, $rowIndex) {
+                            $count = 0;
+                            if (is_object($row)) {
+                                $count = intval($row->total_waybills ?? 0);
+                            } elseif (is_array($row)) {
+                                $count = intval($row['total_waybills'] ?? 0);
+                            }
+                            return '<span class="font-semibold">' . esc_html($count) . '</span>';
+                        }
+                    ],
+                ];
+
+                // Render table with fallback if unified table class is not available
+                if (class_exists('KIT_Unified_Table')) {
+
+                    echo KIT_Unified_Table::infinite($customers, $columns, [
+                        'actions' => [
+                            [
+                                'label' => '<span class="sr-only">Edit</span>' . KIT_Icon::svg('edit', 16),
+                                'is_html' => true,
+                                'title' => 'Edit customer',
+                                'href' => '?page=edit-customer&edit_customer={cust_id}',
+                                'class' => KIT_Icon::buttonClasses('blue', 'sm')
+                            ],
+                            'view' => [
+                                'label' => '<span class="sr-only">View</span>' . KIT_Icon::svg('eye', 16),
+                                'is_html' => true,
+                                'title' => 'View customer',
+                                'href' => '?page=08600-customers&view_customer={cust_id}',
+                                'class' => KIT_Icon::buttonClasses('green', 'sm')
+                            ],
+                            [
+                                'label' => '<span class="sr-only">Delete</span>' . KIT_Icon::svg('trash', 16),
+                                'is_html' => true,
+                                'title' => 'Delete customer',
+                                'href' => '?page=08600-customers&delete_customer={cust_id}',
+                                'class' => KIT_Icon::buttonClasses('red', 'sm'),
+                                'onclick' => 'return confirm("Are you sure you want to delete this customer? This will also delete all associated waybills.")'
+                            ]
+                        ],
+                        'searchable' => true,
+                        'sortable' => true,
+                        'selectable' => true,
+                        'bulk_actions' => true,
+                        'items_per_page' => $items_per_page,
+                        'current_page' => $current_page,
+                        'show_items_per_page' => true,
+                        'exportable' => true,
+                        'empty_message' => 'No customers found',
+                        'pagination' => true // Enable pagination
+                    ]);
+                } else {
+                    echo '<div class="overflow-x-auto">';
+                    echo KIT_Unified_Table::infinite($customers, $columns, [
+                        'title' => 'Customers',
+                        'actions' => $actions,
+                    ]);
+                    echo '</div>';
+                    echo '</div>';
+                }
+
+                ?>
+            </div>
         </div>
     <?php
     }
@@ -1116,7 +1155,7 @@ function theForm($customer = null)
 
 ?>
     <input type="hidden" name="cust_id" id="cust_id" value="<?= esc_attr($customer['cust_id'] ?? '') ?>">
-    
+
     <div class="space-y-6">
         <!-- Company Information Section -->
         <div class="bg-gray-50 rounded-xl p-6 border border-gray-200 transition-all duration-200 hover:shadow-md hover:border-gray-300">
@@ -1149,7 +1188,7 @@ function theForm($customer = null)
                 // Get customer location data
                 $defaultCountryId = isset($customer['country_id']) && !empty($customer['country_id']) ? intval($customer['country_id']) : 1;
                 $defaultCityId = isset($customer['city_id']) && !empty($customer['city_id']) ? intval($customer['city_id']) : 1;
-                
+
                 // Country Select
                 ?>
                 <div class="relative">
@@ -1168,7 +1207,7 @@ function theForm($customer = null)
                         <?php echo $icon_globe; ?>
                     </div>
                 </div>
-                
+
                 <?php
                 // City Select
                 ?>
@@ -1188,7 +1227,7 @@ function theForm($customer = null)
                         <?php echo $icon_globe; ?>
                     </div>
                 </div>
-                
+
                 <input type="hidden" id="origin_country_initial" value="<?= esc_attr($defaultCountryId); ?>">
                 <input type="hidden" id="origin_city_initial" value="<?= esc_attr($defaultCityId); ?>">
             </div>
@@ -1587,353 +1626,321 @@ function customer_detail_view($customer_id)
 
 ?>
     <div class="wrap">
-        <?php
-        echo KIT_Commons::showingHeader([
-            'title' => 'Customer Details',
-            'desc'  => KIT_Commons::kitButton([
-                'color' => 'green',
-                'href'  => admin_url('admin.php?page=08600-customers')
-            ], 'Back'),
-        ]);
-        ?>
+        <div class="<?php echo KIT_Commons::containerClasses(); ?>">
+            <?php
+            echo KIT_Commons::showingHeader([
+                'title' => 'Customer Details',
+                'desc'  => KIT_Commons::kitButton([
+                    'color' => 'green',
+                    'href'  => admin_url('admin.php?page=08600-customers')
+                ], 'Back'),
+            ]);
+            ?>
 
 
-        <div class="grid grid-cols-5 gap-4">
-            <!-- Customer Information Card -->
-            <div class="col-span-2 bg-white shadow rounded-lg p-6 mb-6">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-xl font-semibold text-gray-900">Customer Information</h2>
+            <div class="grid grid-cols-5 gap-4">
+                <!-- Customer Information Card -->
+                <div class="col-span-2 bg-white shadow rounded-lg p-6 mb-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-semibold text-gray-900">Customer Information</h2>
 
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <h3 class="text-lg font-medium text-gray-700 mb-3">Personal Details</h3>
-                        <div class="space-y-3">
-                            <div>
-                                <span class="text-sm font-medium text-gray-500">Full Name:</span>
-                                <p class="text-gray-900"><?php echo esc_html(($customer['customer_name'] ?? '') . ' ' . ($customer['customer_surname'] ?? '')); ?></p>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <h3 class="text-lg font-medium text-gray-700 mb-3">Personal Details</h3>
+                            <div class="space-y-3">
+                                <div>
+                                    <span class="text-sm font-medium text-gray-500">Full Name:</span>
+                                    <p class="text-gray-900"><?php echo esc_html(($customer['customer_name'] ?? '') . ' ' . ($customer['customer_surname'] ?? '')); ?></p>
+                                </div>
+                                <div>
+                                    <span class="text-sm font-medium text-gray-500">Cell Phone:</span>
+                                    <p class="text-gray-900"><?php echo esc_html($customer['cell'] ?? 'Not provided'); ?></p>
+                                </div>
+                                <div>
+                                    <span class="text-sm font-medium text-gray-500">Email:</span>
+                                    <p class="text-gray-900"><?php echo esc_html($customer['email_address'] ?: 'Not provided'); ?></p>
+                                </div>
                             </div>
-                            <div>
-                                <span class="text-sm font-medium text-gray-500">Cell Phone:</span>
-                                <p class="text-gray-900"><?php echo esc_html($customer['cell'] ?? 'Not provided'); ?></p>
-                            </div>
-                            <div>
-                                <span class="text-sm font-medium text-gray-500">Email:</span>
-                                <p class="text-gray-900"><?php echo esc_html($customer['email_address'] ?: 'Not provided'); ?></p>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-medium text-gray-700 mb-3">Company & Location</h3>
+                            <div class="space-y-3">
+                                <div>
+                                    <span class="text-sm font-medium text-gray-500">Company:</span>
+                                    <p class="text-gray-900"><?php echo esc_html($customer['company_name'] ?: 'Not provided'); ?></p>
+                                </div>
+                                <div>
+                                    <span class="text-sm font-medium text-gray-500">Country:</span>
+                                    <p class="text-gray-900"><?php echo esc_html($customer['country_name'] ?: 'Not specified'); ?></p>
+                                </div>
+                                <div>
+                                    <span class="text-sm font-medium text-gray-500">City:</span>
+                                    <p class="text-gray-900"><?php echo esc_html($customer['city_name'] ?: 'Not specified'); ?></p>
+                                </div>
+                                <div>
+                                    <span class="text-sm font-medium text-gray-500">Address:</span>
+                                    <p class="text-gray-900"><?php echo esc_html($customer['address'] ?: 'Not provided'); ?></p>
+                                </div>
                             </div>
                         </div>
                     </div>
-                    <div>
-                        <h3 class="text-lg font-medium text-gray-700 mb-3">Company & Location</h3>
-                        <div class="space-y-3">
-                            <div>
-                                <span class="text-sm font-medium text-gray-500">Company:</span>
-                                <p class="text-gray-900"><?php echo esc_html($customer['company_name'] ?: 'Not provided'); ?></p>
-                            </div>
-                            <div>
-                                <span class="text-sm font-medium text-gray-500">Country:</span>
-                                <p class="text-gray-900"><?php echo esc_html($customer['country_name'] ?: 'Not specified'); ?></p>
-                            </div>
-                            <div>
-                                <span class="text-sm font-medium text-gray-500">City:</span>
-                                <p class="text-gray-900"><?php echo esc_html($customer['city_name'] ?: 'Not specified'); ?></p>
-                            </div>
-                            <div>
-                                <span class="text-sm font-medium text-gray-500">Address:</span>
-                                <p class="text-gray-900"><?php echo esc_html($customer['address'] ?: 'Not provided'); ?></p>
-                            </div>
-                        </div>
+                    <hr>
+                    <div class="flex justify-end gap-2">
+                        <!-- Download PDF customer summary, like waybill summary pdf -->
+                        <?php
+                        // Get all waybill numbers for this customer to generate PDF URL directly
+                        global $wpdb;
+                        $waybills_table = $wpdb->prefix . 'kit_waybills';
+                        $waybill_nos = $wpdb->get_col($wpdb->prepare(
+                            "SELECT waybill_no FROM $waybills_table WHERE customer_id = %d ORDER BY waybill_no ASC",
+                            $customer_id
+                        ));
+
+                        $pdf_url = '';
+                        if (!empty($waybill_nos)) {
+                            // Generate PDF URL directly (go up 2 levels from includes/customers/ to plugin root)
+                            $plugin_url = dirname(dirname(plugin_dir_url(__FILE__)));
+                            $pdf_url = add_query_arg([
+                                'selected_ids' => implode(',', $waybill_nos),
+                                'customer_id' => $customer_id
+                            ], $plugin_url . '/pdf-customer-bulk.php');
+                        }
+
+                        $pdf_icon = '<svg class="inline-block ml-1 -mt-0.5 w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 20 20"><path d="M12 16v-4m0 4l-2-2m2 2l2-2M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V6.828a2 2 0 00-.586-1.414l-3.828-3.828A2 2 0 0012.172 2H6z"></path></svg>';
+
+                        if (!empty($pdf_url)) {
+                            echo KIT_Commons::renderButton('PDF', 'primary', 'lg', [
+                                'href' => $pdf_url,
+                                'gradient' => true,
+                                'icon' => $pdf_icon,
+                                'target' => '_blank',
+                                'rel' => 'noopener'
+                            ]);
+                        } else {
+                            echo KIT_Commons::renderButton('PDF', 'primary', 'lg', [
+                                'href' => '#',
+                                'gradient' => true,
+                                'icon' => $pdf_icon,
+                                'disabled' => true,
+                                'title' => 'No waybills available for this customer'
+                            ]);
+                        }
+                        ?>
+                        <?php echo KIT_Commons::renderButton('Edit Cusstomer', 'primary', 'lg', ['href' => '?page=08600-customers&edit_customer=' . $customer_id, 'gradient' => true]); ?>
                     </div>
                 </div>
-                <hr>
-                <div class="flex justify-end gap-2">
-                    <!-- Download PDF customer summary, like waybill summary pdf -->
+                <div class="col-span-3">
                     <?php
-                    // Get all waybill numbers for this customer to generate PDF URL directly
-                    global $wpdb;
-                    $waybills_table = $wpdb->prefix . 'kit_waybills';
-                    $waybill_nos = $wpdb->get_col($wpdb->prepare(
-                        "SELECT waybill_no FROM $waybills_table WHERE customer_id = %d ORDER BY waybill_no ASC",
-                        $customer_id
-                    ));
-
-                    $pdf_url = '';
-                    if (!empty($waybill_nos)) {
-                        // Generate PDF URL directly (go up 2 levels from includes/customers/ to plugin root)
-                        $plugin_url = dirname(dirname(plugin_dir_url(__FILE__)));
-                        $pdf_url = add_query_arg([
-                            'selected_ids' => implode(',', $waybill_nos),
-                            'customer_id' => $customer_id
-                        ], $plugin_url . '/pdf-customer-bulk.php');
-                    }
-
-                    $pdf_icon = '<svg class="inline-block ml-1 -mt-0.5 w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 20 20"><path d="M12 16v-4m0 4l-2-2m2 2l2-2M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V6.828a2 2 0 00-.586-1.414l-3.828-3.828A2 2 0 0012.172 2H6z"></path></svg>';
-
-                    if (!empty($pdf_url)) {
-                        echo KIT_Commons::renderButton('PDF', 'primary', 'lg', [
-                            'href' => $pdf_url,
-                            'gradient' => true,
-                            'icon' => $pdf_icon,
+                    // Define actions for the unified table
+                    $summary_url = plugins_url('pdf-summary.php', dirname(dirname(__FILE__)));
+                    $actions = [
+                        [
+                            'label' => 'Download',
+                            'title' => 'Download PDF invoice',
                             'target' => '_blank',
-                            'rel' => 'noopener'
-                        ]);
-                    } else {
-                        echo KIT_Commons::renderButton('PDF', 'primary', 'lg', [
-                            'href' => '#',
-                            'gradient' => true,
-                            'icon' => $pdf_icon,
-                            'disabled' => true,
-                            'title' => 'No waybills available for this customer'
-                        ]);
-                    }
+                            'href' => $summary_url . '?waybill_no={waybill_no}',
+                            'class' => 'text-xs font-medium text-green-600 hover:text-green-800 hover:underline',
+                            'condition' => function ($row) {
+                                $product_invoice_number = is_object($row)
+                                    ? (isset($row->product_invoice_number) ? trim((string) $row->product_invoice_number) : '')
+                                    : (isset($row['product_invoice_number']) ? trim((string) $row['product_invoice_number']) : '');
+                                return !empty($product_invoice_number);
+                            }
+                        ],
+                        [
+                            'label' => 'Delete',
+                            'title' => 'Delete waybill',
+                            'href' => '?page=08600-waybill-manage&delete_waybill={waybill_no}',
+                            'class' => 'text-xs font-medium text-red-600 hover:text-red-800 hover:underline',
+                            'onclick' => 'return confirm("Are you sure you want to delete this waybill?")'
+                        ]
+                    ];
+
+                    // Use standardized column definitions from KIT_Commons for consistency
+                    $columns = KIT_Commons::getColumns([
+                        'waybill_no',
+                        'customer_city' => [
+                            'label' => 'City',
+                            'callback' => function ($value, $row, $rowIndex) {
+                                return esc_html($value ?: '—');
+                            }
+                        ],
+                        'truck_details' => [
+                            'label' => 'Truck Details',
+                            'callback' => function ($value, $row, $rowIndex) {
+                                $row = is_object($row) ? (array) $row : $row;
+                                $truck_number = $row['truck_number'] ?? '';
+                                $delivery_reference = $row['delivery_reference'] ?? '';
+                                $dispatch_date = $row['dispatch_date'] ?? '';
+
+                                if ($truck_number === '' && $delivery_reference === '' && $dispatch_date === '') {
+                                    return '<span class="text-gray-400">No truck info</span>';
+                                }
+
+                                $html = '<div class="space-y-0.5">';
+
+                                if ($truck_number !== '') {
+                                    $truck_display = mb_strlen($truck_number) > 10 ? mb_substr($truck_number, 0, 8) . '..' : $truck_number;
+                                    $html .= '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium" title="Truck: ' . esc_attr($truck_number) . '">';
+                                    $html .= '<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"/><path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1V8a1 1 0 00-1-1h-3z"/></svg>';
+                                    $html .= esc_html($truck_display) . '</span>';
+                                }
+
+                                if ($delivery_reference !== '') {
+                                    $ref_display = mb_strlen($delivery_reference) > 12 ? mb_substr($delivery_reference, 0, 10) . '..' : $delivery_reference;
+                                    $html .= ' <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-50 text-green-700 font-medium" title="Ref: ' . esc_attr($delivery_reference) . '">';
+                                    $html .= '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>';
+                                    $html .= esc_html($ref_display) . '</span>';
+                                }
+
+                                if ($dispatch_date !== '') {
+                                    $formatted = function_exists('date_i18n') ? date_i18n('M j, Y', strtotime($dispatch_date)) : date('M j, Y', strtotime($dispatch_date));
+                                    $html .= '<div class="text-[10px] text-gray-500 truncate">' . esc_html($formatted) . '</div>';
+                                }
+
+                                $html .= '</div>';
+                                return $html;
+                            }
+                        ],
+                        'created_at' => [
+                            'label' => 'Created',
+                            'callback' => function ($value, $row, $rowIndex) {
+                                if (empty($value)) {
+                                    return '—';
+                                }
+                                $timestamp = strtotime($value);
+                                if ($timestamp) {
+                                    return esc_html(function_exists('date_i18n') ? date_i18n('M j, Y', $timestamp) : date('M j, Y', $timestamp));
+                                }
+                                return esc_html($value);
+                            }
+                        ]
+                    ]);
+
+                    $table_options = [
+                        'title' => 'Waybills (' . count($waybills) . ')',
+                        'primary_action' => [
+                            'label' => 'View All Waybills',
+                            'href' => '?page=08600-waybill-manage&customer_id=' . $customer_id,
+                            'class' => 'px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-md hover:from-blue-700 hover:to-indigo-700 transition'
+                        ],
+                        'actions' => $actions,
+                        'searchable' => true,
+                        'sortable' => true,
+                        'bulk_management' => true,
+                        'bulk_actions_list' => ['export', 'delete'],
+                        'empty_message' => 'No waybills found for this customer',
+                        'preserve_order' => false
+                    ];
+
+                    // Render the unified table with standard styling to match main waybill table
+                    echo KIT_Unified_Table::infinite($waybills, $columns, $table_options);
                     ?>
-                    <?php echo KIT_Commons::renderButton('Edit Cusstomer', 'primary', 'lg', ['href' => '?page=08600-customers&edit_customer=' . $customer_id, 'gradient' => true]); ?>
                 </div>
-            </div>
-            <div class="col-span-3">
-                <?php
-                // Define actions for the unified table
-                $summary_url = plugins_url('pdf-summary.php', dirname(dirname(__FILE__)));
-                $actions = [
-                    [
-                        'label' => 'Download',
-                        'title' => 'Download PDF invoice',
-                        'target' => '_blank',
-                        'href' => $summary_url . '?waybill_no={waybill_no}',
-                        'class' => 'text-xs font-medium text-green-600 hover:text-green-800 hover:underline',
-                        'condition' => function ($row) {
-                            $product_invoice_number = is_object($row) 
-                                ? (isset($row->product_invoice_number) ? trim((string) $row->product_invoice_number) : '')
-                                : (isset($row['product_invoice_number']) ? trim((string) $row['product_invoice_number']) : '');
-                            return !empty($product_invoice_number);
-                        }
-                    ],
-                    [
-                        'label' => 'Delete',
-                        'title' => 'Delete waybill',
-                        'href' => '?page=08600-waybill-manage&delete_waybill={waybill_no}',
-                        'class' => 'text-xs font-medium text-red-600 hover:text-red-800 hover:underline',
-                        'onclick' => 'return confirm("Are you sure you want to delete this waybill?")'
-                    ]
-                ];
-
-                // Use standardized column definitions from KIT_Commons for consistency
-                // #region agent log
-                $log_data = [
-                    'sessionId' => 'debug-session',
-                    'runId' => 'post-fix',
-                    'hypothesisId' => 'FIXED',
-                    'location' => 'customers-functions.php:' . __LINE__,
-                    'message' => 'Using standardized KIT_Commons::getColumns for waybill_no',
-                    'data' => [
-                        'using_standardized_columns' => true,
-                        'waybill_no_source' => 'KIT_Commons::getColumns'
-                    ],
-                    'timestamp' => time() * 1000
-                ];
-                file_put_contents('/Applications/MAMP/htdocs/08600/wp-content/plugins/courier-finance-plugin/.cursor/debug.log', json_encode($log_data) . "\n", FILE_APPEND);
-                // #endregion
-                
-                $columns = KIT_Commons::getColumns([
-                    'waybill_no',
-                    'customer_city' => [
-                        'label' => 'City',
-                        'callback' => function ($value, $row, $rowIndex) {
-                            return esc_html($value ?: '—');
-                        }
-                    ],
-                    'truck_details' => [
-                        'label' => 'Truck Details',
-                        'callback' => function ($value, $row, $rowIndex) {
-                            $row = is_object($row) ? (array) $row : $row;
-                            $truck_number = $row['truck_number'] ?? '';
-                            $delivery_reference = $row['delivery_reference'] ?? '';
-                            $dispatch_date = $row['dispatch_date'] ?? '';
-
-                            if ($truck_number === '' && $delivery_reference === '' && $dispatch_date === '') {
-                                return '<span class="text-gray-400">No truck info</span>';
-                            }
-
-                            $html = '<div class="space-y-0.5">';
-
-                            if ($truck_number !== '') {
-                                $truck_display = mb_strlen($truck_number) > 10 ? mb_substr($truck_number, 0, 8) . '..' : $truck_number;
-                                $html .= '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium" title="Truck: ' . esc_attr($truck_number) . '">';
-                                $html .= '<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"/><path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1V8a1 1 0 00-1-1h-3z"/></svg>';
-                                $html .= esc_html($truck_display) . '</span>';
-                            }
-
-                            if ($delivery_reference !== '') {
-                                $ref_display = mb_strlen($delivery_reference) > 12 ? mb_substr($delivery_reference, 0, 10) . '..' : $delivery_reference;
-                                $html .= ' <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-50 text-green-700 font-medium" title="Ref: ' . esc_attr($delivery_reference) . '">';
-                                $html .= '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>';
-                                $html .= esc_html($ref_display) . '</span>';
-                            }
-
-                            if ($dispatch_date !== '') {
-                                $formatted = function_exists('date_i18n') ? date_i18n('M j, Y', strtotime($dispatch_date)) : date('M j, Y', strtotime($dispatch_date));
-                                $html .= '<div class="text-[10px] text-gray-500 truncate">' . esc_html($formatted) . '</div>';
-                            }
-
-                            $html .= '</div>';
-                            return $html;
-                        }
-                    ],
-                    'created_at' => [
-                        'label' => 'Created',
-                        'callback' => function ($value, $row, $rowIndex) {
-                            if (empty($value)) {
-                                return '—';
-                            }
-                            $timestamp = strtotime($value);
-                            if ($timestamp) {
-                                return esc_html(function_exists('date_i18n') ? date_i18n('M j, Y', $timestamp) : date('M j, Y', $timestamp));
-                            }
-                            return esc_html($value);
-                        }
-                    ]
-                ]);
-
-                // #region agent log
-                $table_options = [
-                    'title' => 'Waybills (' . count($waybills) . ')',
-                    'primary_action' => [
-                        'label' => 'View All Waybills',
-                        'href' => '?page=08600-waybill-manage&customer_id=' . $customer_id,
-                        'class' => 'px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-md hover:from-blue-700 hover:to-indigo-700 transition'
-                    ],
-                    'actions' => $actions,
-                    'searchable' => true,
-                    'sortable' => true,
-                    'bulk_management' => true,
-                    'bulk_actions_list' => ['export', 'delete'],
-                    'empty_message' => 'No waybills found for this customer',
-                    'preserve_order' => false
-                ];
-                $log_data = [
-                    'sessionId' => 'debug-session',
-                    'runId' => 'run1',
-                    'hypothesisId' => 'B',
-                    'location' => 'customers-functions.php:' . __LINE__,
-                    'message' => 'Customer details table options before render',
-                    'data' => [
-                        'options' => $table_options,
-                        'columns_count' => count($columns),
-                        'has_custom_header_classes' => array_reduce($columns, function($carry, $col) {
-                            return $carry || (is_array($col) && !empty($col['header_class']));
-                        }, false)
-                    ],
-                    'timestamp' => time() * 1000
-                ];
-                file_put_contents('/Applications/MAMP/htdocs/08600/wp-content/plugins/courier-finance-plugin/.cursor/debug.log', json_encode($log_data) . "\n", FILE_APPEND);
-                // #endregion
-                
-                // Render the unified table with standard styling to match main waybill table
-                echo KIT_Unified_Table::infinite($waybills, $columns, $table_options);
-                ?>
             </div>
         </div>
-
-        <script>
-            function testCustomerToast() {
-                if (window.KITToast) {
-                    // Test different toast types
-                    window.KITToast.show('Customer data loaded successfully!', 'success', 'Customer Details');
-                    setTimeout(() => {
-                        window.KITToast.show('This is a test error message', 'error', 'Test Error');
-                    }, 1000);
-                    setTimeout(() => {
-                        window.KITToast.show('Customer information updated', 'info', 'Information');
-                    }, 2000);
-                } else {
-                    alert('Toast system not loaded. Please refresh the page.');
-                }
+    </div>
+    <script>
+        function testCustomerToast() {
+            if (window.KITToast) {
+                // Test different toast types
+                window.KITToast.show('Customer data loaded successfully!', 'success', 'Customer Details');
+                setTimeout(() => {
+                    window.KITToast.show('This is a test error message', 'error', 'Test Error');
+                }, 1000);
+                setTimeout(() => {
+                    window.KITToast.show('Customer information updated', 'info', 'Information');
+                }, 2000);
+            } else {
+                alert('Toast system not loaded. Please refresh the page.');
             }
+        }
 
-            // Initialize bulk management handlers for unified table
-            (function() {
-                document.addEventListener('DOMContentLoaded', function() {
-                    <?php if (!empty($waybills)): ?>
-                        const customerId = <?php echo intval($customer_id); ?>;
-                        const pluginUrl = '<?php echo esc_js(dirname(dirname(plugin_dir_url(__FILE__)))); ?>';
+        // Initialize bulk management handlers for unified table
+        (function() {
+            document.addEventListener('DOMContentLoaded', function() {
+                <?php if (!empty($waybills)): ?>
+                    const customerId = <?php echo intval($customer_id); ?>;
+                    const pluginUrl = '<?php echo esc_js(dirname(dirname(plugin_dir_url(__FILE__)))); ?>';
 
-                        // Find all unified tables on the page and attach export handlers
-                        document.querySelectorAll('[id^="kit-infinite-table-"]').forEach(function(table) {
-                            const tableId = table.id;
-                            const containerId = tableId.replace('kit-infinite-table-', 'kit-infinite-wrap-');
-                            const container = document.querySelector('[id^="kit-infinite-wrap-"]');
-                            
-                            if (!container) return;
+                    // Find all unified tables on the page and attach export handlers
+                    document.querySelectorAll('[id^="kit-infinite-table-"]').forEach(function(table) {
+                        const tableId = table.id;
+                        const containerId = tableId.replace('kit-infinite-table-', 'kit-infinite-wrap-');
+                        const container = document.querySelector('[id^="kit-infinite-wrap-"]');
 
-                            // Find the export button within this table's bulk actions bar
-                            const exportBtn = container.querySelector('[data-bulk-action="export"]');
-                            if (exportBtn) {
-                                exportBtn.addEventListener('click', function(e) {
-                                    e.preventDefault();
-                                    e.stopPropagation();
+                        if (!container) return;
 
-                                    const checkboxes = table.querySelectorAll('.bulk-row-checkbox:checked');
-                                    const waybillNos = Array.from(checkboxes).map(cb => cb.value).filter(v => v);
+                        // Find the export button within this table's bulk actions bar
+                        const exportBtn = container.querySelector('[data-bulk-action="export"]');
+                        if (exportBtn) {
+                            exportBtn.addEventListener('click', function(e) {
+                                e.preventDefault();
+                                e.stopPropagation();
 
-                                    if (waybillNos.length === 0) {
-                                        alert('Please select at least one waybill to generate invoice.');
-                                        return;
-                                    }
+                                const checkboxes = table.querySelectorAll('.bulk-row-checkbox:checked');
+                                const waybillNos = Array.from(checkboxes).map(cb => cb.value).filter(v => v);
 
-                                    // Generate concatenated invoice PDF using pdf-customer-bulk.php
-                                    const pdfUrl = pluginUrl + '/pdf-customer-bulk.php?selected_ids=' + encodeURIComponent(waybillNos.join(',')) + '&customer_id=' + customerId;
-
-                                    // Open PDF in new window/tab
-                                    window.open(pdfUrl, '_blank');
-                                });
-                            }
-
-                            // Find the delete button within this table's bulk actions bar
-                            const deleteBtn = container.querySelector('[data-bulk-action="delete"]');
-                                if (deleteBtn) {
-                                    deleteBtn.addEventListener('click', function(e) {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-
-                                        const checkboxes = table.querySelectorAll('.bulk-row-checkbox:checked');
-                                        const waybillNos = Array.from(checkboxes).map(cb => cb.value).filter(v => v);
-
-                                        if (waybillNos.length === 0) {
-                                            alert('Please select at least one waybill.');
-                                            return;
-                                        }
-
-                                        if (!confirm('Are you sure you want to delete ' + waybillNos.length + ' selected waybill(s)? This action cannot be undone.')) {
-                                            return;
-                                        }
-
-                                        // Create and submit form
-                                        const form = document.createElement('form');
-                                        form.method = 'POST';
-                                        form.action = window.location.href;
-
-                                        const actionInput = document.createElement('input');
-                                        actionInput.type = 'hidden';
-                                        actionInput.name = 'bulk_action';
-                                        actionInput.value = 'delete';
-                                        form.appendChild(actionInput);
-
-                                        const idsInput = document.createElement('input');
-                                        idsInput.type = 'hidden';
-                                        idsInput.name = 'bulk_ids';
-                                        idsInput.value = waybillNos.join(',');
-                                        form.appendChild(idsInput);
-
-                                        document.body.appendChild(form);
-                                        form.submit();
-                                    });
+                                if (waybillNos.length === 0) {
+                                    alert('Please select at least one waybill to generate invoice.');
+                                    return;
                                 }
-                        });
-                    <?php endif; ?>
-                });
-            })();
-        </script>
-    <?php
+
+                                // Generate concatenated invoice PDF using pdf-customer-bulk.php
+                                const pdfUrl = pluginUrl + '/pdf-customer-bulk.php?selected_ids=' + encodeURIComponent(waybillNos.join(',')) + '&customer_id=' + customerId;
+
+                                // Open PDF in new window/tab
+                                window.open(pdfUrl, '_blank');
+                            });
+                        }
+
+                        // Find the delete button within this table's bulk actions bar
+                        const deleteBtn = container.querySelector('[data-bulk-action="delete"]');
+                        if (deleteBtn) {
+                            deleteBtn.addEventListener('click', function(e) {
+                                e.preventDefault();
+                                e.stopPropagation();
+
+                                const checkboxes = table.querySelectorAll('.bulk-row-checkbox:checked');
+                                const waybillNos = Array.from(checkboxes).map(cb => cb.value).filter(v => v);
+
+                                if (waybillNos.length === 0) {
+                                    alert('Please select at least one waybill.');
+                                    return;
+                                }
+
+                                if (!confirm('Are you sure you want to delete ' + waybillNos.length + ' selected waybill(s)? This action cannot be undone.')) {
+                                    return;
+                                }
+
+                                // Create and submit form
+                                const form = document.createElement('form');
+                                form.method = 'POST';
+                                form.action = window.location.href;
+
+                                const actionInput = document.createElement('input');
+                                actionInput.type = 'hidden';
+                                actionInput.name = 'bulk_action';
+                                actionInput.value = 'delete';
+                                form.appendChild(actionInput);
+
+                                const idsInput = document.createElement('input');
+                                idsInput.type = 'hidden';
+                                idsInput.name = 'bulk_ids';
+                                idsInput.value = waybillNos.join(',');
+                                form.appendChild(idsInput);
+
+                                document.body.appendChild(form);
+                                form.submit();
+                            });
+                        }
+                    });
+                <?php endif; ?>
+            });
+        })();
+    </script>
+<?php
 }
 
 function delete_customer($id, $redirect = false)
@@ -2107,11 +2114,12 @@ function edit_customer_form($customer_id)
         wp_die('Customer not found');
     }
 
-    ?>
-        <div class="wrap flex flex-col h-screen">
+?>
+    <div class="wrap customers-page">
+        <div class="<?php echo KIT_Commons::containerClasses(); ?>">
             <?php
             echo KIT_Commons::showingHeader([
-                'title' => 'Edit Customer',
+                'title' => 'Edit Customdder',
                 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />',
                 'desc'  => KIT_Commons::kitButton([
                     'color' => 'green',
@@ -2119,32 +2127,32 @@ function edit_customer_form($customer_id)
                 ], 'Back'),
             ]);
             ?>
-            <div class="flex-1 flex flex-col max-w-7xl mx-auto w-full bg-white rounded-2xl shadow-xl border border-gray-100 mt-7 mb-7 overflow-hidden">
+            <div class="flex-1 flex flex-col bg-white rounded-2xl shadow-xl border border-gray-100 mt-7 mb-7 overflow-hidden">
                 <div class="flex-shrink-0 p-6 border-b border-gray-200">
                     <h1 class="text-2xl font-bold text-gray-900">Edit Customer</h1>
                 </div>
                 <div class="flex-1 overflow-y-auto">
                     <div class="p-6">
                         <form method="POST" action="<?php echo admin_url('admin-post.php'); ?>" class="space-y-6">
-                    <?php wp_nonce_field('update_customer_nonce', 'cust_update_nonce'); ?>
-                    <input type="hidden" name="action" value="update_customer" />
-                    <input type="hidden" name="customer_id" value="<?php echo $customer_id; ?>" />
-                    <?php
-                    theForm($customer); ?>
+                            <?php wp_nonce_field('update_customer_nonce', 'cust_update_nonce'); ?>
+                            <input type="hidden" name="action" value="update_customer" />
+                            <input type="hidden" name="customer_id" value="<?php echo $customer_id; ?>" />
+                            <?php
+                            theForm($customer); ?>
                             <div class="flex flex-col sm:flex-row justify-end gap-3 pt-6 border-t border-gray-200">
-                                <?php 
+                                <?php
                                 $back_icon = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>';
                                 echo KIT_Commons::renderButton('Back', 'secondary', 'lg', [
                                     'href' => admin_url('admin.php?page=08600-customers&view_customer=' . $customer_id),
                                     'icon' => $back_icon
-                                ]); 
+                                ]);
                                 $save_icon = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>';
                                 echo KIT_Commons::renderButton('Update Customer', 'primary', 'lg', [
-                                    'type' => 'submit', 
-                                    'name' => 'customer_submit', 
+                                    'type' => 'submit',
+                                    'name' => 'customer_submit',
                                     'gradient' => true,
                                     'icon' => $save_icon
-                                ]); 
+                                ]);
                                 ?>
                             </div>
                         </form>
@@ -2152,43 +2160,44 @@ function edit_customer_form($customer_id)
                 </div>
             </div>
         </div>
+        </div>
         <script>
-        (function() {
-            function alignInputIcons() {
-                document.querySelectorAll('.input-with-icon-container').forEach(function(container) {
-                    const input = container.querySelector('input, select');
-                    const icon = container.querySelector('.input-icon');
-                    
-                    if (!input || !icon) return;
-                    
-                    const label = document.querySelector('label[for="' + input.id + '"]');
-                    if (!label) return;
-                    
-                    // Get actual positions
-                    const containerRect = container.getBoundingClientRect();
-                    const labelRect = label.getBoundingClientRect();
-                    const inputRect = input.getBoundingClientRect();
-                    
-                    // Calculate where input starts relative to container
-                    const inputTop = inputRect.top - containerRect.top;
-                    const inputHeight = inputRect.height;
-                    
-                    // Position icon to match input top and height, center vertically
-                    icon.style.top = inputTop + 'px';
-                    icon.style.height = inputHeight + 'px';
-                });
-            }
-            
-            // Run on load and after any dynamic changes
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', alignInputIcons);
-            } else {
-                alignInputIcons();
-            }
-            
-            // Re-align on window resize
-            window.addEventListener('resize', alignInputIcons);
-        })();
+            (function() {
+                function alignInputIcons() {
+                    document.querySelectorAll('.input-with-icon-container').forEach(function(container) {
+                        const input = container.querySelector('input, select');
+                        const icon = container.querySelector('.input-icon');
+
+                        if (!input || !icon) return;
+
+                        const label = document.querySelector('label[for="' + input.id + '"]');
+                        if (!label) return;
+
+                        // Get actual positions
+                        const containerRect = container.getBoundingClientRect();
+                        const labelRect = label.getBoundingClientRect();
+                        const inputRect = input.getBoundingClientRect();
+
+                        // Calculate where input starts relative to container
+                        const inputTop = inputRect.top - containerRect.top;
+                        const inputHeight = inputRect.height;
+
+                        // Position icon to match input top and height, center vertically
+                        icon.style.top = inputTop + 'px';
+                        icon.style.height = inputHeight + 'px';
+                    });
+                }
+
+                // Run on load and after any dynamic changes
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', alignInputIcons);
+                } else {
+                    alignInputIcons();
+                }
+
+                // Re-align on window resize
+                window.addEventListener('resize', alignInputIcons);
+            })();
         </script>
         <?php
     }

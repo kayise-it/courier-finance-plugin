@@ -70,9 +70,26 @@ function kit_render_waybill_multiform($atts)
     global $customer;
     $customer = $selected_customer;
 
+    // Frontend (website template) vs backend: use portal URLs for redirects when on frontend.
+    // IMPORTANT: This base URL is used inside JavaScript (location.href), NOT directly in HTML,
+    // so we must NOT HTML-escape ampersands (&). Using esc_url() here encodes & to &amp; which
+    // then produces URLs like "...page=08600-Waybill-view#038;waybill_id=332" when concatenated
+    // in JS. Use esc_url_raw() for safety without HTML encoding.
+    if (function_exists('kit_using_employee_portal') && kit_using_employee_portal()) {
+        $waybill_view_redirect_base = esc_url_raw(kit_employee_portal_url('08600-Waybill-view')) . '&waybill_id=';
+    } else {
+        $waybill_view_redirect_base = esc_url_raw(admin_url('admin.php?page=08600-Waybill-view&waybill_id='));
+    }
+
+    // Recent customer for \"Recent Customers\" button in customerSelection.js
+    $last_waybill_customer_id = 0;
+    if (class_exists('KIT_Dashboard') && method_exists('KIT_Dashboard', 'get_last_waybill_customer_id')) {
+        $last_waybill_customer_id = (int) KIT_Dashboard::get_last_waybill_customer_id();
+    }
+
     ob_start(); ?>
     
-    <form method="POST" action="<?php echo esc_attr($form_action); ?>" class="" id="multi-step-waybill-form" data-ajax-url="<?php echo admin_url('admin-ajax.php'); ?>" enctype="multipart/form-data">
+    <form method="POST" action="<?php echo esc_attr($form_action); ?>" class="" id="multi-step-waybill-form" data-ajax-url="<?php echo admin_url('admin-ajax.php'); ?>" enctype="multipart/form-data"<?php if ($last_waybill_customer_id) : ?> data-last-waybill-customer-id="<?php echo esc_attr($last_waybill_customer_id); ?>"<?php endif; ?>>
         <?php if ($is_edit_mode): ?>
             <input type="hidden" name="waybill_id" value="<?php echo esc_attr($waybill_id); ?>">
         <?php endif; ?>
@@ -742,6 +759,10 @@ function kit_render_waybill_multiform($atts)
                 if (!countryId) return;
                 
                 console.log('🔄 Loading cities for country:', countryId, cityIdToSelect ? 'with city ID:' + cityIdToSelect : '');
+
+                // #region agent log
+                fetch('http://127.0.0.1:7243/ingest/eac88981-a808-4140-9871-c5bc5fb2b15c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'waybillmultiform.php:loadDestinationCities:start',message:'loadDestinationCities called',data:{countryId:countryId,cityIdToSelect:cityIdToSelect},timestamp:Date.now(),runId:'pre-fix',hypothesisId:'H3'})}).catch(function(){});
+                // #endregion
                 
                 const citySelect = document.getElementById('destination_city');
                 if (!citySelect) {
@@ -765,6 +786,10 @@ function kit_render_waybill_multiform($atts)
                         }
                         citySelect.appendChild(option);
                     });
+
+                    // #region agent log
+                    fetch('http://127.0.0.1:7243/ingest/eac88981-a808-4140-9871-c5bc5fb2b15c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'waybillmultiform.php:loadDestinationCities:after-build',message:'Cities list rebuilt',data:{countryId:countryId,cityIdToSelect:cityIdToSelect,optionCount:citySelect.options.length,currentValue:citySelect.value || null},timestamp:Date.now(),runId:'pre-fix',hypothesisId:'H4'})}).catch(function(){});
+                    // #endregion
                     citySelect.disabled = false;
                     
                     // Set the value if cityIdToSelect is provided (in case it wasn't in the options)
@@ -863,8 +888,12 @@ function kit_render_waybill_multiform($atts)
                         backupField.value = countryId;
                     }
                     
-                    // Load cities
-                    loadDestinationCities(countryId);
+                    // Load cities – but preserve an existing city selection when the
+                    // country remains the same (e.g. clicking a delivery card after
+                    // the user has already chosen a city).
+                    const citySelect = document.getElementById('destination_city');
+                    const currentCityId = citySelect ? (citySelect.value || null) : null;
+                    loadDestinationCities(countryId, currentCityId);
                     
                     // Also trigger handleCountryChange if available (for compatibility)
                     if (typeof handleCountryChange === 'function') {
@@ -1287,7 +1316,7 @@ function kit_render_waybill_multiform($atts)
                                     
                                     if (waybillId && waybillId !== 'undefined' && waybillId !== 'null' && waybillId !== '[object Object]') {
                                         console.log('🔄 Redirecting to waybill view:', waybillId);
-                                        window.location.href = '<?php echo admin_url('admin.php?page=08600-Waybill-view&waybill_id='); ?>' + encodeURIComponent(waybillId) + '&waybill_atts=view_waybill';
+                                        window.location.href = '<?php echo $waybill_view_redirect_base; ?>' + encodeURIComponent(waybillId) + '&waybill_atts=view_waybill';
                                     } else {
                                         console.warn('⚠️ Invalid waybill_id in response:', response.data);
                                         showSuccess(response.data.message || 'Waybill created successfully!');

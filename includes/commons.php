@@ -15,6 +15,11 @@ class KIT_Commons
         add_action('admin_enqueue_scripts', [self::class, 'enqueue_datatables_assets']);
     }
 
+    public static function containerClasses()
+    {
+        return 'max-w-7xl mx-auto';
+    }
+    
     public static function enqueue_datatables_assets()
     {
         if (!function_exists('get_current_screen')) {
@@ -1030,7 +1035,6 @@ class KIT_Commons
 
             }
 
-
             public static function simpleSelect($label, $name, $selectId, $arrayList, $isActive)
             {
                 //echo label
@@ -1531,7 +1535,10 @@ class KIT_Commons
                     'type' => 'button',
                     'gradient' => false, // Enable gradient for primary buttons
                     'plain' => true, // Default to plain button style (white bg, gray border, black text). Set to false for colored buttons.
-                    'modal' => null, // Modal trigger
+                    'modal' => null, // Modal trigger (custom)
+                    'data-bs-toggle' => null, // Bootstrap 5 modal toggle
+                    'data-bs-target' => null, // Bootstrap 5 modal target
+                    'data-bs-dismiss' => null, // Bootstrap 5 dismiss (e.g. "modal")
                     'data-target' => null, // Data target attribute
                     'target' => null,
                     'rel' => null,
@@ -1636,6 +1643,15 @@ class KIT_Commons
                 }
                 if (!empty($options['modal'])) {
                     $attributes[] = 'data-modal="' . esc_attr($options['modal']) . '"';
+                }
+                if (!empty($options['data-bs-toggle'])) {
+                    $attributes[] = 'data-bs-toggle="' . esc_attr($options['data-bs-toggle']) . '"';
+                }
+                if (!empty($options['data-bs-target'])) {
+                    $attributes[] = 'data-bs-target="' . esc_attr($options['data-bs-target']) . '"';
+                }
+                if (isset($options['data-bs-dismiss']) && $options['data-bs-dismiss'] !== '' && $options['data-bs-dismiss'] !== null) {
+                    $attributes[] = 'data-bs-dismiss="' . esc_attr($options['data-bs-dismiss']) . '"';
                 }
                 if (!empty($options['data-target'])) {
                     $attributes[] = 'data-target="' . esc_attr($options['data-target']) . '"';
@@ -1813,7 +1829,10 @@ class KIT_Commons
                     'classes' => '',
                     'tag' => 'h2'
                 ];
-
+                // Allow legacy string call: bossText('Some title') -> ['words' => 'Some title']
+                if (!is_array($args)) {
+                    $args = ['words' => (string) $args];
+                }
                 $args = array_merge($defaults, $args);
 
                 // Validate tag
@@ -2177,6 +2196,9 @@ class KIT_Commons
                     'name' => $atts['name'] ?? null,
                     'type' => $atts['type'] ?? 'button',
                     'modal' => $atts['modal'] ?? null,
+                    'data-bs-toggle' => $atts['data-bs-toggle'] ?? null,
+                    'data-bs-target' => $atts['data-bs-target'] ?? null,
+                    'data-bs-dismiss' => $atts['data-bs-dismiss'] ?? null,
                     'data-target' => $atts['data-target'] ?? null,
                     'classes' => $atts['class'] ?? '',
                     'icon' => null,

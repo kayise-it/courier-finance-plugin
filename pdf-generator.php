@@ -637,10 +637,7 @@ ob_start();
         <?php
         $charge_type = ($charge_basis == 'mass' || $charge_basis == 'weight') ? 'Mass' : 'Volume';
         $charge_amount = ($charge_basis == 'mass' || $charge_basis == 'weight') ? $waybill->mass_charge : $waybill->volume_charge;
-        // #region agent log
         $charge_type_text = $charge_type . ' Charge';
-        @file_put_contents('/Applications/MAMP/htdocs/08600/wp-content/plugins/courier-finance-plugin/.cursor/debug.log', json_encode(['sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'D', 'location' => 'pdf-generator.php:' . __LINE__, 'message' => 'Checking transport charge text length', 'data' => ['text' => $charge_type_text, 'length' => strlen($charge_type_text), 'column_width' => '32%', 'has_whitespace_nowrap' => true], 'timestamp' => time() * 1000]) . "\n", FILE_APPEND);
-        // #endregion
         ?>
         <!-- Transport -->
         <tr style="font-size:13px; background:#f9fafb; border-bottom:1px solid #e0e7ef;">
@@ -687,10 +684,7 @@ ob_start();
         <?php if (!empty($misc_items)): ?>
           <?php foreach ($misc_items as $item): ?>
             <?php 
-            // #region agent log
             $misc_item_name = htmlspecialchars($item['misc_item'] ?? '');
-            @file_put_contents('/Applications/MAMP/htdocs/08600/wp-content/plugins/courier-finance-plugin/.cursor/debug.log', json_encode(['sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'C', 'location' => 'pdf-generator.php:' . __LINE__, 'message' => 'Checking misc item name length', 'data' => ['misc_item' => $misc_item_name, 'length' => strlen($misc_item_name), 'column_width' => '32%', 'has_whitespace_nowrap' => true], 'timestamp' => time() * 1000]) . "\n", FILE_APPEND);
-            // #endregion
             ?>
             <tr style="font-size:12px; background:#f9fafb; border-bottom:1px solid #e0e7ef;">
               <td class="cellStyle fstCol">
@@ -737,10 +731,7 @@ ob_start();
           $intl_amount = $intl_amount_for_total;
           // Display rate for reference (calculate from stored value or use default)
           $intl_display_rate = $intl_amount > 0 ? $intl_amount : KIT_Waybills::international_price_in_rands();
-          // #region agent log
           $agent_clearing_text = 'Agent Clearing & Documentation';
-          @file_put_contents('/Applications/MAMP/htdocs/08600/wp-content/plugins/courier-finance-plugin/.cursor/debug.log', json_encode(['sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'A', 'location' => 'pdf-generator.php:' . __LINE__, 'message' => 'Checking Agent Clearing text length', 'data' => ['text' => $agent_clearing_text, 'length' => strlen($agent_clearing_text), 'has_whitespace_nowrap' => true], 'timestamp' => time() * 1000]) . "\n", FILE_APPEND);
-          // #endregion
           ?>
           <tr style="font-size:13px; background:#f9fafb; border-bottom:1px solid #e0e7ef;">
             <td class="cellStyle fstCol">
@@ -776,10 +767,7 @@ ob_start();
           $item_ten_percent = isset($waybillItems[$key]['ten_percent']) 
             ? floatval($waybillItems[$key]['ten_percent']) 
             : ($item_subtotal * 0.10);
-          // #region agent log
           $item_name_clean = htmlspecialchars($item['item_name'] ?? '');
-          @file_put_contents('/Applications/MAMP/htdocs/08600/wp-content/plugins/courier-finance-plugin/.cursor/debug.log', json_encode(['sessionId' => 'debug-session', 'runId' => 'run1', 'hypothesisId' => 'B', 'location' => 'pdf-generator.php:' . __LINE__, 'message' => 'Checking border clearing item name length', 'data' => ['item_name' => $item_name_clean, 'length' => strlen($item_name_clean), 'column_width' => '32%', 'has_whitespace_nowrap' => true], 'timestamp' => time() * 1000]) . "\n", FILE_APPEND);
-          // #endregion
           ?>
           <tr style="background:#f9fafb; border-bottom:1px solid #e0e7ef;">
             <td class="cellStyle" style="width:18%;">
