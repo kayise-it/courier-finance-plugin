@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Build files
+dist/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*.temp
+
+# Development files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Package files
+package-lock.json
+composer.lock
+
+# Documentation (optional - remove if you want to keep them)
+*.md
+!readme.txt

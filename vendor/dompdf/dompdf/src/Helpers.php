@@ -84,10 +84,10 @@ class Helpers
         }
 
         $res = "";
-        if (strpos($url_lc, "file://") === 0) {
+        if ($url_lc && strpos($url_lc, "file://") === 0) {
             $url = substr($url, 7);
             $protocol = "file://";
-        } elseif (strpos($url_lc, "phar://") === 0) {
+        } elseif ($url_lc && strpos($url_lc, "phar://") === 0) {
             $res = substr($url, strpos($url_lc, ".phar")+5);
             $url = substr($url, 7, strpos($url_lc, ".phar")-2);
             $protocol = "phar://";
@@ -134,7 +134,7 @@ class Helpers
 
         $ret = $protocol;
         // Protocol relative urls (e.g. "//example.org/style.css")
-        if (strpos($url, '//') === 0) {
+        if ($url && strpos($url, '//') === 0) {
             $ret .= substr($url, 2);
             //remote urls with backslash in html/css are not really correct, but lets be genereous
         } elseif ($url[0] === '/' || $url[0] === '\\') {

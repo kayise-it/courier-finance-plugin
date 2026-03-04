@@ -1286,7 +1286,7 @@ class Options
             return [false, "The URI must not be empty."];
         }
 
-        $file = substr(substr($uri, 0, strpos($uri, ".phar") + 5), 7);
+        $file = substr(substr($uri, 0, ($uri ? strpos($uri, ".phar") : 0) + 5), 7);
         return $this->validateLocalUri($file);
     }
 

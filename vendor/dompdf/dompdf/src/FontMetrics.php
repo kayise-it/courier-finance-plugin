@@ -499,7 +499,7 @@ class FontMetrics
             $family = $families[$family];
     
             foreach ($family as $sub => $font) {
-                if (strpos($subtype, $sub) !== false) {
+                if ($subtype && strpos($subtype, $sub) !== false) {
                     return $cache[$familyRaw][$subtypeRaw] = $font;
                 }
             }
