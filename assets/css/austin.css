@@ -1,0 +1,17 @@
+.status-indicator{
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid white;
+}
+
+/* Overlay styles - remove left and top positioning */
+div#content > div#home-2 > div.owl-stage-outer > div.owl-stage > div.owl-item.active > div.single-slide-item > div.image-layer > div.overlay,
+div.image-layer > div.overlay,
+.overlay {
+  left: unset;
+  top: unset;
+}

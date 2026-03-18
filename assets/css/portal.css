@@ -1,0 +1,139 @@
+/**
+ * Portal standalone styles – works with Bootstrap themes when Tailwind is not loaded.
+ * Scoped to .kit-employee-portal-section so theme (Bootstrap) is not affected.
+ */
+
+/* Step 4: helper text must be plain text only (match backend – 2 selects, no extra input-like boxes) */
+#multi-step-waybill-form #destination-country-help,
+#multi-step-waybill-form #destination-city-help {
+  border: none !important;
+  background: transparent !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+  box-shadow: none !important;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  pointer-events: none !important;
+  display: block !important;
+  font-size: 0.75rem !important;
+  line-height: 1.25 !important;
+  margin-top: 0.25rem !important;
+  color: #6b7280 !important;
+}
+
+/* Layout – Tailwind-like when Tailwind not loaded (e.g. theme overrides on /employee-dashboard/) */
+.kit-employee-portal-section .grid,
+#multi-step-waybill-form .grid {
+  display: grid !important;
+}
+.kit-employee-portal-section .grid-cols-2,
+#multi-step-waybill-form .grid-cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+.kit-employee-portal-section .grid-cols-3,
+#multi-step-waybill-form .grid-cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+.kit-employee-portal-section .gap-4,
+#multi-step-waybill-form .gap-4 {
+  gap: 1rem !important;
+}
+.kit-employee-portal-section .gap-6,
+#multi-step-waybill-form .gap-6 {
+  gap: 1.5rem !important;
+}
+.kit-employee-portal-section .gap-2,
+#multi-step-waybill-form .gap-2 {
+  gap: 0.5rem !important;
+}
+.kit-employee-portal-section .flex,
+#multi-step-waybill-form .flex {
+  display: flex !important;
+}
+.kit-employee-portal-section .flex-wrap {
+  flex-wrap: wrap !important;
+}
+.kit-employee-portal-section .flex-between,
+.kit-employee-portal-section .justify-between,
+#multi-step-waybill-form .justify-between {
+  justify-content: space-between !important;
+}
+.kit-employee-portal-section .items-center {
+  align-items: center !important;
+}
+.kit-employee-portal-section .hidden,
+#multi-step-waybill-form .hidden {
+  display: none !important;
+}
+.kit-employee-portal-section .mb-4,
+#multi-step-waybill-form .mb-4 {
+  margin-bottom: 1rem !important;
+}
+.kit-employee-portal-section .mb-6,
+#multi-step-waybill-form .mb-6 {
+  margin-bottom: 1.5rem !important;
+}
+.kit-employee-portal-section .mt-8,
+#multi-step-waybill-form .mt-8 {
+  margin-top: 2rem !important;
+}
+.kit-employee-portal-section .p-6,
+#multi-step-waybill-form .p-6 {
+  padding: 1.5rem !important;
+}
+.kit-employee-portal-section .p-4,
+#multi-step-waybill-form .p-4 {
+  padding: 1rem !important;
+}
+.kit-employee-portal-section .bg-white {
+  background-color: #fff !important;
+}
+.kit-employee-portal-section .rounded-lg,
+#multi-step-waybill-form .rounded-lg {
+  border-radius: 0.5rem !important;
+}
+.kit-employee-portal-section .shadow,
+#multi-step-waybill-form .shadow {
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1) !important;
+}
+
+@media (min-width: 768px) {
+  .kit-employee-portal-section .md\\:grid-cols-4,
+  .kit-employee-portal-section .md\:grid-cols-4,
+  #multi-step-waybill-form .md\\:grid-cols-4,
+  #multi-step-waybill-form .md\:grid-cols-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+  .kit-employee-portal-section .md\\:grid-cols-2,
+  .kit-employee-portal-section .md\:grid-cols-2,
+  #multi-step-waybill-form .md\\:grid-cols-2,
+  #multi-step-waybill-form .md\:grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .kit-employee-portal-section .md\\:grid-cols-3,
+  .kit-employee-portal-section .md\:grid-cols-3,
+  #multi-step-waybill-form .md\\:grid-cols-3,
+  #multi-step-waybill-form .md\:grid-cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+@media (min-width: 1024px) {
+  .kit-employee-portal-section .lg\\:grid-cols-2,
+  .kit-employee-portal-section .lg\:grid-cols-2,
+  #multi-step-waybill-form .lg\\:grid-cols-2,
+  #multi-step-waybill-form .lg\:grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .kit-employee-portal-section .lg\\:grid-cols-3,
+  .kit-employee-portal-section .lg\:grid-cols-3,
+  #multi-step-waybill-form .lg\\:grid-cols-3,
+  #multi-step-waybill-form .lg\:grid-cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+  .kit-employee-portal-section .lg\\:grid-cols-4,
+  .kit-employee-portal-section .lg\:grid-cols-4,
+  #multi-step-waybill-form .lg\\:grid-cols-4,
+  #multi-step-waybill-form .lg\:grid-cols-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+}
