@@ -196,6 +196,10 @@ foreach ($waybills_data as $wb) {
     } else {
         $charge_basis = ($mass_charge > $volume_charge) ? 'mass' : 'volume';
     }
+    $charge_basis = strtolower(trim((string) $charge_basis));
+    if ($charge_basis === 'weight') {
+        $charge_basis = 'mass';
+    }
     
     // Get the charge amount and calculate rate
     $charge_amount = 0.0;
@@ -203,7 +207,7 @@ foreach ($waybills_data as $wb) {
     $charge_unit = '';
     $charge_rate = 0.0;
     
-    if ($charge_basis == 'mass' || $charge_basis == 'weight') {
+    if ($charge_basis === 'mass') {
         $charge_amount = $mass_charge;
         $charge_quantity = floatval($waybill->total_mass_kg ?? 0);
         $charge_unit = 'kg';

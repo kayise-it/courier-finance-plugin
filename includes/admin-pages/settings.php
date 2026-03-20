@@ -199,6 +199,23 @@ if ($_POST && isset($_POST['action'])) {
         ];
     }
 
+    // Toggle maintenance mode (blurs plugin UI in admin and employee portal).
+    if (
+        $_POST['action'] === 'toggle_maintenance_mode'
+        && isset($_POST['toggle_maintenance_mode_nonce'])
+        && wp_verify_nonce($_POST['toggle_maintenance_mode_nonce'], 'toggle_maintenance_mode')
+    ) {
+        $enable_maint = isset($_POST['enable_maintenance_mode']) && (int) $_POST['enable_maintenance_mode'] === 1;
+        update_option('kit_maintenance_mode', $enable_maint ? 1 : 0, false);
+        $maintenance_mode_result = [
+            'success' => true,
+            'enabled' => $enable_maint,
+            'message' => $enable_maint
+                ? 'Maintenance mode is ON. Plugin screens are blurred until you turn it off.'
+                : 'Maintenance mode is OFF. Plugin screens are available again.',
+        ];
+    }
+
     // Handle banking, company, and charges forms (all use same nonce)
     if (isset($_POST['settings_nonce']) && wp_verify_nonce($_POST['settings_nonce'], 'save_settings') && 
         isset($_POST['action']) && in_array($_POST['action'], ['save_banking', 'save_company', 'save_charges'])) {
@@ -1631,6 +1648,8 @@ function run_google_sheet_seed(array $rows, $simulate = false, array $customer_i
                     : 40;
             }
             $save_data['_skip_google_sync'] = true;
+            $save_data['created_by'] = $created_by;
+            $save_data['last_updated_by'] = $created_by;
 
             if (!class_exists('KIT_Waybills')) {
                 $stats['skipped']++;
@@ -2571,6 +2590,7 @@ function kit_generate_seed_sql_from_excel(): array
                     $gs_configured = class_exists('Courier_Google_Sheets') && Courier_Google_Sheets::is_configured();
                     $auto_sync_enabled = (bool) get_option('courier_google_auto_sync_enabled', 0);
                     $fake_filler_enabled = (bool) get_option('courier_fake_filler_enabled', 0);
+                    $maintenance_mode_enabled = (bool) get_option('kit_maintenance_mode', 0);
                     $seed_source = isset($_POST['seed_source']) ? sanitize_text_field($_POST['seed_source']) : 'sql';
                     ?>
 
@@ -2588,7 +2608,7 @@ function kit_generate_seed_sql_from_excel(): array
                             </div>
                         </div>
 
-                    <div class="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="mb-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                         <div class="p-4 rounded-lg border <?php echo $file_exists ? 'bg-blue-50 border-blue-200' : 'bg-yellow-50 border-yellow-200'; ?>">
                             <div class="flex items-center">
                                 <div class="flex-shrink-0">
@@ -2687,6 +2707,36 @@ function kit_generate_seed_sql_from_excel(): array
                                 ); ?>
                             </form>
                         </div>
+                        <div class="p-4 rounded-lg border <?php echo $maintenance_mode_enabled ? 'bg-amber-50 border-amber-300' : 'bg-gray-50 border-gray-200'; ?>">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    <?php if ($maintenance_mode_enabled): ?>
+                                        <svg class="h-5 w-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-1.964-1.333-2.732 0L3.732 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                                    <?php else: ?>
+                                        <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="ml-3 text-sm">
+                                    <p class="font-medium <?php echo $maintenance_mode_enabled ? 'text-amber-900' : 'text-gray-700'; ?>">
+                                        <?php echo $maintenance_mode_enabled ? 'Maintenance mode is ON' : 'Maintenance mode is OFF'; ?>
+                                    </p>
+                                    <p class="mt-1 <?php echo $maintenance_mode_enabled ? 'text-amber-800' : 'text-gray-600'; ?>">
+                                        <?php echo $maintenance_mode_enabled ? 'All plugin admin and portal pages show a blurred “Maintenance mode” screen. This Settings page stays usable so you can disable it.' : 'When enabled, employees see a maintenance screen instead of waybills, dashboard, warehouse, etc.'; ?>
+                                    </p>
+                                </div>
+                            </div>
+                            <form method="post" action="" class="mt-3">
+                                <?php wp_nonce_field('toggle_maintenance_mode', 'toggle_maintenance_mode_nonce'); ?>
+                                <input type="hidden" name="action" value="toggle_maintenance_mode">
+                                <input type="hidden" name="enable_maintenance_mode" value="<?php echo $maintenance_mode_enabled ? '0' : '1'; ?>">
+                                <?php echo KIT_Commons::renderButton(
+                                    $maintenance_mode_enabled ? 'Turn Maintenance Mode Off' : 'Turn Maintenance Mode On',
+                                    $maintenance_mode_enabled ? 'secondary' : 'primary',
+                                    'sm',
+                                    ['type' => 'submit']
+                                ); ?>
+                            </form>
+                        </div>
                     </div>
 
                         <form method="post" action="" id="seed-setup-form" class="inline">
@@ -2726,6 +2776,14 @@ function kit_generate_seed_sql_from_excel(): array
                         <div class="mt-4 p-4 rounded-lg border <?php echo !empty($fake_filler_result['enabled']) ? 'bg-indigo-50 border-indigo-200' : 'bg-gray-50 border-gray-200'; ?>">
                             <p class="text-sm <?php echo !empty($fake_filler_result['enabled']) ? 'text-indigo-800' : 'text-gray-700'; ?>">
                                 <?php echo esc_html($fake_filler_result['message']); ?>
+                            </p>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if (isset($maintenance_mode_result)): ?>
+                        <div class="mt-4 p-4 rounded-lg border <?php echo !empty($maintenance_mode_result['enabled']) ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'; ?>">
+                            <p class="text-sm <?php echo !empty($maintenance_mode_result['enabled']) ? 'text-amber-900' : 'text-gray-700'; ?>">
+                                <?php echo esc_html($maintenance_mode_result['message']); ?>
                             </p>
                         </div>
                     <?php endif; ?>

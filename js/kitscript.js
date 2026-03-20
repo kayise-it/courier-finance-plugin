@@ -1306,7 +1306,7 @@ function initBulkManagement(tableId, bulkNonce) {
         if (!bulkActionsBar) return [];
         const byDataAttr = bulkActionsBar.querySelectorAll('[data-bulk-action]');
         if (byDataAttr.length > 0) return byDataAttr;
-        return bulkActionsBar.querySelectorAll('button[id^="bulk-delete-"], button[id^="bulk-export-"], button[id^="bulk-active-"], button[id^="bulk-inactive-"]');
+        return bulkActionsBar.querySelectorAll('button[id^="bulk-delete-"], button[id^="bulk-export-"], button[id^="bulk-packing-"], button[id^="bulk-active-"], button[id^="bulk-inactive-"]');
     };
 
     // Debug: Log if elements are found
@@ -1550,6 +1550,29 @@ function initBulkManagement(tableId, bulkNonce) {
                 }
                 window.open(currentUrl.toString(), '_blank');
                 break;
+
+            case 'packing_list': {
+                const printBase = window.kitWaybillListPrintUrl || '';
+                const printNonce = window.kitWaybillListPrintNonce || '';
+                if (!printBase || !printNonce) {
+                    alert('Print URL is not configured for this table.');
+                    return;
+                }
+                let packingUrl = printBase;
+                try {
+                    const pu = new URL(printBase, window.location.href);
+                    pu.searchParams.set('list_type', 'packing');
+                    pu.searchParams.set('ids', ids);
+                    pu.searchParams.set('nonce', printNonce);
+                    packingUrl = pu.toString();
+                } catch (e2) {
+                    packingUrl = printBase + (printBase.indexOf('?') === -1 ? '?' : '&')
+                        + 'list_type=packing&ids=' + encodeURIComponent(ids)
+                        + '&nonce=' + encodeURIComponent(printNonce);
+                }
+                window.open(packingUrl, '_blank');
+                break;
+            }
 
             case 'status_active':
             case 'status_inactive':

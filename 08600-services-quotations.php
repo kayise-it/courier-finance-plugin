@@ -164,6 +164,87 @@ require_once plugin_dir_path(__FILE__) . 'includes/admin-menu.php';
 require_once plugin_dir_path(__FILE__) . 'includes/waybillmultiform.php';
 require_once plugin_dir_path(__FILE__) . 'includes/frontend/employee-portal.php';
 
+/**
+ * Whether plugin maintenance mode is enabled (Settings → Setup Seed).
+ */
+function kit_maintenance_mode_enabled() {
+    return (bool) get_option('kit_maintenance_mode', 0);
+}
+
+/**
+ * True when the current admin screen is a Courier Finance plugin page (same rules as admin styles).
+ */
+function kit_is_courier_plugin_admin_screen() {
+    if (php_sapi_name() === 'cli' || !function_exists('get_current_screen')) {
+        return false;
+    }
+    $screen = get_current_screen();
+    if ($screen === null) {
+        return false;
+    }
+    $page = isset($_GET['page']) ? sanitize_text_field(wp_unslash($_GET['page'])) : '';
+    $is_routes_page = in_array($page, ['route-management', 'route-create'], true);
+    $is_customer_page = in_array($page, ['edit-customer', '08600-add-customer'], true);
+    $dashboard_like_pages = array(
+        '08600-dashboard',
+        '08600-waybill-manage',
+        'warehouse-waybills',
+        'kit-deliveries',
+        '08600-customers',
+    );
+    $is_dashboard = in_array($page, $dashboard_like_pages, true);
+    return ($screen->id && strpos($screen->id, '08600') !== false) || $is_routes_page || $is_customer_page || $is_dashboard;
+}
+
+/**
+ * Show full-screen maintenance layer on plugin admin pages (except Settings for authorized admins).
+ */
+function kit_courier_admin_should_show_maintenance_layer() {
+    if (!kit_maintenance_mode_enabled()) {
+        return false;
+    }
+    if (!is_user_logged_in() || !current_user_can('kit_view_waybills')) {
+        return false;
+    }
+    if (!kit_is_courier_plugin_admin_screen()) {
+        return false;
+    }
+    $page = isset($_GET['page']) ? sanitize_text_field(wp_unslash($_GET['page'])) : '';
+    if ($page === '08600-settings' && class_exists('KIT_User_Roles') && KIT_User_Roles::can_access_settings()) {
+        return false;
+    }
+    return true;
+}
+
+/**
+ * Blur #wpbody-content only; overlay sits inside #wpbody so the admin menu and rest of wp-admin stay usable.
+ */
+function kit_courier_admin_maintenance_overlay() {
+    if (!kit_courier_admin_should_show_maintenance_layer()) {
+        return;
+    }
+    echo '<style id="kit-courier-maint-admin-css">'
+        . 'body.kit-courier-maintenance-lock #wpbody{position:relative;}'
+        . 'body.kit-courier-maintenance-lock #wpbody-content{filter:blur(9px);pointer-events:none;user-select:none;}'
+        . '#kit-courier-maintenance-overlay{position:absolute;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;background:rgba(248,250,252,0.72);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);}'
+        . '</style>';
+    echo '<div id="kit-courier-maintenance-overlay" role="alertdialog" aria-modal="true" aria-labelledby="kit-courier-maintenance-title">'
+        . '<div style="text-align:center;padding:2rem 2.5rem;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 10px 40px rgba(15,23,42,0.12);max-width:420px;">'
+        . '<p id="kit-courier-maintenance-title" style="margin:0;font-size:1.35rem;font-weight:600;color:#0f172a;letter-spacing:-0.02em;">Maintenance mode</p>'
+        . '<p style="margin:0.75rem 0 0 0;font-size:0.9rem;color:#64748b;line-height:1.5;">This plugin is temporarily unavailable. An authorized administrator can turn this off in Settings.</p>'
+        . '</div></div>';
+    echo '<script>(function(){var o=document.getElementById("kit-courier-maintenance-overlay"),b=document.getElementById("wpbody");if(o&&b){b.appendChild(o);}}());</script>';
+}
+
+add_action('admin_footer', 'kit_courier_admin_maintenance_overlay', 999);
+
+add_filter('admin_body_class', function ($classes) {
+    if (!kit_courier_admin_should_show_maintenance_layer()) {
+        return $classes;
+    }
+    return $classes . ' kit-courier-maintenance-lock';
+}, 25);
+
 // Initialize classes
 add_action('init', function() {
     if (class_exists('KIT_Commons')) {

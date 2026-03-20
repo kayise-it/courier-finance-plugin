@@ -69,6 +69,9 @@ function kit_employee_portal_init() {
     add_action('wp_enqueue_scripts', 'kit_employee_enqueue_login_styles', 20);
     // Portal standalone CSS loads after theme (Bootstrap) so selects and layout work when Tailwind is not applied
     add_action('wp_enqueue_scripts', 'kit_employee_enqueue_portal_standalone_css', 999);
+
+    add_filter('body_class', 'kit_courier_portal_maintenance_body_class', 99);
+    add_action('wp_footer', 'kit_courier_portal_maintenance_overlay', 999);
 }
 
 /**
@@ -267,6 +270,15 @@ function kit_waybill_create_form_frame() {
     if (!is_user_logged_in() || !class_exists('KIT_User_Roles') || !KIT_User_Roles::can_view_waybills()) {
         status_header(403);
         echo '<!DOCTYPE html><html><body><p>Access denied.</p></body></html>';
+        exit;
+    }
+
+    if (function_exists('kit_maintenance_mode_enabled') && kit_maintenance_mode_enabled()) {
+        header('Content-Type: text/html; charset=utf-8');
+        status_header(503);
+        echo '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Maintenance mode</title></head>'
+            . '<body style="margin:0;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f8fafc;color:#64748b;">'
+            . '<p style="font-size:1.15rem;margin:0;">Maintenance mode</p></body></html>';
         exit;
     }
 
@@ -628,6 +640,75 @@ function kit_employee_enqueue_login_styles() {
 /**
  * Inline CSS for employee login form
  */
+/**
+ * Employee portal: maintenance mode body class for blur + overlay (Settings section exempt for authorized admins).
+ */
+function kit_courier_portal_maintenance_body_class($classes) {
+    if (!function_exists('kit_maintenance_mode_enabled') || !kit_maintenance_mode_enabled()) {
+        return $classes;
+    }
+    if (!is_user_logged_in() || !class_exists('KIT_User_Roles') || !KIT_User_Roles::can_view_waybills()) {
+        return $classes;
+    }
+    if (!kit_courier_portal_is_dashboard_app_request()) {
+        return $classes;
+    }
+    $section = isset($_GET['section']) ? sanitize_text_field(wp_unslash($_GET['section'])) : '';
+    if ($section === '08600-settings' && KIT_User_Roles::can_access_settings()) {
+        return $classes;
+    }
+    $classes[] = 'kit-courier-portal-maintenance';
+    return $classes;
+}
+
+/**
+ * True on employee dashboard URL or any singular page that renders the portal/dashboard shortcode.
+ */
+function kit_courier_portal_is_dashboard_app_request() {
+    $uri = isset($_SERVER['REQUEST_URI']) ? wp_parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) : '';
+    $path = trim((string) $uri, '/');
+    $slug = $path === '' ? '' : basename(str_replace('\\', '/', $path));
+    if ($slug === 'employee-dashboard') {
+        return true;
+    }
+    if (!function_exists('is_singular') || !is_singular()) {
+        return false;
+    }
+    global $post;
+    if (!$post || !isset($post->post_content)) {
+        return false;
+    }
+    return has_shortcode($post->post_content, 'kit_employee_portal')
+        || has_shortcode($post->post_content, 'kit_employee_dashboard');
+}
+
+/**
+ * Full-screen maintenance layer on employee dashboard (frontend).
+ */
+function kit_courier_portal_maintenance_overlay() {
+    if (!function_exists('kit_maintenance_mode_enabled') || !kit_maintenance_mode_enabled()) {
+        return;
+    }
+    if (!is_user_logged_in() || !class_exists('KIT_User_Roles') || !KIT_User_Roles::can_view_waybills()) {
+        return;
+    }
+    if (!kit_courier_portal_is_dashboard_app_request()) {
+        return;
+    }
+    $section = isset($_GET['section']) ? sanitize_text_field(wp_unslash($_GET['section'])) : '';
+    if ($section === '08600-settings' && KIT_User_Roles::can_access_settings()) {
+        return;
+    }
+    echo '<style id="kit-courier-maint-portal-css">'
+        . '.kit-courier-portal-maintenance #kit-employee-dashboard-wrap{filter:blur(9px);pointer-events:none;user-select:none;}'
+        . '</style>';
+    echo '<div id="kit-courier-maintenance-overlay-portal" style="position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(248,250,252,0.72);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);" role="alertdialog" aria-modal="true" aria-labelledby="kit-courier-maintenance-portal-title">'
+        . '<div style="text-align:center;padding:2rem 2.5rem;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 10px 40px rgba(15,23,42,0.12);max-width:420px;">'
+        . '<p id="kit-courier-maintenance-portal-title" style="margin:0;font-size:1.35rem;font-weight:600;color:#0f172a;">Maintenance mode</p>'
+        . '<p style="margin:0.75rem 0 0 0;font-size:0.9rem;color:#64748b;line-height:1.5;">This plugin is temporarily unavailable. An authorized administrator can turn this off in Settings.</p>'
+        . '</div></div>';
+}
+
 function kit_employee_login_inline_css() {
     return '
         .kit-employee-login-wrap { max-width: 400px; margin: 2rem auto; padding: 1rem; }

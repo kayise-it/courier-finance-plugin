@@ -29,7 +29,8 @@ class KIT_Unified_Table
             'bulk_actions' => false,
             'selectable' => false,
             'bulk_management' => false,
-            'bulk_actions_list' => [], // Array of bulk actions: ['delete', 'export', 'status_active', 'status_inactive']
+            'bulk_actions_list' => [], // ['delete', 'export', 'packing_list', 'status_active', 'status_inactive']
+            'delivery_list_print' => false, // Waybills: toolbar "Print delivery list" (visible rows only)
             'bulk_action_handler' => null, // Callback function to handle bulk actions
             'empty_message' => 'No data found',
             'table_class' => 'w-full table-auto border-collapse',
@@ -63,6 +64,12 @@ class KIT_Unified_Table
         ];
 
         $options = array_merge($defaults, $options);
+
+        $bulk_actions_for_print = $options['bulk_actions_list'] ?? [];
+        $needs_waybill_list_print_globals = (
+            (! empty($options['delivery_list_print']) && filter_var($options['delivery_list_print'], FILTER_VALIDATE_BOOLEAN))
+            || in_array('packing_list', $bulk_actions_for_print, true)
+        );
 
         // Store original groupby value for view toggling
         $original_groupby = $options['groupby'];
@@ -422,6 +429,19 @@ class KIT_Unified_Table
                                 'iconOnly' => true,
                                 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>',
                             ]); ?>
+                            <?php
+                            if (! empty($options['delivery_list_print']) && filter_var($options['delivery_list_print'], FILTER_VALIDATE_BOOLEAN)) :
+                                $print_list_icon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path>';
+                                echo KIT_Commons::renderButton('Print delivery list', 'secondary', 'sm', [
+                                    'type' => 'button',
+                                    'id' => 'print-delivery-list-' . esc_attr($table_id),
+                                    'classes' => 'inline-flex items-center gap-2 px-3 py-2 h-10 text-sm font-semibold border border-gray-300 rounded-md bg-white text-gray-800 hover:bg-gray-50 flex-shrink-0 whitespace-nowrap',
+                                    'icon' => $print_list_icon,
+                                    'iconPosition' => 'left',
+                                    'ariaLabel' => 'Print delivery list for visible waybills',
+                                ]);
+                            endif;
+                            ?>
                         </div>
                     <?php endif; ?>
                 </div>
@@ -460,6 +480,11 @@ class KIT_Unified_Table
                                                 $action_class = 'bg-blue-600 hover:bg-blue-700 text-white';
                                                 $action_id = 'bulk-export-' . $table_id;
                                                 break;
+                                            case 'packing_list':
+                                                $action_label = 'Packing list';
+                                                $action_class = 'bg-indigo-600 hover:bg-indigo-700 text-white';
+                                                $action_id = 'bulk-packing-' . $table_id;
+                                                break;
                                             case 'status_active':
                                                 $action_label = 'Set Active';
                                                 $action_class = 'bg-green-600 hover:bg-green-700 text-white';
@@ -477,6 +502,8 @@ class KIT_Unified_Table
                                                 $bulk_icon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>';
                                             } elseif ($action === 'export') {
                                                 $bulk_icon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>';
+                                            } elseif ($action === 'packing_list') {
+                                                $bulk_icon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>';
                                             } elseif ($action === 'status_active') {
                                                 $bulk_icon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>';
                                             } elseif ($action === 'status_inactive') {
@@ -1296,6 +1323,57 @@ class KIT_Unified_Table
                         console.error('initBulkManagement function not found. Make sure kitscript.js is loaded.');
                     }
                 }
+
+                <?php if ($needs_waybill_list_print_globals && function_exists('wp_create_nonce')) : ?>
+                window.kitWaybillListPrintUrl = <?php echo json_encode(dirname(plugin_dir_url(__FILE__)) . '/waybill-list-print.php'); ?>;
+                window.kitWaybillListPrintNonce = <?php echo json_encode(wp_create_nonce('waybill_list_print')); ?>;
+
+                <?php if (! empty($options['delivery_list_print']) && filter_var($options['delivery_list_print'], FILTER_VALIDATE_BOOLEAN)) : ?>
+                (function() {
+                    const printDeliveryListBtn = document.getElementById('print-delivery-list-<?php echo esc_js($table_id); ?>');
+                    if (!printDeliveryListBtn) {
+                        return;
+                    }
+                    printDeliveryListBtn.addEventListener('click', function() {
+                        const rows = table.querySelectorAll('tbody tr');
+                        const seen = new Set();
+                        const ids = [];
+                        rows.forEach(function(row) {
+                            if (row.dataset.groupRow === '1') {
+                                return;
+                            }
+                            if (row.style.display === 'none') {
+                                return;
+                            }
+                            const wb = row.getAttribute('data-waybill-no');
+                            if (wb && !seen.has(wb)) {
+                                seen.add(wb);
+                                ids.push(wb);
+                            }
+                        });
+                        if (ids.length === 0) {
+                            alert('No visible waybills to print.');
+                            return;
+                        }
+                        const base = window.kitWaybillListPrintUrl || '';
+                        const nonce = window.kitWaybillListPrintNonce || '';
+                        let urlStr = base;
+                        try {
+                            const u = new URL(base, window.location.href);
+                            u.searchParams.set('list_type', 'delivery');
+                            u.searchParams.set('ids', ids.join(','));
+                            u.searchParams.set('nonce', nonce);
+                            urlStr = u.toString();
+                        } catch (e) {
+                            urlStr = base + (base.indexOf('?') === -1 ? '?' : '&')
+                                + 'list_type=delivery&ids=' + encodeURIComponent(ids.join(','))
+                                + '&nonce=' + encodeURIComponent(nonce);
+                        }
+                        window.open(urlStr, '_blank');
+                    });
+                })();
+                <?php endif; ?>
+                <?php endif; ?>
 
                 // Sorting functionality - client-side sorting for infinite scroll
                 if (<?php echo $options['sortable'] ? 'true' : 'false'; ?>) {

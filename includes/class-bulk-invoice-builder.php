@@ -126,6 +126,10 @@ class Bulk_Invoice_Builder {
             } else {
                 $charge_basis = ($mass_charge > $volume_charge) ? 'mass' : 'volume';
             }
+            $charge_basis = strtolower(trim((string) $charge_basis));
+            if ($charge_basis === 'weight') {
+                $charge_basis = 'mass';
+            }
 
             $charge_amount = 0.0;
             $charge_quantity = 0.0;
@@ -133,7 +137,7 @@ class Bulk_Invoice_Builder {
             $charge_rate = 0.0;
             $as_charged = false;
 
-            if ($charge_basis === 'mass' || $charge_basis === 'weight') {
+            if ($charge_basis === 'mass') {
                 $charge_amount = $mass_charge;
                 $charge_quantity = floatval($waybill->total_mass_kg ?? 0);
                 $charge_unit = 'kg';

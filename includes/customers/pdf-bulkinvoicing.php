@@ -186,6 +186,22 @@ if (isset($_GET['selected_ids']) || isset($_POST['bulk_ids'])) {
         $waybills = $wpdb->get_results($query);
 
         if (!empty($waybills)) {
+            // Bulk invoice must represent one customer only.
+            $customer_ids = [];
+            foreach ($waybills as $wb_row) {
+                $cid = isset($wb_row->customer_id) ? intval($wb_row->customer_id) : 0;
+                if ($cid > 0) {
+                    $customer_ids[$cid] = true;
+                }
+            }
+            if (count($customer_ids) > 1) {
+                wp_die(
+                    'Selected waybills belong to different customers. Please select waybills for one customer only.',
+                    'Mixed Customers Not Allowed',
+                    ['response' => 400]
+                );
+            }
+
             // Aggregate SADC across all selected waybills so that e.g. 3 waybills with SADC @ R350 show 3 × 350
             $sadc_count      = 0;
             $sadc_unit_price = 0.0;
@@ -251,8 +267,25 @@ if (isset($_GET['selected_ids']) || isset($_POST['bulk_ids'])) {
             // Calculate totals BEFORE starting output buffer.
             // Bulk invoice must only reflect already-charged waybill totals (no grouped VAT/SAD500/SADC add-ons).
             $subtotal = 0.0;
+            $row_amounts = [];
             foreach ($waybills as $waybill) {
-                $subtotal += floatval($waybill->product_invoice_amount ?? 0);
+                $line_amount = floatval($waybill->product_invoice_amount ?? 0);
+                if ($line_amount <= 0) {
+                    $basis = strtolower(trim((string)($waybill->charge_basis ?? '')));
+                    if ($basis === 'weight') {
+                        $basis = 'mass';
+                    }
+                    if ($basis === 'mass') {
+                        $line_amount = floatval($waybill->mass_charge ?? 0);
+                    } elseif ($basis === 'volume') {
+                        $line_amount = floatval($waybill->volume_charge ?? 0);
+                    } else {
+                        $line_amount = max(floatval($waybill->mass_charge ?? 0), floatval($waybill->volume_charge ?? 0));
+                    }
+                }
+                $waybill_key = (string)($waybill->waybill_no ?? '');
+                $row_amounts[$waybill_key] = $line_amount;
+                $subtotal += $line_amount;
             }
 
             // Bulk invoice total must not apply VAT here; VAT is handled in single-waybill flow only.
@@ -585,14 +618,20 @@ if (isset($_GET['selected_ids']) || isset($_POST['bulk_ids'])) {
             </td>
             <td class="cellStyle" style="text-align:right;">
               <?php if ($can_see_prices): ?>
-                <?= number_format(floatval($waybill->product_invoice_amount ?? 0), 2) ?>
+                <?php
+                $wb_key = (string)($waybill->waybill_no ?? '');
+                echo number_format(floatval($row_amounts[$wb_key] ?? 0), 2);
+                ?>
               <?php else: ?>
                 N/A
               <?php endif; ?>
             </td>
             <td class="cellStyle" style="font-weight:600; text-align:right;">
               <?php if ($can_see_prices): ?>
-                <?= number_format(floatval($waybill->product_invoice_amount ?? 0), 2) ?>
+                <?php
+                $wb_key = (string)($waybill->waybill_no ?? '');
+                echo number_format(floatval($row_amounts[$wb_key] ?? 0), 2);
+                ?>
               <?php else: ?>
                 N/A
               <?php endif; ?>

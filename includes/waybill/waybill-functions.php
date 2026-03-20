@@ -2337,8 +2337,15 @@ class KIT_Waybills
             $waybill_data['warehouse'] = $is_warehouse ? 1 : 0;
             $waybill_data['product_invoice_number'] = $product_invoice_number;
             $waybill_data['tracking_number'] = 'TRK-' . strtoupper(wp_generate_password(8, false));
-            $waybill_data['created_by'] = get_current_user_id();
-            $waybill_data['last_updated_by'] = get_current_user_id();
+            if (!empty($data['_skip_google_sync']) && isset($data['created_by']) && (int) $data['created_by'] > 0) {
+                $waybill_data['created_by'] = (int) $data['created_by'];
+                $waybill_data['last_updated_by'] = (isset($data['last_updated_by']) && (int) $data['last_updated_by'] > 0)
+                    ? (int) $data['last_updated_by']
+                    : (int) $data['created_by'];
+            } else {
+                $waybill_data['created_by'] = get_current_user_id();
+                $waybill_data['last_updated_by'] = get_current_user_id();
+            }
             $waybill_data['status'] = 'pending';
             $waybill_data['created_at'] = current_time('mysql');
             $waybill_data['last_updated_at'] = current_time('mysql');
