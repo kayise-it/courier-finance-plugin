@@ -31,13 +31,10 @@ if (version_compare(PHP_VERSION, '8.1.0', '>=')) {
             if ($buffer === null || $buffer === '') {
                 return $buffer;
             }
-<<<<<<< HEAD
             // Skip regex on very large buffers to avoid timeout/memory exhaustion (DOM crash)
             if (strlen($buffer) > 4 * 1024 * 1024) {
                 return $buffer;
             }
-=======
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
             // Remove deprecation warnings from the output buffer (safety net)
             $cleaned = preg_replace('/Deprecated:\s.*?(?:\n|<br\s*\/?>)/is', '', $buffer);
             return $cleaned !== null ? $cleaned : $buffer;
@@ -66,7 +63,6 @@ if (!defined('ABSPATH')) {
 // Enqueue styles for the admin panel
 function customStyling()
 {
-<<<<<<< HEAD
     // Avoid calling get_current_screen() in CLI or when admin context is not set (causes fatal/crash)
     if (php_sapi_name() === 'cli' || !function_exists('get_current_screen')) {
         return;
@@ -77,11 +73,6 @@ function customStyling()
     }
     $page = isset($_GET['page']) ? sanitize_text_field($_GET['page']) : '';
     // Only load CSS on our plugin's admin pages to avoid conflicts
-=======
-    // Only load CSS on our plugin's admin pages to avoid conflicts
-    $screen = get_current_screen();
-    $page = isset($_GET['page']) ? sanitize_text_field($_GET['page']) : '';
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
     $is_routes_page = in_array($page, ['route-management', 'route-create'], true);
     $is_customer_page = in_array($page, ['edit-customer', '08600-add-customer'], true);
     // Pages that should use the modern dashboard layout (and need dashboard.css)
@@ -97,7 +88,6 @@ function customStyling()
     if ($is_plugin_page) {
         wp_enqueue_style('autsincss', plugin_dir_url(__FILE__) . 'assets/css/austin.css', array(), '1.0');
         wp_enqueue_style('kit-tailwindcss', plugin_dir_url(__FILE__) . 'assets/css/frontend.css', array(), '1.0');
-<<<<<<< HEAD
         wp_add_inline_style('autsincss', 'body.courier-finance-plugin #wpbody-content { padding-bottom: 50px; }');
         // Fix footer overflow/overlap only on Settings (Setup Seed) page
         if ($page === '08600-settings') {
@@ -106,8 +96,6 @@ function customStyling()
                 . ' #wpfooter #footer-left { max-width: 100%; overflow-wrap: break-word; word-wrap: break-word; min-width: 0; }'
             );
         }
-=======
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
         if ($is_dashboard) {
             wp_enqueue_style('kit-dashboard-css', plugin_dir_url(__FILE__) . 'assets/css/dashboard.css', array('kit-tailwindcss'), '1.0');
             wp_enqueue_style('leaflet-css', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', array(), '1.9.4');
@@ -159,11 +147,8 @@ require_once plugin_dir_path(__FILE__) . 'includes/class-database.php';
 include_once(plugin_dir_path(__FILE__) . 'includes/class-plugin.php');
 require_once plugin_dir_path(__FILE__) . 'includes/class-server-connection.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-unified-table.php';
-<<<<<<< HEAD
 require_once plugin_dir_path(__FILE__) . 'includes/class-google-sheets.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-google-sheets-sync.php';
-=======
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
 // Initialize GitHub-based updates if available
 require_once plugin_dir_path(__FILE__) . 'includes/update-checker.php';
 
@@ -179,7 +164,6 @@ require_once plugin_dir_path(__FILE__) . 'includes/admin-menu.php';
 require_once plugin_dir_path(__FILE__) . 'includes/waybillmultiform.php';
 require_once plugin_dir_path(__FILE__) . 'includes/frontend/employee-portal.php';
 
-<<<<<<< HEAD
 /**
  * Whether plugin maintenance mode is enabled (Settings → Setup Seed).
  */
@@ -261,8 +245,6 @@ add_filter('admin_body_class', function ($classes) {
     return $classes . ' kit-courier-maintenance-lock';
 }, 25);
 
-=======
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
 // Initialize classes
 add_action('init', function() {
     if (class_exists('KIT_Commons')) {
@@ -291,7 +273,6 @@ add_action('init', function() {
 // Register admin menu
 add_action('admin_menu', 'plugin_add_menu');
 
-<<<<<<< HEAD
 // Show Google Sheets sync error so user knows when waybill didn't insert into sheet
 add_action('admin_notices', function () {
     if (!current_user_can('kit_view_waybills')) {
@@ -306,8 +287,6 @@ add_action('admin_notices', function () {
     echo '<div class="notice notice-warning is-dismissible"><p><strong>Google Sheets sync failed</strong> for waybill ' . $waybill_no . ': ' . $msg . ' Check PHP error log for details.</p></div>';
 });
 
-=======
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
 // Register shortcodes
 add_shortcode('waybill_multiform', 'kit_render_waybill_multiform');
 
@@ -357,7 +336,6 @@ function kit_create_employee_portal_pages() {
     return;
 }
 
-<<<<<<< HEAD
     // Prefer new /login slug but support legacy /employee-login for existing installs
     $login_page = get_page_by_path('login', OBJECT, 'page');
     if (!$login_page) {
@@ -367,13 +345,6 @@ function kit_create_employee_portal_pages() {
         wp_insert_post([
             'post_title'   => 'Login',
             'post_name'    => 'login',
-=======
-    $login_page = get_page_by_path('employee-login', OBJECT, 'page');
-    if (!$login_page) {
-        wp_insert_post([
-            'post_title'   => 'Employee Login',
-            'post_name'    => 'employee-login',
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
             'post_content' => '[kit_employee_login]',
             'post_status'  => 'publish',
             'post_type'    => 'page',
@@ -434,15 +405,11 @@ add_action('load-options-permalink.php', function() {
         return;
     }
     $dashboard = get_page_by_path('employee-dashboard', OBJECT, 'page');
-<<<<<<< HEAD
     // Check both new and legacy slugs so permalinks flush works after upgrades
     $login = get_page_by_path('login', OBJECT, 'page');
     if (!$login) {
         $login = get_page_by_path('employee-login', OBJECT, 'page');
     }
-=======
-    $login = get_page_by_path('employee-login', OBJECT, 'page');
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
     if ($dashboard || $login) {
         flush_rewrite_rules(true);
     }
@@ -700,7 +667,6 @@ function test_server_connection_callback() {
 
 function my_plugin_enqueue_scripts()
 {
-<<<<<<< HEAD
     // Only load heavy plugin scripts/localized city map on this plugin's admin pages.
     $page = isset($_GET['page']) ? sanitize_text_field($_GET['page']) : '';
     $is_plugin_page =
@@ -711,8 +677,6 @@ function my_plugin_enqueue_scripts()
         return;
     }
 
-=======
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
     wp_enqueue_script('kitscript', plugin_dir_url(__FILE__) . 'js/kitscript.js', ['jquery'], null, true);
     wp_enqueue_script('waybill-pagination', plugin_dir_url(__FILE__) . '/js/waybill-pagination.js', ['jquery'], null, true);
 

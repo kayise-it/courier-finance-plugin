@@ -512,7 +512,6 @@ if (!empty($waybill['truck_driver']) && is_numeric($waybill['truck_driver'])) {
                                 'volume' => 'Volume',
                                 'auto'   => 'Auto',
                             ];
-<<<<<<< HEAD
                             // Use DB value: waybill column first, then miscellaneous.others.used_charge_basis; normalize to lowercase
                             $raw_basis = $waybill['charge_basis'] ?? '';
                             if (($raw_basis === '' || $raw_basis === null) && !empty($waybill['miscellaneous']['others']['used_charge_basis'])) {
@@ -522,9 +521,6 @@ if (!empty($waybill['truck_driver']) && is_numeric($waybill['truck_driver'])) {
                             if (!array_key_exists($current_charge_basis, $charge_basis_options)) {
                                 $current_charge_basis = 'auto';
                             }
-=======
-                            $current_charge_basis = $waybill['charge_basis'] ?? 'auto';
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
 
                             foreach ($charge_basis_options as $value => $label):
                                 $input_id = 'charge_basis_' . $value;

@@ -148,13 +148,8 @@ try {
                 if (!empty($errors)) {
                     $message .= ' (' . count($errors) . ' failed)';
                 }
-<<<<<<< HEAD
                 // Show a success toast; let the user decide when to refresh.
                 echo KIT_Toast::success($message, 'Success');
-=======
-                echo KIT_Toast::success($message . ' The page will refresh in 2 seconds to show updated warehouse status.', 'Success');
-                echo '<script>setTimeout(function(){ window.location.reload(); }, 2000);</script>';
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
             } else {
                 $error_msg = 'Failed to assign waybills. ';
                 if (!empty($errors)) {

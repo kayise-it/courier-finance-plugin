@@ -154,7 +154,6 @@ function plugin_add_menu()
 
 
     // Hidden pages for direct access
-<<<<<<< HEAD
     // Google Sheets test (hidden)
     add_submenu_page(
         null,
@@ -165,8 +164,6 @@ function plugin_add_menu()
         'courier_google_sheets_test_page'
     );
 
-=======
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
     add_submenu_page(
         null, // No parent menu
         'View Waybill',
@@ -229,7 +226,6 @@ function dashboard_page() {
     include plugin_dir_path(__FILE__) . 'admin-pages/dashboard.php';
 }
 
-<<<<<<< HEAD
 function courier_google_sheets_test_page() {
     require COURIER_FINANCE_PLUGIN_PATH . 'includes/admin-pages/google-sheets-test.php';
 }
@@ -345,10 +341,6 @@ function handle_kit_google_sheet_sync() {
 }
 add_action('wp_ajax_kit_google_sheet_sync', 'handle_kit_google_sheet_sync');
 
-=======
-add_action('admin_menu', 'plugin_add_menu');
-
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
 // Callback functions for menu pages
 
 

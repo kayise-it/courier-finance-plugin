@@ -105,11 +105,7 @@ function renderDeliveryCard($delivery, $card_type = 'scheduled', $clickable = tr
     $status_config = getStatusConfig($card_type);
     
     // Determine if card should be clickable
-<<<<<<< HEAD
     $cursor_class = $clickable ? 'cursor-pointer' : 'cursor-default';
-=======
-    $cursor_class = $clickable ? 'cursor-pointer hover:shadow-md hover:border-blue-300' : 'cursor-default';
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
     
     // Format date - match the image format "04 Sep 2025"
     $dispatch_date = $delivery->dispatch_date ?? '';
@@ -118,11 +114,7 @@ function renderDeliveryCard($delivery, $card_type = 'scheduled', $clickable = tr
     $year = $dispatch_date ? date('Y', strtotime($dispatch_date)) : '';
 ?>
 
-<<<<<<< HEAD
 <div class="delivery-card bg-white rounded-lg border border-gray-200 p-3 relative <?php echo $cursor_class; ?>" 
-=======
-<div class="delivery-card bg-white rounded-lg border border-gray-200 p-3 group relative <?php echo $cursor_class; ?>" 
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
      data-index="<?php echo esc_attr($delivery->id ?? $delivery->direction_id); ?>"
      data-dispatch-date="<?php echo esc_attr($delivery->dispatch_date ?? ''); ?>"
      data-truck-number="<?php echo esc_attr($delivery->truck_number ?? ''); ?>"
@@ -151,7 +143,6 @@ function renderDeliveryCard($delivery, $card_type = 'scheduled', $clickable = tr
                <?php echo ($radio_options['checked_id'] && ($delivery->id == $radio_options['checked_id'] || $delivery->direction_id == $radio_options['checked_id'])) ? 'checked' : ''; ?>>
     <?php endif; ?>
     
-<<<<<<< HEAD
     <!-- Card title -->
     <div class="flex items-center justify-center gap-1 mb-1 text-[11px] text-blue-700">
         <span class="text-base leading-none" aria-hidden="true">🚚</span>
@@ -159,24 +150,16 @@ function renderDeliveryCard($delivery, $card_type = 'scheduled', $clickable = tr
     </div>
 
     <!-- Date Display -->
-=======
-    <!-- Date Display - match image format "04 Sep 2025" -->
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
     <div class="text-center mb-2">
         <div class="text-xs font-bold text-gray-900"><?php echo $day . ' ' . $month . ' ' . $year; ?></div>
     </div>
     
-<<<<<<< HEAD
     <!-- Route Information -->
-=======
-    <!-- Route Information - show full country names like image -->
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
     <div class="text-xs text-center text-gray-700 leading-tight mb-2">
         <div class="font-medium"><?php echo htmlspecialchars($origin_country); ?></div>
         <div class="text-gray-400 text-xs">→</div>
         <div class="font-medium"><?php echo htmlspecialchars($dest_country); ?></div>
     </div>
-<<<<<<< HEAD
 
     <!-- Truck + driver details -->
     <div class="mt-2 text-[11px] text-gray-700 leading-tight border-t border-gray-100 pt-2 space-y-1">
@@ -199,44 +182,6 @@ function renderDeliveryCard($delivery, $card_type = 'scheduled', $clickable = tr
         <span class="text-xs text-gray-500"><?php echo $status_config['text']; ?></span>
     </div>
     
-=======
-    
-    <!-- Status Indicator -->
-    <div class="flex items-center justify-center space-x-1">
-        <span class="inline-block w-2 h-2 <?php echo $status_config['color']; ?> rounded-full"></span>
-        <span class="text-xs text-gray-500"><?php echo $status_config['text']; ?></span>
-    </div>
-
-    <!-- Quick Truck & Driver Summary -->
-    <div class="mt-2 text-[11px] text-gray-600 text-center leading-tight">
-        <?php if (!empty($delivery->truck_number)) : ?>
-            <div><span class="text-gray-500">Truck:</span> <?php echo htmlspecialchars($delivery->truck_number); ?></div>
-        <?php endif; ?>
-        <?php if (!empty($delivery->driver_name)) : ?>
-            <div><span class="text-gray-500">Driver:</span> <?php echo htmlspecialchars($delivery->driver_name); ?></div>
-        <?php endif; ?>
-    </div>
-    
-    <!-- Hover Details (only for clickable cards) -->
-    <?php if ($clickable): ?>
-    <div class="absolute inset-0 bg-blue-50 border-2 border-blue-300 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
-        <div class="p-2 text-xs text-blue-800">
-            <?php if (!empty($delivery->truck_number)): ?>
-                <div class="font-medium">Truck: <?php echo htmlspecialchars($delivery->truck_number); ?></div>
-            <?php endif; ?>
-            <?php if (!empty($delivery->driver_name)): ?>
-                <div class="font-medium">Driver: <?php echo htmlspecialchars($delivery->driver_name); ?><?php echo !empty($delivery->driver_phone) ? ' • ' . htmlspecialchars($delivery->driver_phone) : ''; ?></div>
-            <?php endif; ?>
-            <?php if (!empty($delivery->description)): ?>
-                <div><?php echo htmlspecialchars($delivery->description); ?></div>
-            <?php endif; ?>
-            <?php if (empty($delivery->truck_number) && empty($delivery->description)): ?>
-                <div class="font-medium">Click to select this delivery</div>
-            <?php endif; ?>
-        </div>
-    </div>
-    <?php endif; ?>
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
 </div>
 
 <?php

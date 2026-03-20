@@ -278,7 +278,6 @@ ob_start();
       border-top: 2px solid #d1d5db;
       font-weight: 600;
     }
-<<<<<<< HEAD
 
     thead {
       display: table-header-group;
@@ -300,8 +299,6 @@ ob_start();
     .city-page-break {
       page-break-before: always;
     }
-=======
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
   </style>
 </head>
 <body>
@@ -371,14 +368,10 @@ ob_start();
 
   <h2>Waybills on Truck</h2>
   <?php if (! empty($waybills_by_city)) : ?>
-<<<<<<< HEAD
     <?php
       $city_index = 0;
       foreach ($waybills_by_city as $city_name => $city_waybills) :
       $city_index++;
-=======
-    <?php foreach ($waybills_by_city as $city_name => $city_waybills) : 
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
       // Calculate totals for this city
       $city_totals = [
         'waybills' => count($city_waybills),
@@ -387,11 +380,7 @@ ob_start();
         'amount'   => array_sum(array_column($city_waybills, 'amount')),
       ];
     ?>
-<<<<<<< HEAD
       <div class="city-section <?= $city_index > 1 ? 'city-page-break' : ''; ?>">
-=======
-      <div style="margin-bottom: 24px;">
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
         <h3 style="font-size: 13px; margin-bottom: 8px; color: var(--primary); font-weight: 600;">
           <?= esc_html($city_name); ?> 
           <span style="font-size: 11px; font-weight: normal; color: #6b7280;">

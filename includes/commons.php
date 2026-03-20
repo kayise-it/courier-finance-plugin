@@ -1533,10 +1533,7 @@ class KIT_Commons
                     'name' => null,
                     'value' => null,
                     'type' => 'button',
-<<<<<<< HEAD
                     'form' => null,
-=======
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                     'gradient' => false, // Enable gradient for primary buttons
                     'plain' => true, // Default to plain button style (white bg, gray border, black text). Set to false for colored buttons.
                     'modal' => null, // Modal trigger (custom)
@@ -1645,12 +1642,9 @@ class KIT_Commons
                 if (!empty($options['type'])) {
                     $attributes[] = 'type="' . esc_attr($options['type']) . '"';
                 }
-<<<<<<< HEAD
                 if (!empty($options['form'])) {
                     $attributes[] = 'form="' . esc_attr($options['form']) . '"';
                 }
-=======
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                 if (!empty($options['modal'])) {
                     $attributes[] = 'data-modal="' . esc_attr($options['modal']) . '"';
                 }
@@ -2128,7 +2122,6 @@ class KIT_Commons
                 return self::renderButton($atts['text'], $type, 'md', $options);
             }
 
-<<<<<<< HEAD
             /**
              * Build breadcrumbs for the current admin/portal page.
              *
@@ -2298,8 +2291,6 @@ class KIT_Commons
                 return '';
             }
 
-=======
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
 
             public static function showingHeader($atts)
             {
@@ -2307,18 +2298,12 @@ class KIT_Commons
                     'title'   => '',
                     'desc'    => '',
                     'content' => '', // HTML content like modals or buttons
-<<<<<<< HEAD
                     'breadcrumbs' => null, // Optional array/json override
-=======
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                     'icon' => '<path d="M16 7a4 4 0 1 0-8 0v2a4 4 0 0 0 8 0V7z" /><path d="M12 19v-2m0 0a7 7 0 0 1-7-7V7a7 7 0 0 1 14 0v3a7 7 0 0 1-7 7z" />'
                 ], $atts);
 
                 $desc = is_string($atts['desc']) ? $atts['desc'] : '';
-<<<<<<< HEAD
                 $breadcrumbs = self::resolveBreadcrumbs($atts['title'], $atts['breadcrumbs']);
-=======
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                 $gridCols = "";
 
                 //if $atts['content'] not empty, set grid-cols-1 md:grid-cols-2
@@ -2330,7 +2315,6 @@ class KIT_Commons
 
                 ob_start(); ?>
         <header class="bg-white shadow mb-6 ">
-<<<<<<< HEAD
             <div class="<?php echo self::container(); ?> mx-auto py-3 px-6 flex justify-between items-start gap-4">
                 <div class="min-w-0">
                     <?= KIT_Commons::bossText([
@@ -2376,17 +2360,6 @@ class KIT_Commons
                     <?php endif; ?>
                 </div>
 
-=======
-            <div class="<?php echo self::container(); ?> mx-auto py-3 px-6 flex justify-between items-center">
-                <?= KIT_Commons::bossText([
-                    'icon' => $atts["icon"],
-                    'words' => $atts["title"],
-                    'size' => '2xl',
-                    'color' => 'black',
-                    'classes' => '',
-                    'tag' => 'h2'
-                ]) ?>
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                 <div class="text-gray-600 relative overflow-hidden"><?php echo wp_kses_post($desc); ?></div>
 
                 <?php
@@ -3333,11 +3306,7 @@ class KIT_Commons
                         'sortable' => true,
                         'searchable' => true,
                         'header_class' => 'text-left whitespace-nowrap',
-<<<<<<< HEAD
                         'cell_class' => 'text-left text-xs align-top overflow-hidden',
-=======
-                        'cell_class' => 'text-left text-xs whitespace-nowrap',
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                         'callback' => function ($value, $row, $rowIndex) {
                             $waybill_no = $value ?? 'N/A';
                             $row = is_object($row) ? (array) $row : $row;
@@ -3398,7 +3367,6 @@ class KIT_Commons
                                 }
                             }
                             // Customer/company name between waybill_no and status
-<<<<<<< HEAD
                             $is_placeholder = static function ($value): bool {
                                 $v = strtolower(trim((string) $value));
                                 return $v === '' || in_array($v, ['0', 'null', 'n/a', 'na', 'none', '-', '--'], true);
@@ -3423,37 +3391,19 @@ class KIT_Commons
                                 $customer_display = $company;
                             } else {
                                 $customer_display = $person_name;
-=======
-                            $customer_name = trim((string)($row['customer_name'] ?? ''));
-                            $customer_surname = trim((string)($row['customer_surname'] ?? $row['surname'] ?? ''));
-                            $company = trim((string)($row['company'] ?? $row['customer_company'] ?? ''));
-                            $customer_display = trim($customer_name . ' ' . $customer_surname);
-                            if ($company !== '') {
-                                $customer_display = $customer_display !== '' ? $customer_display . ' · ' . $company : $company;
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                             }
                             if ($customer_display !== '') {
                                 $customer_id = $row['customer_id'] ?? 0;
                                 if ($customer_id > 0) {
-<<<<<<< HEAD
                                     $customer_display = '<a href="?page=08600-customers&view_customer=' . (int) $customer_id . '" target="_blank" rel="noopener" class="block text-blue-600 hover:text-blue-800 hover:underline text-[11px] font-medium" title="' . esc_attr($customer_display) . '" style="display:block;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' . esc_html($customer_display) . '</a>';
                                 } else {
                                     $customer_display = '<span class="block text-[11px] text-gray-700" title="' . esc_attr($customer_display) . '" style="display:block;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' . esc_html($customer_display) . '</span>';
-=======
-                                    $customer_display = '<a href="?page=08600-customers&view_customer=' . (int) $customer_id . '" target="_blank" rel="noopener" class="text-blue-600 hover:text-blue-800 hover:underline text-[11px] font-medium">' . esc_html($customer_display) . '</a>';
-                                } else {
-                                    $customer_display = '<span class="text-[11px] text-gray-700">' . esc_html($customer_display) . '</span>';
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                                 }
                                 $extra[] = '<span class="block mt-0.5">' . $customer_display . '</span>';
                             }
                             $extra[] = $badge;
 
-<<<<<<< HEAD
                             return '<div class="flex flex-col items-start min-w-0 w-full overflow-hidden" style="max-width:150px;overflow:hidden;">' . $waybill_link . implode('', $extra) . '</div>';
-=======
-                            return '<div class="flex flex-col items-start min-w-0">' . $waybill_link . implode('', $extra) . '</div>';
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                         }
                     ],
 
@@ -3535,13 +3485,8 @@ class KIT_Commons
                         'label' => 'Description',
                         'sortable' => true,
                         'searchable' => true,
-<<<<<<< HEAD
                         'header_class' => 'text-left min-w-[420px]',
                         'cell_class' => 'text-left text-sm min-w-[420px] max-w-[640px] whitespace-normal break-words',
-=======
-                        'header_class' => 'text-left whitespace-nowrap',
-                        'cell_class' => 'text-left text-sm max-w-[200px] truncate',
->>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                         'callback' => function ($value, $row, $rowIndex) {
                             $row = is_object($row) ? (array) $row : $row;
                             $desc = $row['description'] ?? $value ?? '';

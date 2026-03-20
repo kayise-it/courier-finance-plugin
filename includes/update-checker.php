@@ -33,12 +33,13 @@ if (!class_exists('YahnisElsts\\PluginUpdateChecker\\v5\\PucFactory')) {
 }
 
 use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
+use YahnisElsts\PluginUpdateChecker\v5p5\Vcs\Api as PucVcsApi;
 
 // Configure your GitHub repository details
 // Define these constants in wp-config.php or set them below.
 if (!defined('KIT_GITHUB_PLUGIN_REPO')) {
-    // Example: owner/repo
-    define('KIT_GITHUB_PLUGIN_REPO', 'your-github-user/your-plugin-repo');
+    // owner/repo — override in wp-config.php if you fork or rename the repo
+    define('KIT_GITHUB_PLUGIN_REPO', 'kayise-it/courier-finance-plugin');
 }
 
 // Optional: Personal Access Token to increase API limits or access private repo
@@ -63,13 +64,32 @@ $updateChecker = PucFactory::buildUpdateChecker(
 // If your plugin main file header has Version matching a Git tag (e.g. v2.0.1), ensure tag format aligns.
 $updateChecker->setBranch(constant('KIT_GITHUB_BRANCH'));
 
+// Prefer the tracked branch over GitHub Releases/tags so "push to main" updates apply
+// even when no release exists or an old release would win.
+add_filter(
+    'puc_vcs_update_detection_strategies-courier-finance-plugin',
+    static function ($strategies) {
+        if (!isset($strategies[PucVcsApi::STRATEGY_BRANCH])) {
+            return $strategies;
+        }
+        $branchStrategy = $strategies[PucVcsApi::STRATEGY_BRANCH];
+        unset($strategies[PucVcsApi::STRATEGY_BRANCH]);
+        return array_merge([PucVcsApi::STRATEGY_BRANCH => $branchStrategy], $strategies);
+    },
+    10,
+    1
+);
+
 // Support private repos or higher rate limits
 $token = constant('KIT_GITHUB_ACCESS_TOKEN');
 if (is_string($token) && $token !== '') {
     $updateChecker->setAuthentication($token);
 }
 
-// Optional: Cache TTL tweak (default is fine). Example to check every 12 hours:
-// $updateChecker->setCacheDuration(12 * HOUR_IN_SECONDS);
+if (defined('WP_DEBUG') && WP_DEBUG) {
+    $updateChecker->setCacheDuration(5 * MINUTE_IN_SECONDS);
+} else {
+    $updateChecker->setCacheDuration(6 * HOUR_IN_SECONDS);
+}
 
 
