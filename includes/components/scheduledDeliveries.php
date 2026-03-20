@@ -14,6 +14,14 @@ $smallWidth = isset($atts['small_width']) && $atts['small_width'] === true;
     transition: all 0.2s ease;
 }
 
+<<<<<<< HEAD
+=======
+.delivery-card:hover:not(.selected) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
 .delivery-card.selected {
     background-color: #dbeafe !important;
     border: 2px solid #3b82f6 !important;
@@ -29,6 +37,7 @@ $smallWidth = isset($atts['small_width']) && $atts['small_width'] === true;
     $current_filter = isset($_GET['delivery_filter']) ? sanitize_text_field($_GET['delivery_filter']) : 'scheduled';
     ?>
     <?php if (!$hide_header): ?>
+<<<<<<< HEAD
     <div class="flex items-center justify-between mb-2">
         <h4 class="text-md font-semibold text-gray-700 mb-1 flex items-center gap-2">
             <span class="text-blue-600 text-base leading-none" aria-hidden="true">🚚</span>
@@ -41,6 +50,14 @@ $smallWidth = isset($atts['small_width']) && $atts['small_width'] === true;
     <p class="text-xs text-gray-500 mb-4">
         Choose a card below to assign this waybill to a truck, driver, and route.
     </p>
+=======
+    <div class="flex items-center justify-between mb-4">
+        <h4 class="text-md font-medium text-gray-600 mb-2">Deliveries</h4>
+        <div class="text-sm text-gray-500">
+            <span id="delivery-count"><?php echo count(KIT_Deliveries::filterDeliveries($current_filter)); ?></span> deliveries available
+        </div>
+    </div>
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
     <?php endif; ?>
     
     <!-- Filter Toggle Buttons -->
@@ -137,6 +154,20 @@ $smallWidth = isset($atts['small_width']) && $atts['small_width'] === true;
     <!-- otherzz -->
      
     
+<<<<<<< HEAD
+=======
+    <!-- Enhanced Delivery Details -->
+    <div id="deliveryDetails" class="mt-6 p-4 bg-white rounded-lg border border-gray-200 hidden">
+        <div class="flex items-center justify-between mb-4">
+            <h4 class="text-lg font-medium text-gray-900">Selected Delivery Details</h4>
+            
+        </div>
+        <div id="delivery-details-content" class="space-y-3"></div>
+        
+
+    </div>
+    
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
     <!-- Empty State -->
     <div id="deliveries-empty-state" class="<?php echo empty($delivery_going) ? 'block' : 'hidden'; ?> text-center py-8">
         <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -295,7 +326,13 @@ $smallWidth = isset($atts['small_width']) && $atts['small_width'] === true;
     const citySelect = document.getElementById('destination_city');
     const existingCityValue = citySelect ? (citySelect.value || '') : '';
 
+<<<<<<< HEAD
     
+=======
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/eac88981-a808-4140-9871-c5bc5fb2b15c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'scheduledDeliveries.php:destination-city-before',message:'Before handling city on card click',data:{existingCityValue:existingCityValue || null,destinationCityIdAttr:destinationCityId || null,destinationCountryId:destinationCountryId || null},timestamp:Date.now(),runId:'pre-fix',hypothesisId:'H1'})}).catch(function(){});
+    // #endregion
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
     
     // CRITICAL: If the user has already chosen a city, do NOT reload or clear it
     // when clicking a delivery card. Just keep the current value and re-run
@@ -303,6 +340,13 @@ $smallWidth = isset($atts['small_width']) && $atts['small_width'] === true;
     if (citySelect && existingCityValue) {
         console.log('✅ Keeping existing destination_city selection:', existingCityValue);
 
+<<<<<<< HEAD
+=======
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/eac88981-a808-4140-9871-c5bc5fb2b15c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'scheduledDeliveries.php:destination-city-keep',message:'Keeping existing destination_city on card click',data:{keptValue:existingCityValue},timestamp:Date.now(),runId:'pre-fix',hypothesisId:'H2'})}).catch(function(){});
+        // #endregion
+
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
         const cityChangeEvent = new Event('change', { bubbles: true });
         citySelect.dispatchEvent(cityChangeEvent);
     } else {

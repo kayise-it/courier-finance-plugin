@@ -14,15 +14,21 @@ class KIT_Modal
      * @param string $button_text Button label (defaults to title)
      * @param bool|null $use_bootstrap True = Bootstrap 5 markup/JS, false = custom. Null = auto (Bootstrap on frontend)
      */
+<<<<<<< HEAD
     public static function render($id, $title = '', $content = '', $size = '3xl', $show_button = true, $button_text = '', $use_bootstrap = null)
     {
         static $kit_modal_styles_printed = false;
 
+=======
+    public static function render($id, $title = '', $content = '', $size = 'md', $show_button = true, $button_text = '', $use_bootstrap = null)
+    {
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
         if ($use_bootstrap === null) {
             $use_bootstrap = ! is_admin();
         }
 
         $size_classes = [
+<<<<<<< HEAD
             'sm'   => 'w-[95vw] max-w-2xl',
             'md'   => 'w-[95vw] max-w-3xl',
             'lg'   => 'w-[95vw] max-w-4xl',
@@ -45,6 +51,30 @@ class KIT_Modal
             '5xl'  => 'kit-modal-bs-5xl',
             '6xl'  => 'kit-modal-bs-6xl',
             'full' => 'kit-modal-bs-full',
+=======
+            'sm'   => 'max-w-sm',
+            'md'   => 'max-w-md',
+            'lg'   => 'max-w-lg',
+            'xl'   => 'max-w-xl',
+            '2xl'  => 'max-w-2xl',
+            '3xl'  => 'max-w-3xl',
+            '4xl'  => 'max-w-4xl',
+            '5xl'  => 'max-w-5xl',
+            '6xl'  => 'max-w-6xl',
+            'full' => 'max-w-full w-full mx-4',
+        ];
+        $bootstrap_size_classes = [
+            'sm'   => 'modal-sm',
+            'md'   => '',
+            'lg'   => 'modal-lg',
+            'xl'   => 'modal-xl',
+            '2xl'  => 'modal-xl',
+            '3xl'  => 'modal-xl',
+            '4xl'  => 'modal-xl',
+            '5xl'  => 'modal-xl',
+            '6xl'  => 'modal-xl',
+            'full' => 'modal-fullscreen',
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
         ];
 
         $size_class = $size_classes[$size] ?? $size_classes['xl'];
@@ -53,6 +83,7 @@ class KIT_Modal
         ob_start();
 
         if ($use_bootstrap) {
+<<<<<<< HEAD
             if (! $kit_modal_styles_printed) {
                 $kit_modal_styles_printed = true;
                 ?>
@@ -88,6 +119,8 @@ class KIT_Modal
                 </style>
                 <?php
             }
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
             // --- Bootstrap 5 (frontend / employee dashboard) ---
             if ($show_button) {
                 $button_label = $button_text ?: $title;
@@ -135,6 +168,7 @@ class KIT_Modal
         }
 
         // --- Custom modal (admin / Tailwind) ---
+<<<<<<< HEAD
         if (! $kit_modal_styles_printed) {
             $kit_modal_styles_printed = true;
             ?>
@@ -186,6 +220,8 @@ class KIT_Modal
             <?php
         }
 
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
         if ($show_button) {
             $button_label = $button_text ?: $title;
             echo KIT_Commons::kitButton([
@@ -196,8 +232,13 @@ class KIT_Modal
         }
         ?>
         <div id="<?php echo esc_attr($id); ?>"
+<<<<<<< HEAD
             class="kit-tailwind-modal-shell hidden fixed inset-0 z-[99999] items-start pt-6 md:pt-10 justify-center bg-black bg-opacity-50 overflow-y-auto">
             <div class="kit-tailwind-modal-panel bg-white overflow-y-auto <?php echo esc_attr($size_class); ?> max-h-[92vh] my-3 md:my-8">
+=======
+            class="hidden fixed inset-0 z-[99999] items-start pt-10 justify-center bg-black bg-opacity-50 overflow-y-auto">
+            <div class="bg-white rounded-lg shadow-xl overflow-y-auto <?php echo esc_attr($size_class); ?> max-h-[90vh] my-8">
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                 <div class="flex justify-between items-center px-6 py-4 border-b sticky top-0 bg-white z-10">
                     <?php if ($title) : ?>
                         <h3 class="text-lg font-semibold text-gray-800"><?php echo esc_html($title); ?></h3>

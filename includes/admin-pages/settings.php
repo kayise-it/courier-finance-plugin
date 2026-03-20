@@ -3,6 +3,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+<<<<<<< HEAD
 // #region agent log
 @file_put_contents(
     '/Applications/MAMP/htdocs/08600/wp-content/plugins/courier-finance-plugin/.cursor/debug-cd21a0.log',
@@ -23,6 +24,8 @@ if (!defined('ABSPATH')) {
 );
 // #endregion
 
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
 // Include user roles for strict access control
 require_once plugin_dir_path(__FILE__) . '../user-roles.php';
 // Seed helpers (JSON generation and seeding) - optional
@@ -40,6 +43,7 @@ if (file_exists($seed_sql_path)) {
 $wpdb_global_was_set = true; // marker
 global $wpdb;
 
+<<<<<<< HEAD
 if (!function_exists('kit_debug_log_cd21a0')) {
     function kit_debug_log_cd21a0(string $runId, string $hypothesisId, string $location, string $message, array $data = []): void
     {
@@ -89,11 +93,16 @@ if (!function_exists('kit_get_seed_owner_user_id')) {
 
 // STRICT ACCESS CONTROL: Only specific administrators can access settings (skip for CLI seed simulation)
 if (!defined('COURIER_SEED_SIMULATION') && !KIT_User_Roles::can_access_settings()) {
+=======
+// STRICT ACCESS CONTROL: Only specific administrators can access settings
+if (!KIT_User_Roles::can_access_settings()) {
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
     wp_die('Access denied. This page is only available to authorized administrators (Thando, Mel, Patricia).');
 }
 
 // Handle form submissions
 if ($_POST && isset($_POST['action'])) {
+<<<<<<< HEAD
     // #region agent log
     @file_put_contents(
         '/Applications/MAMP/htdocs/08600/wp-content/plugins/courier-finance-plugin/.cursor/debug-cd21a0.log',
@@ -119,11 +128,14 @@ if ($_POST && isset($_POST['action'])) {
         $clear_logs_result = courier_finance_clear_plugin_logs();
     }
 
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
     // Handle wipe tables: clear all plugin data tables
     if ($_POST['action'] === 'wipe_tables' && isset($_POST['wipe_tables_nonce']) && wp_verify_nonce($_POST['wipe_tables_nonce'], 'wipe_tables')) {
         $wipe_tables_result = handle_wipe_tables();
     }
     
+<<<<<<< HEAD
     // Handle setup seed: execute SQL from latestSQL.sql or Google Sheet
     if ($_POST['action'] === 'seed_setup') {
         kit_debug_log_cd21a0(
@@ -214,6 +226,11 @@ if ($_POST && isset($_POST['action'])) {
                 ? 'Maintenance mode is ON. Plugin screens are blurred until you turn it off.'
                 : 'Maintenance mode is OFF. Plugin screens are available again.',
         ];
+=======
+    // Handle setup seed: execute SQL from latestSQL.sql
+    if ($_POST['action'] === 'seed_setup' && isset($_POST['setup_seed_nonce']) && wp_verify_nonce($_POST['setup_seed_nonce'], 'seed_setup')) {
+        $setup_seed_result = handle_setup_seed_sql();
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
     }
 
     // Handle banking, company, and charges forms (all use same nonce)
@@ -737,6 +754,7 @@ function handle_waybill_import()
     }
 }
 
+<<<<<<< HEAD
 /**
  * Clear plugin-related log files (e.g. deactivation-debug.log in wp-content).
  * PHP/server error_log is not cleared (configure log location in php.ini on the server).
@@ -765,6 +783,8 @@ function courier_finance_clear_plugin_logs() {
     ];
 }
 
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
 // Wipe all plugin data tables (but preserve settings and reference data)
 function handle_wipe_tables()
 {
@@ -784,10 +804,17 @@ function handle_wipe_tables()
             'kit_waybill_items',  // Child table (references waybills)
             'kit_quotations',      // May reference waybills
             'kit_invoices',        // May reference waybills
+<<<<<<< HEAD
             'kit_deliveries',      // References drivers; must wipe before drivers
             'kit_waybills',        // Parent table
             'kit_customers',       // Parent table (referenced by waybills)
             'kit_drivers',         // Parent table (referenced by deliveries)
+=======
+            'kit_deliveries',      // May reference waybills
+            'kit_waybills',        // Parent table
+            'kit_customers',       // Parent table (referenced by waybills)
+            //'kit_drivers',
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
         ];
         
         $wiped_count = 0;
@@ -847,22 +874,32 @@ function handle_wipe_tables()
     }
 }
 
+<<<<<<< HEAD
 // Execute SQL from latestSQL.sql or newSQL.sql with dynamic table prefix replacement
+=======
+// Execute SQL from latestSQL.sql with dynamic table prefix replacement
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
 function handle_setup_seed_sql()
 {
     global $wpdb;
 
     $pluginRoot = plugin_dir_path(__FILE__) . '../../';
     $latest_sql_file = $pluginRoot . 'latestSQL.sql';
+<<<<<<< HEAD
     $new_sql_file = $pluginRoot . 'newSQL.sql';
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
 
     try {
         // Check for files that actually exist
         $sql_file = null;
         if (file_exists($latest_sql_file)) {
             $sql_file = $latest_sql_file;
+<<<<<<< HEAD
         } elseif (file_exists($new_sql_file)) {
             $sql_file = $new_sql_file;
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
         } else {
             // Try to generate from Excel automatically as last resort
             $generated = kit_generate_seed_sql_from_excel();
@@ -871,6 +908,7 @@ function handle_setup_seed_sql()
             } else {
                 return [
                     'success' => false,
+<<<<<<< HEAD
                     'message' => 'Seed SQL not found. Please ensure latestSQL.sql or newSQL.sql exists in the plugin root.'
                 ];
             }
@@ -886,6 +924,12 @@ function handle_setup_seed_sql()
                 'new_exists' => file_exists($new_sql_file),
             ]
         );
+=======
+                    'message' => 'Seed SQL not found. Please ensure latestSQL.sql exists in the plugin root.'
+                ];
+            }
+        }
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
 
         // Log which SQL file is being used
         if (function_exists('error_log')) {
@@ -916,8 +960,26 @@ function handle_setup_seed_sql()
             $sql = preg_replace('/`wp_([a-zA-Z_]+)`/', '`' . $wpdb->prefix . '$1`', $sql);
             $sql = preg_replace('/(?<![a-zA-Z0-9_])wp_([a-zA-Z_]+)/', $wpdb->prefix . '$1', $sql);
         
+<<<<<<< HEAD
         // Attribute seeded rows to Mel Welmans (with safe admin fallback).
         $created_by_user_id = function_exists('kit_get_seed_owner_user_id') ? kit_get_seed_owner_user_id() : 1;
+=======
+        // Determine created_by user_id based on prefix
+        // If prefix is NOT 'wp_', we're in production/live -> use user_id 1593
+        // If prefix IS 'wp_', we're in development -> use Thando@kayiseit.com user_id
+        $created_by_user_id = 1593; // Default for production/live (non-wp_ prefix)
+        
+        if ($wpdb->prefix === 'wp_') {
+            // Development environment - get user_id for Thando@kayiseit.com
+            $thando_user = get_user_by('email', 'Thando@kayiseit.com');
+            if ($thando_user) {
+                $created_by_user_id = $thando_user->ID;
+            } else {
+                // Fallback to 1 if user not found
+                $created_by_user_id = 1;
+            }
+        }
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
         
         // Replace {CREATED_BY} placeholder with the determined user_id
             $sql = str_replace('{CREATED_BY}', $created_by_user_id, $sql);
@@ -1161,6 +1223,7 @@ function handle_setup_seed_sql()
         return [ 'success' => false, 'message' => 'Setup seed failed: ' . $e->getMessage() ];
     }
 }
+<<<<<<< HEAD
 
 /**
  * Run Google Sheet seed with provided rows. Used by handle_setup_seed_from_google_sheet and simulation.
@@ -2041,6 +2104,8 @@ function handle_setup_seed_from_google_sheet()
     }
 }
 
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
 // Generate newSQL.sql from Excel file (waybill_excel/*.xlsx)
 function kit_generate_seed_sql_from_excel(): array
 {
@@ -2096,11 +2161,15 @@ function kit_generate_seed_sql_from_excel(): array
     foreach ($deliveries as $d) {
         $escName = addslashes($d['driver']);
         $escDate = addslashes($d['date']);
+<<<<<<< HEAD
         if (!class_exists('KIT_Deliveries')) {
             require_once plugin_dir_path(__FILE__) . '../deliveries/deliveries-functions.php';
         }
         $ref = addslashes(KIT_Deliveries::generateDeliveryRef());
         $sql[] = "INSERT INTO wp_kit_deliveries (delivery_reference, direction_id, destination_city_id, dispatch_date, driver_id, status)\nSELECT '{$ref}', 1, 1, '{$escDate}', d.id, 'scheduled'\nFROM wp_kit_drivers d\nWHERE d.name = '{$escName}'\nAND NOT EXISTS (SELECT 1 FROM wp_kit_deliveries WHERE driver_id = d.id AND dispatch_date = '{$escDate}')";
+=======
+        $sql[] = "INSERT INTO wp_kit_deliveries (delivery_reference, direction_id, destination_city_id, dispatch_date, driver_id, status)\nSELECT CONCAT('IMPORT-', LEFT(UUID(),8)), 1, 1, '{$escDate}', d.id, 'scheduled'\nFROM wp_kit_drivers d\nWHERE d.name = '{$escName}'\nAND NOT EXISTS (SELECT 1 FROM wp_kit_deliveries WHERE driver_id = d.id AND dispatch_date = '{$escDate}')";
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
     }
     foreach (array_keys($customers) as $fullname) {
         $parts = explode(' ', trim($fullname), 2);
@@ -2199,8 +2268,13 @@ function kit_generate_seed_sql_from_excel(): array
 }
 ?>
 
+<<<<<<< HEAD
 <div class="wrap kit-settings-page">
     <div class="<?php echo KIT_Commons::containerClasses(); ?> kit-settings-container">
+=======
+<div class="wrap">
+    <div class="<?php echo KIT_Commons::containerClasses(); ?>">
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
     <?php
     echo KIT_Commons::showingHeader([
         'title' => 'Settings & Configuration',
@@ -2216,7 +2290,11 @@ function kit_generate_seed_sql_from_excel(): array
 
     <!-- Tab Navigation -->
     <div class="border-b border-gray-200 mb-8">
+<<<<<<< HEAD
         <nav class="kit-settings-tabs" aria-label="Tabs">
+=======
+        <nav class="flex space-x-8" aria-label="Tabs">
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
             <?php echo KIT_Commons::renderButton('Banking Details', 'ghost', 'sm', ['id' => 'tab-banking', 'classes' => 'tab-button active', 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path>', 'iconPosition' => 'left']); ?>
             <?php echo KIT_Commons::renderButton('Company Details', 'ghost', 'sm', ['id' => 'tab-company', 'classes' => 'tab-button', 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>', 'iconPosition' => 'left']); ?>
             <?php echo KIT_Commons::renderButton('VAT & Charges', 'ghost', 'sm', ['id' => 'tab-charges', 'classes' => 'tab-button', 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"></path>', 'iconPosition' => 'left']); ?>
@@ -2573,7 +2651,10 @@ function kit_generate_seed_sql_from_excel(): array
                     // Show seed SQL status - match the priority order in handle_setup_seed_sql()
                     $pluginRoot = plugin_dir_path(__FILE__) . '../../';
                     $latest_sql_file = $pluginRoot . 'latestSQL.sql';
+<<<<<<< HEAD
                     $new_sql_file = $pluginRoot . 'newSQL.sql';
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                     
                     // Determine if the seed file exists (matching handle_setup_seed_sql priority)
                     $sql_file = null;
@@ -2581,6 +2662,7 @@ function kit_generate_seed_sql_from_excel(): array
                     if (file_exists($latest_sql_file)) {
                         $sql_file = $latest_sql_file;
                         $file_display_name = 'latestSQL.sql';
+<<<<<<< HEAD
                     } elseif (file_exists($new_sql_file)) {
                         $sql_file = $new_sql_file;
                         $file_display_name = 'newSQL.sql';
@@ -2745,6 +2827,42 @@ function kit_generate_seed_sql_from_excel(): array
                             <div class="flex gap-3 items-center flex-wrap">
                                 <?php echo KIT_Commons::renderButton('Run Setup Seed', 'primary', 'lg', ['type' => 'submit', 'gradient' => true, 'id' => 'run-setup-seed-button']); ?>
                             </div>
+=======
+                    }
+                    
+                    $file_exists = ($sql_file !== null);
+                    ?>
+
+                    <div class="mb-6 p-4 rounded-lg border <?php echo $file_exists ? 'bg-blue-50 border-blue-200' : 'bg-yellow-50 border-yellow-200'; ?>">
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0">
+                                <?php if ($file_exists): ?>
+                                    <svg class="h-5 w-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                                <?php else: ?>
+                                    <svg class="h-5 w-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+                                <?php endif; ?>
+                            </div>
+                            <div class="ml-3 text-sm">
+                                <p class="font-medium <?php echo $file_exists ? 'text-blue-800' : 'text-yellow-800'; ?>"><?php echo $file_exists ? 'Seed SQL Found' : 'Seed SQL Not Found'; ?></p>
+                                <?php if ($file_exists): ?>
+                                    <p class="mt-1 text-blue-700">
+                                        Seed file located at: <code class="px-2 py-1 rounded bg-gray-100"><?php echo esc_html($file_display_name); ?></code>
+                                    </p>
+                                <?php else: ?>
+                                    <p class="mt-1 text-yellow-700">
+                                        Please ensure <code class="px-2 py-1 rounded bg-gray-100">latestSQL.sql</code> exists in the plugin root directory
+                                    </p>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-3 items-center">
+                        <form method="post" action="" class="inline">
+                            <?php wp_nonce_field('seed_setup', 'setup_seed_nonce'); ?>
+                            <input type="hidden" name="action" value="seed_setup">
+                            <?php echo KIT_Commons::renderButton('Run Setup Seed', 'primary', 'lg', ['type' => 'submit', 'gradient' => true]); ?>
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                         </form>
                         
                         <form method="post" action="" id="wipe-tables-form" class="inline">
@@ -2752,6 +2870,7 @@ function kit_generate_seed_sql_from_excel(): array
                             <input type="hidden" name="action" value="wipe_tables">
                             <?php echo KIT_Commons::renderButton('Wipe Tables', 'danger', 'lg', ['type' => 'submit', 'id' => 'wipe-tables-button']); ?>
                         </form>
+<<<<<<< HEAD
                         <form method="post" action="" class="inline ml-2">
                             <?php wp_nonce_field('clear_plugin_logs', 'clear_logs_nonce'); ?>
                             <input type="hidden" name="action" value="clear_plugin_logs">
@@ -2787,6 +2906,9 @@ function kit_generate_seed_sql_from_excel(): array
                             </p>
                         </div>
                     <?php endif; ?>
+=======
+                    </div>
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
 
                     <?php if (isset($wipe_tables_result)): ?>
                         <div class="mt-6 p-4 rounded-lg border <?php echo $wipe_tables_result['success'] ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'; ?>">
@@ -2840,27 +2962,38 @@ function kit_generate_seed_sql_from_excel(): array
                                         <?php if (!empty($setup_seed_result['stats'])): ?>
                                             <div class="mt-3 space-y-1">
                                                 <p><strong>Statistics:</strong></p>
+<<<<<<< HEAD
                                                 <?php if (isset($setup_seed_result['stats']['executed'])): ?>
                                                     <p>• Statements executed: <?php echo intval($setup_seed_result['stats']['executed']); ?></p>
                                                 <?php endif; ?>
                                                 <?php if (isset($setup_seed_result['stats']['drivers'])): ?>
                                                     <p>• Drivers: <?php echo intval($setup_seed_result['stats']['drivers']); ?>, Customers: <?php echo intval($setup_seed_result['stats']['customers']); ?>, Deliveries: <?php echo intval($setup_seed_result['stats']['deliveries']); ?>, Waybills: <?php echo intval($setup_seed_result['stats']['waybills']); ?>, Items: <?php echo intval($setup_seed_result['stats']['waybill_items']); ?>, Skipped: <?php echo intval($setup_seed_result['stats']['skipped'] ?? 0); ?></p>
                                                 <?php endif; ?>
+=======
+                                                <p>• Statements executed: <?php echo intval($setup_seed_result['stats']['executed'] ?? 0); ?></p>
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                                                 <?php if (!empty($setup_seed_result['stats']['errors'])): ?>
                                                     <p>• Errors: <?php echo count($setup_seed_result['stats']['errors']); ?></p>
                                                     <div class="mt-2 text-xs">
                                                         <p><strong>Error details:</strong></p>
+<<<<<<< HEAD
                                                         <?php foreach (array_slice($setup_seed_result['stats']['errors'], 0, 10) as $error): ?>
+=======
+                                                        <?php foreach (array_slice($setup_seed_result['stats']['errors'], 0, 5) as $error): ?>
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                                                             <p class="text-red-600">• <?php echo esc_html($error); ?></p>
                                                         <?php endforeach; ?>
                                                     </div>
                                                 <?php endif; ?>
+<<<<<<< HEAD
                                                 <?php if (!empty($setup_seed_result['stats']['detected_columns']) && ($setup_seed_result['stats']['waybills'] ?? 0) === 0): ?>
                                                     <div class="mt-2 text-xs">
                                                         <p><strong>Detected sheet columns:</strong> <?php echo esc_html(implode(', ', $setup_seed_result['stats']['detected_columns'])); ?></p>
                                                         <p class="text-amber-600 mt-1">Tip: Ensure you have waybill_no/wb_no/parcel_id, driver/delivery, customer, and dispatch_date/truck_dispatch_date columns (or similar). See Sheet-to-DB Mapping below.</p>
                                                     </div>
                                                 <?php endif; ?>
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                                             </div>
                                         <?php endif; ?>
                                     </div>
@@ -2868,6 +3001,7 @@ function kit_generate_seed_sql_from_excel(): array
                             </div>
                         </div>
                     <?php endif; ?>
+<<<<<<< HEAD
 
                     <details class="mt-8 p-4 bg-gray-50 rounded-lg border border-gray-200">
                         <summary class="cursor-pointer font-medium text-gray-900">Sheet-to-DB Mapping</summary>
@@ -2916,6 +3050,8 @@ function kit_generate_seed_sql_from_excel(): array
                             </table>
                         </div>
                     </details>
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                 </div>
             </div>
         </div>
@@ -2999,6 +3135,7 @@ function kit_generate_seed_sql_from_excel(): array
 </div>
 
 <style>
+<<<<<<< HEAD
     .kit-settings-page {
         background: linear-gradient(180deg, #f7fafc 0%, #eef2f7 100%);
         margin-left: -20px;
@@ -3075,11 +3212,28 @@ function kit_generate_seed_sql_from_excel(): array
         border-color: #3b82f6 !important;
         background-color: #fff;
         box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
+=======
+    .tab-button {
+        @apply text-gray-500 hover:text-gray-700 hover:bg-gray-100;
+    }
+
+    .tab-button.active {
+        @apply text-blue-600 bg-blue-50 border-b-2 border-blue-600;
+    }
+
+    .tab-panel {
+        @apply transition-all duration-300 ease-in-out;
+    }
+
+    .form-group {
+        @apply space-y-1;
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
     }
 </style>
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+<<<<<<< HEAD
         // #region agent log
         const __seedDbg = function(hypothesisId, message, data) {
             fetch('http://127.0.0.1:63333/ingest/2aae1a1f-38bb-43d8-82c7-ca359c71f068',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'cd21a0'},body:JSON.stringify({sessionId:'cd21a0',runId:'seed-ui-debug',hypothesisId:hypothesisId,location:'includes/admin-pages/settings.php:DOMContentLoaded',message:message,data:data||{},timestamp:Date.now()})}).catch(()=>{});
@@ -3138,6 +3292,8 @@ function kit_generate_seed_sql_from_excel(): array
             // #endregion
         }, true);
 
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
         // Tab functionality
         const tabs = document.querySelectorAll('.tab-button');
         const panels = document.querySelectorAll('.tab-panel');

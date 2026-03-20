@@ -56,6 +56,7 @@ function waybill_page()
 function plugin_Waybill_list_page()
 {
 
+<<<<<<< HEAD
     // Handle bulk delete from unified table action bar
     if (
         isset($_POST['bulk_action'], $_POST['bulk_ids'])
@@ -130,15 +131,23 @@ function plugin_Waybill_list_page()
         exit;
     }
 
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
     // Handle bulk export to PDF
     if (isset($_GET['export_selected']) && !empty($_GET['export_selected'])) {
         if (!current_user_can('kit_view_waybills')) {
             wp_die('Unauthorized');
         }
 
+<<<<<<< HEAD
         $selected_ids_string = sanitize_text_field(wp_unslash($_GET['export_selected']));
         $selected_ids_array = array_filter(array_map('trim', explode(',', $selected_ids_string)));
         $selected_ids_array = array_values(array_unique(array_map('sanitize_text_field', $selected_ids_array)));
+=======
+        $selected_ids_string = sanitize_text_field($_GET['export_selected']);
+        $selected_ids_array = array_map('intval', explode(',', $selected_ids_string));
+        $selected_ids_array = array_filter($selected_ids_array);
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
 
         if (!empty($selected_ids_array)) {
             // Redirect to PDF generation with selected_ids parameter
@@ -221,6 +230,7 @@ function plugin_Waybill_list_page()
     // Convert to array format for unified table
     $waybillData = [];
     foreach ($allWaybills as $row) {
+<<<<<<< HEAD
         $is_placeholder_text = static function ($value): bool {
             $v = strtolower(trim((string) $value));
             return $v === '' || in_array($v, ['0', 'null', 'n/a', 'na', 'none', '-', '--'], true);
@@ -241,11 +251,19 @@ function plugin_Waybill_list_page()
         // Treat "Private" as a placeholder company label, not a preferred business display.
         $is_business = $company_name !== '' && !in_array(strtolower($company_name), ['individual', '1ndividual', 'n/a', 'none', 'private'], true);
         $customer_name = $is_business ? $company_name : trim($first_name . ' ' . $surname);
+=======
+        // Get customer data
+        $customer_name = '';
+        if (isset($row->customer_name) && isset($row->customer_surname)) {
+            $customer_name = trim($row->customer_name . ' ' . $row->customer_surname);
+        }
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
 
         // If customer name is still empty and we have customer_id, try to fetch it
         if (empty($customer_name) && isset($row->customer_id) && $row->customer_id > 0) {
             global $wpdb;
             $customer = $wpdb->get_row($wpdb->prepare(
+<<<<<<< HEAD
                 "SELECT id, cust_id, name, surname, company_name
                  FROM {$wpdb->prefix}kit_customers
                  WHERE cust_id = %d OR id = %d
@@ -272,6 +290,13 @@ function plugin_Waybill_list_page()
                 $customer_name = $fallback_is_business ? $fallback_company : trim($fallback_first . ' ' . $fallback_surname);
                 $company_name = $fallback_company;
                 $surname = $fallback_surname;
+=======
+                "SELECT name, surname FROM {$wpdb->prefix}kit_customers WHERE cust_id = %d LIMIT 1",
+                intval($row->customer_id)
+            ));
+            if ($customer) {
+                $customer_name = trim(($customer->name ?? '') . ' ' . ($customer->surname ?? ''));
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
             }
         }
 
@@ -311,7 +336,10 @@ function plugin_Waybill_list_page()
         // Get mass and volume
         $total_mass = isset($row->total_mass_kg) ? floatval($row->total_mass_kg) : 0;
         $total_volume = isset($row->total_volume) ? floatval($row->total_volume) : 0;
+<<<<<<< HEAD
         $final_is_business = $company_name !== '' && !in_array(strtolower($company_name), ['individual', '1ndividual', 'n/a', 'none', 'private'], true);
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
 
         $waybillData[] = [
             'id' => $bulk_id, // Required for bulk management checkboxes
@@ -319,8 +347,11 @@ function plugin_Waybill_list_page()
             'waybill_no' => $row->waybill_no ?? 'N/A',
             'description' => $row->description ?? '',
             'customer_name' => $customer_name,
+<<<<<<< HEAD
             'customer_surname' => $final_is_business ? '' : $surname,
             'customer_company' => $company_name,
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
             // Expose customer_id so table callbacks (e.g. customer_name column) can link to the customer detail page
             'customer_id' => isset($row->customer_id) ? intval($row->customer_id) : 0,
             'email' => $row->customer_email ?? '',
@@ -432,6 +463,27 @@ function plugin_Waybill_list_page()
                 document.addEventListener('DOMContentLoaded', function () {
                     var grid = document.querySelector('.kit-dashboard-kpis .grid') || document.querySelector('.wrap .grid');
                     if (!grid) return;
+<<<<<<< HEAD
+=======
+                    // #region agent log
+                    fetch('http://127.0.0.1:7243/ingest/eac88981-a808-4140-9871-c5bc5fb2b15c', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            sessionId: 'debug-session',
+                            runId: 'quickstats-layout',
+                            hypothesisId: 'CSS_GRID_MD',
+                            location: 'admin-pages.php:quickstats',
+                            message: 'QuickStats grid layout on Manage Waybills',
+                            data: {
+                                className: grid.className,
+                                innerWidth: window.innerWidth
+                            },
+                            timestamp: Date.now()
+                        })
+                    }).catch(function () {});
+                    // #endregion
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                 });
                 </script>
                 <div class="space-y-4">
@@ -512,8 +564,13 @@ function plugin_Waybill_list_page()
                         'label' => 'Description',
                         'sortable' => true,
                         'searchable' => true,
+<<<<<<< HEAD
                         'header_class' => 'text-left whitespace-nowrap min-w-[220px]',
                         'cell_class' => 'text-left text-sm min-w-[220px] max-w-[420px] whitespace-normal break-words',
+=======
+                        'header_class' => 'text-left whitespace-nowrap min-w-[180px]',
+                        'cell_class' => 'text-left text-sm min-w-[180px] max-w-[280px] truncate',
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                         'callback' => function ($value, $row, $rowIndex) {
                             $row = is_object($row) ? (array) $row : $row;
                             $desc = $row['description'] ?? $value ?? '';
@@ -530,16 +587,24 @@ function plugin_Waybill_list_page()
                     if (class_exists('KIT_Unified_Table')) {
                         // #region agent log
                         $main_table_options = [
+<<<<<<< HEAD
                             'title' => 'All Waybills',
                             'sync_entity' => 'waybills',
                             'table_class' => 'w-full table-auto border-collapse',
+=======
+                            'title' => 'All Waybeeills',
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                             'actions' => $actions,
                             'searchable' => true,
                             'sortable' => true,
                             'exportable' => true,
                             'bulk_management' => true,
+<<<<<<< HEAD
                             'bulk_actions_list' => ['delete', 'export', 'packing_list'],
                             'delivery_list_print' => true,
+=======
+                            'bulk_actions_list' => ['delete', 'export'],
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                             'empty_message' => 'No waybills found',
                             'groupby' => 'city',
                             'group_heading_prefix' => '',

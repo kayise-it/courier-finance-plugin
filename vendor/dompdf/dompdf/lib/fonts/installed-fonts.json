@@ -1,0 +1,10 @@
+{
+    "inter": {
+        "300": "\/Applications\/MAMP\/htdocs\/In-progress\/08600\/wp-content\/plugins\/courier-finance-plugin\/vendor\/dompdf\/dompdf\/lib\/fonts\/inter_300_e4c9b64172e62d24ee5f222199ce2d2c",
+        "normal": "\/Applications\/MAMP\/htdocs\/08600\/wp-content\/plugins\/courier-finance-plugin\/vendor\/dompdf\/dompdf\/lib\/fonts\/inter_normal_27cf50e5e00395fa3061dc942dc6e52e",
+        "500": "\/Applications\/MAMP\/htdocs\/In-progress\/08600\/wp-content\/plugins\/courier-finance-plugin\/vendor\/dompdf\/dompdf\/lib\/fonts\/inter_500_3f435dc727a887d3a9c0ddd0afecf691",
+        "600": "\/Applications\/MAMP\/htdocs\/08600\/wp-content\/plugins\/courier-finance-plugin\/vendor\/dompdf\/dompdf\/lib\/fonts\/inter_600_27cf50e5e00395fa3061dc942dc6e52e",
+        "bold": "inter_bold_27cf50e5e00395fa3061dc942dc6e52e",
+        "italic": "\/Applications\/MAMP\/htdocs\/08600\/wp-content\/plugins\/courier-finance-plugin\/vendor\/dompdf\/dompdf\/lib\/fonts\/inter_italic_e46a458e55134147d35c7733a802172f"
+    }
+}

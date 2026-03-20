@@ -69,7 +69,11 @@ if (!isset($optionChoice) || $optionChoice == 1) :
             ?>
         </div>
         <div>
+<<<<<<< HEAD
             <p class="text-xs text-gray-500 mt-2">Note: VAT and SADC are mutually exclusive. SAD500 is independent.</p>
+=======
+            <p class="text-xs text-gray-500 mt-2">Note: VAT cannot be combined with other fees</p>
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
         </div>
     </div>
     <script>
@@ -224,6 +228,7 @@ if (!isset($optionChoice) || $optionChoice == 1) :
         }
     })();
     </script>
+<<<<<<< HEAD
 <?php elseif (isset($optionChoice) && $optionChoice == 2):
         // Strict: only treat as selected when DB value is exactly 1 (not amount or other truthy)
         $vat_checked = (int)(isset($waybill['vat_include']) ? $waybill['vat_include'] : 0) === 1;
@@ -241,13 +246,28 @@ if (!isset($optionChoice) || $optionChoice == 1) :
             <div class="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" <?= $sadc_checked ? 'checked' : '' ?> name="include_sadc" id="sadc_certificate" class="optionz cursor-pointer" value="1">
                 <label for="sadc_certificate" class="flex items-center gap-2 cursor-pointer">
+=======
+<?php elseif (isset($optionChoice) && $optionChoice == 2): ?>
+    <div class="gap-4">
+        <div class="bg-slate-100 border-dotted col-span-2 border-2 border-gray-300 rounded-lg p-2 gap-2">
+            <!-- Checkbox for SADC Certificate -->
+            <div>
+                <input type="checkbox" <?= (!empty($waybill['include_sadc'])) ? 'checked' : '' ?> name="include_sadc" id="sadc_certificate" class="optionz" value="1">
+                <label for="sadc_certificate" class="flex items-center gap-2">
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                     <span>SADC Certificate</span>
                     <span class="text-[11px] text-gray-500 font-medium">+<?= $sadcChargeDisplay ?></span>
                 </label>
             </div>
+<<<<<<< HEAD
             <div class="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" <?= $sad500_checked ? 'checked' : '' ?> name="include_sad500" id="include_sad500" class="cursor-pointer" value="1">
                 <label for="include_sad500" class="flex items-center gap-2 cursor-pointer">
+=======
+            <div>
+                <input type="checkbox" <?= (!empty($waybill['include_sad500'])) ? 'checked' : '' ?> name="include_sad500" id="include_sad500" class="" value="1">
+                <label for="include_sad500" class="flex items-center gap-2">
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                     <span>SAD500</span>
                     <span class="text-[11px] text-gray-500 font-medium">+<?= $sad500ChargeDisplay ?></span>
                 </label>
@@ -255,10 +275,15 @@ if (!isset($optionChoice) || $optionChoice == 1) :
         </div>
         <div class="bg-slate-100 border-dotted border-2 mt-2 border-gray-300 rounded-lg p-2">
             <!-- The VAT option Checkbox -->
+<<<<<<< HEAD
             <div class="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" <?= $vat_checked ? 'checked' : '' ?> name="vat_include" id="vat_include" class="cursor-pointer" value="1">
                 <label for="vat_include" class="cursor-pointer">VAT Included (10%)</label>
             </div>
+=======
+            <input type="checkbox" <?= (!empty($waybill['vat_include'])) ? 'checked' : '' ?> name="vat_include" id="vat_include" value="1">
+            <label for="vat_include">VAT Included (10%)</label>
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
         </div>
     </div>
     <script>
@@ -276,6 +301,7 @@ if (!isset($optionChoice) || $optionChoice == 1) :
             // SAD500 is always enabled
             sad500Checkbox.disabled = false;
             
+<<<<<<< HEAD
             // VAT and SADC mutually exclusive: disable the other when one is checked
             // (user can always uncheck the current one to then select the other)
             sadcCheckbox.disabled = !!vatChecked;
@@ -292,6 +318,26 @@ if (!isset($optionChoice) || $optionChoice == 1) :
             initCostDetailsCheckboxes();
         }
         
+=======
+            // VAT and SADC are mutually exclusive
+            if (vatChecked) {
+                sadcCheckbox.disabled = true;
+            } else {
+                sadcCheckbox.disabled = false;
+            }
+            
+            if (sadcChecked) {
+                vatCheckbox.disabled = true;
+            } else {
+                vatCheckbox.disabled = false;
+            }
+        }
+        
+        // Initial state
+        updateStates();
+        
+        // Listen for changes
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
         vatCheckbox.addEventListener('change', function() {
             if (this.checked && sadcCheckbox.checked) {
                 sadcCheckbox.checked = false;

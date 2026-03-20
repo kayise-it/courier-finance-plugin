@@ -7,8 +7,11 @@ if (!defined('ABSPATH')) {
 require_once plugin_dir_path(__FILE__) . '../class-unified-table.php';
 // Include toast component
 require_once plugin_dir_path(__FILE__) . '../components/toast.php';
+<<<<<<< HEAD
 // Include right sidebar quick actions component
 require_once plugin_dir_path(__FILE__) . '../components/sidebarQuickActions.php';
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
 
 /**
  * Render driver multiform for modal or inline use
@@ -54,6 +57,7 @@ function kit_render_driver_multiform($atts = [])
             <input type="hidden" name="is_modal" value="1">
         <?php endif; ?>
         
+<<<<<<< HEAD
         <div class="bg-gray-50/50 rounded-lg border border-gray-200 p-5">
             <div class="mb-4">
                 <h3 class="text-base font-semibold text-gray-900">Driver Details</h3>
@@ -116,10 +120,66 @@ function kit_render_driver_multiform($atts = [])
                         <span class="kit-driver-status-knob"></span>
                     </span>
                     <span class="text-sm text-gray-700">Active</span>
+=======
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <?php
+            echo KIT_Commons::Linput([
+                'label' => 'Driver Name',
+                'name'  => 'name',
+                'id'    => 'name',
+                'type'  => 'text',
+                'value' => $driver && isset($driver->name) ? esc_attr($driver->name) : '',
+                'class' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-2 text-gray-800 bg-white transition',
+                'required' => true
+            ]);
+            
+            echo KIT_Commons::Linput([
+                'label' => 'Phone',
+                'name'  => 'phone',
+                'id'    => 'phone',
+                'type'  => 'tel',
+                'value' => $driver && isset($driver->phone) ? esc_attr($driver->phone) : '',
+                'class' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-2 text-gray-800 bg-white transition',
+            ]);
+            
+            echo KIT_Commons::Linput([
+                'label' => 'Email',
+                'name'  => 'email',
+                'id'    => 'email',
+                'type'  => 'email',
+                'value' => $driver && isset($driver->email) ? esc_attr($driver->email) : '',
+                'class' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-2 text-gray-800 bg-white transition',
+            ]);
+            
+            echo KIT_Commons::Linput([
+                'label' => 'License Number',
+                'name'  => 'license_number',
+                'id'    => 'license_number',
+                'type'  => 'text',
+                'value' => $driver && isset($driver->license_number) ? esc_attr($driver->license_number) : '',
+                'class' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-2 text-gray-800 bg-white transition',
+            ]);
+            ?>
+            
+            <div class="flex items-center space-x-3">
+                <label class="<?= KIT_Commons::labelClass() ?> mb-0">Status</label>
+                <label class="flex items-center cursor-pointer">
+                    <input type="checkbox" id="is_active" name="is_active" value="1" 
+                           class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                           <?php 
+                           if ($edit_mode && $driver && isset($driver->is_active)) {
+                               echo $driver->is_active ? 'checked' : '';
+                           } else {
+                               echo 'checked'; // Default to active for new drivers
+                           }
+                           ?>>
+                    <span class="ml-2 text-sm text-gray-700">Active</span>
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                 </label>
             </div>
         </div>
 
+<<<<<<< HEAD
         <div class="pt-4 border-t flex items-center justify-between">
             <p class="text-xs text-gray-500">Tip: save changes before navigating away.</p>
             <div class="flex space-x-3">
@@ -138,6 +198,23 @@ function kit_render_driver_multiform($atts = [])
                     </a>
                 <?php endif; ?>
             </div>
+=======
+        <div class="flex space-x-3 pt-4 border-t">
+            <?php
+            echo KIT_Commons::renderButton(
+                $edit_mode ? 'Update Driver' : 'Add Driver',
+                'primary',
+                'md',
+                ['type' => 'submit']
+            );
+            ?>
+            <?php if (!$is_modal): ?>
+                <a href="<?php echo admin_url('admin.php?page=manage-drivers'); ?>" 
+                   class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                    Cancel
+                </a>
+            <?php endif; ?>
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
         </div>
     </form>
     <?php
@@ -234,11 +311,14 @@ if (isset($_POST['action']) && $_POST['action'] === 'save_driver') {
             $message = !empty($error) ? 'Failed to create driver: ' . esc_html($error) : 'Failed to create driver.';
         } else {
             $message = 'Driver created successfully!';
+<<<<<<< HEAD
             if (class_exists('Courier_Google_Sheets_Sync') && Courier_Google_Sheets_Sync::sync_driver_add($data)) {
                 $message .= ' Synced to Google Sheet.';
             } elseif (class_exists('Courier_Google_Sheets') && Courier_Google_Sheets::is_configured()) {
                 $message .= ' (Sheet sync failed. Share the sheet with Editor access and ensure kit_drivers tab exists.)';
             }
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
         }
     }
 
@@ -264,6 +344,7 @@ if (isset($_GET['delete']) && isset($_GET['_wpnonce'])) {
 
     global $wpdb;
     $table = $wpdb->prefix . 'kit_drivers';
+<<<<<<< HEAD
     $driver_id = intval($_GET['delete']);
     $driver = $wpdb->get_row($wpdb->prepare("SELECT name FROM $table WHERE id = %d", $driver_id));
     $driver_name = $driver ? $driver->name : '';
@@ -277,6 +358,13 @@ if (isset($_GET['delete']) && isset($_GET['_wpnonce'])) {
     $redirect_args = [
         'page'    => 'manage-drivers',
         'message' => urlencode($message),
+=======
+    $result = $wpdb->delete($table, ['id' => intval($_GET['delete'])]);
+
+    $redirect_args = [
+        'page'    => 'manage-drivers',
+        'message' => urlencode($result !== false ? 'Driver deleted successfully!' : 'Failed to delete driver.'),
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
         'success' => ($result !== false ? '1' : '0'),
     ];
     // Reuse the same helper used in the save handler if available
@@ -320,16 +408,20 @@ if (isset($_POST['bulk_action']) && isset($_POST['bulk_ids']) && wp_verify_nonce
     switch ($action) {
         case 'delete':
             $placeholders = implode(',', array_fill(0, count($ids), '%d'));
+<<<<<<< HEAD
             $drivers_to_delete = $wpdb->get_results($wpdb->prepare(
                 "SELECT id, name FROM $table WHERE id IN ($placeholders)",
                 $ids
             ), ARRAY_A);
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
             $result = $wpdb->query($wpdb->prepare(
                 "DELETE FROM $table WHERE id IN ($placeholders)",
                 $ids
             ));
             $success = $result !== false;
             $message = $success ? sprintf('Successfully deleted %d driver(s).', count($ids)) : 'Failed to delete drivers.';
+<<<<<<< HEAD
             if ($success && !empty($drivers_to_delete) && class_exists('Courier_Google_Sheets_Sync')) {
                 $synced = 0;
                 foreach ($drivers_to_delete as $d) {
@@ -341,6 +433,8 @@ if (isset($_POST['bulk_action']) && isset($_POST['bulk_ids']) && wp_verify_nonce
                     $message .= sprintf(' Removed %d from Google Sheet.', $synced);
                 }
             }
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
             break;
 
         case 'update_status':
@@ -467,6 +561,7 @@ if (isset($_GET['message'])) {
         ?>
     
     <?php if (isset($_GET['add']) || $edit_mode): ?>
+<<<<<<< HEAD
         <!-- Add/Edit Driver Form with right sidebar actions -->
         <?php
         $current_user = wp_get_current_user();
@@ -541,6 +636,98 @@ if (isset($_GET['message'])) {
                     <?php echo KIT_SidebarQuickActions::render($driver_quick_actions, $driver_quick_actions_title, $driver_quick_actions_subtitle, $driver_page_context); ?>
                 </div>
             </div>
+=======
+        <!-- Add/Edit Driver Form -->
+        <div class="bg-white rounded-lg shadow-md border border-gray-200 p-6 max-w-3xl">
+            <div class="flex items-center justify-between mb-6 pb-4 border-b">
+                <h2 class="text-2xl font-bold text-gray-800"><?php echo $edit_mode ? 'Edit Driver' : 'Add New Driver'; ?></h2>
+                <a href="<?php echo admin_url('admin.php?page=manage-drivers'); ?>" class="text-gray-600 hover:text-gray-900">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </a>
+            </div>
+            
+            <form method="POST" action="<?php echo esc_url(admin_url('admin.php?page=manage-drivers')); ?>" class="space-y-6">
+                <input type="hidden" name="action" value="save_driver">
+                <input type="hidden" name="nonce" value="<?php echo wp_create_nonce('save_driver_nonce'); ?>">
+                <?php if ($edit_mode): ?>
+                    <input type="hidden" name="driver_id" value="<?php echo esc_attr($driver->id); ?>">
+                <?php endif; ?>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <?php
+                    echo KIT_Commons::Linput([
+                        'label' => 'Driver Name',
+                        'name'  => 'name',
+                        'id'    => 'name',
+                        'type'  => 'text',
+                        'value' => $driver ? esc_attr($driver->name) : '',
+                        'class' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-2 text-gray-800 bg-white transition',
+                        'required' => true
+                    ]);
+                    
+                    echo KIT_Commons::Linput([
+                        'label' => 'Phone',
+                        'name'  => 'phone',
+                        'id'    => 'phone',
+                        'type'  => 'tel',
+                        'value' => $driver ? esc_attr($driver->phone) : '',
+                        'class' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-2 text-gray-800 bg-white transition',
+                    ]);
+                    
+                    echo KIT_Commons::Linput([
+                        'label' => 'Email',
+                        'name'  => 'email',
+                        'id'    => 'email',
+                        'type'  => 'email',
+                        'value' => $driver ? esc_attr($driver->email) : '',
+                        'class' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-2 text-gray-800 bg-white transition',
+                    ]);
+                    
+                    echo KIT_Commons::Linput([
+                        'label' => 'License Number',
+                        'name'  => 'license_number',
+                        'id'    => 'license_number',
+                        'type'  => 'text',
+                        'value' => $driver ? esc_attr($driver->license_number) : '',
+                        'class' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-2 text-gray-800 bg-white transition',
+                    ]);
+                    ?>
+                    
+                    <div class="flex items-center space-x-3">
+                        <label class="<?= KIT_Commons::labelClass() ?> mb-0">Status</label>
+                        <label class="flex items-center cursor-pointer">
+                            <input type="checkbox" id="is_active" name="is_active" value="1" 
+                                   class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                                   <?php 
+                                   // Default to checked for new drivers, or use existing value for edit
+                                   if ($edit_mode) {
+                                       echo ($driver && $driver->is_active) ? 'checked' : '';
+                                   } else {
+                                       echo 'checked'; // Default to active for new drivers
+                                   }
+                                   ?>>
+                            <span class="ml-2 text-sm text-gray-700">Active</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="flex space-x-3 pt-4 border-t">
+                    <?php
+                    echo KIT_Commons::renderButton(
+                        $edit_mode ? 'Update Driver' : 'Add Driver',
+                        'primary',
+                        'md',
+                        ['type' => 'submit']
+                    );
+                    ?>
+                    <a href="<?php echo admin_url('admin.php?page=manage-drivers'); ?>" 
+                       class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                        Cancel
+                    </a>
+                </div>
+            </form>
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
         </div>
     <?php else: ?>
         <!-- Drivers List -->
@@ -622,7 +809,10 @@ if (isset($_GET['message'])) {
             // Render unified table
             echo KIT_Unified_Table::infinite($drivers_data, $columns, [
                 'title' => 'All Drivers',
+<<<<<<< HEAD
                 'sync_entity' => 'drivers',
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                 'actions' => $actions,
                 'searchable' => true,
                 'sortable' => true,
@@ -644,6 +834,7 @@ if (isset($_GET['message'])) {
     <?php endif; ?>
 </div>
 </div>
+<<<<<<< HEAD
 <style id="kit-driver-status-toggle-styles">
     .kit-driver-status-toggle {
         display: inline-flex;
@@ -724,3 +915,5 @@ if (isset($_GET['message'])) {
         $newDriverModal.on('modal:opened', resetNewDriverForm);
     });
 </script>
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff

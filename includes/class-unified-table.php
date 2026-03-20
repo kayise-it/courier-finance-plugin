@@ -29,8 +29,12 @@ class KIT_Unified_Table
             'bulk_actions' => false,
             'selectable' => false,
             'bulk_management' => false,
+<<<<<<< HEAD
             'bulk_actions_list' => [], // ['delete', 'export', 'packing_list', 'status_active', 'status_inactive']
             'delivery_list_print' => false, // Waybills: toolbar "Print delivery list" (visible rows only)
+=======
+            'bulk_actions_list' => [], // Array of bulk actions: ['delete', 'export', 'status_active', 'status_inactive']
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
             'bulk_action_handler' => null, // Callback function to handle bulk actions
             'empty_message' => 'No data found',
             'table_class' => 'w-full table-auto border-collapse',
@@ -60,17 +64,23 @@ class KIT_Unified_Table
             'search_placeholder' => 'Search...', // Custom search placeholder text
             'search_filters' => [], // Custom search filter options: [['value' => 'field', 'label' => 'Label'], ...]
             'search_default_filter' => null, // Default filter value
+<<<<<<< HEAD
             'sync_entity' => null, // If set (drivers|customers|deliveries|waybills), show sync dropdown
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
         ];
 
         $options = array_merge($defaults, $options);
 
+<<<<<<< HEAD
         $bulk_actions_for_print = $options['bulk_actions_list'] ?? [];
         $needs_waybill_list_print_globals = (
             (! empty($options['delivery_list_print']) && filter_var($options['delivery_list_print'], FILTER_VALIDATE_BOOLEAN))
             || in_array('packing_list', $bulk_actions_for_print, true)
         );
 
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
         // Store original groupby value for view toggling
         $original_groupby = $options['groupby'];
 
@@ -283,7 +293,11 @@ class KIT_Unified_Table
         ob_start();
 ?>
         <div id="<?php echo esc_attr($container_id); ?>" class="w-full bg-white rounded-xl shadow-sm border border-gray-200" style="box-sizing: content-box;">
+<<<<<<< HEAD
             <?php if ($options['title'] || $options['subtitle'] || $options['table_type'] || !empty($options['primary_action']) || !empty($options['sync_entity'])): ?>
+=======
+            <?php if ($options['title'] || $options['subtitle'] || $options['table_type'] || !empty($options['primary_action'])): ?>
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                 <div class="px-6 pt-6 pb-4 mb-3 grid grid-cols-2 gap-4">
                     <div class="flex items-center">
                         <?php if ($options['title']): ?>
@@ -302,6 +316,7 @@ class KIT_Unified_Table
                             </a>
                         <?php endif; ?>
 
+<<<<<<< HEAD
                         <?php if (!empty($options['sync_entity']) && in_array($options['sync_entity'], ['drivers', 'customers', 'deliveries', 'waybills'], true)): ?>
                             <?php
                             $sync_path = dirname(__FILE__) . '/components/sync-buttons.php';
@@ -313,6 +328,8 @@ class KIT_Unified_Table
                             }
                             ?>
                         <?php endif; ?>
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                         <?php if (!empty($options['dropdowns']) && $options['dropdowns'] === true): ?>
                             <?php
                             // Include customer bulk invoice dropdown component if configured
@@ -429,6 +446,7 @@ class KIT_Unified_Table
                                 'iconOnly' => true,
                                 'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>',
                             ]); ?>
+<<<<<<< HEAD
                             <?php
                             if (! empty($options['delivery_list_print']) && filter_var($options['delivery_list_print'], FILTER_VALIDATE_BOOLEAN)) :
                                 $print_list_icon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path>';
@@ -442,6 +460,8 @@ class KIT_Unified_Table
                                 ]);
                             endif;
                             ?>
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                         </div>
                     <?php endif; ?>
                 </div>
@@ -480,11 +500,14 @@ class KIT_Unified_Table
                                                 $action_class = 'bg-blue-600 hover:bg-blue-700 text-white';
                                                 $action_id = 'bulk-export-' . $table_id;
                                                 break;
+<<<<<<< HEAD
                                             case 'packing_list':
                                                 $action_label = 'Packing list';
                                                 $action_class = 'bg-indigo-600 hover:bg-indigo-700 text-white';
                                                 $action_id = 'bulk-packing-' . $table_id;
                                                 break;
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                                             case 'status_active':
                                                 $action_label = 'Set Active';
                                                 $action_class = 'bg-green-600 hover:bg-green-700 text-white';
@@ -502,8 +525,11 @@ class KIT_Unified_Table
                                                 $bulk_icon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>';
                                             } elseif ($action === 'export') {
                                                 $bulk_icon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>';
+<<<<<<< HEAD
                                             } elseif ($action === 'packing_list') {
                                                 $bulk_icon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>';
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                                             } elseif ($action === 'status_active') {
                                                 $bulk_icon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>';
                                             } elseif ($action === 'status_inactive') {
@@ -546,10 +572,17 @@ class KIT_Unified_Table
                                             <th class="<?php echo esc_attr($options['header_base_class']); ?> w-12 text-center" style="width: 48px;">
                                                 <input type="checkbox"
                                                     id="bulk-select-all-<?php echo esc_attr($table_id); ?>"
+<<<<<<< HEAD
                                                     class="bulk-select-all-checkbox w-5 h-5 rounded border-2 border-black bg-white text-blue-700 focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 cursor-pointer transition-all shadow-sm"
                                                     title="Select all"
                                                     aria-label="Select all rows"
                                                     style="display: inline-block; margin: 0; cursor: pointer; pointer-events: auto; opacity: 1; visibility: visible; accent-color: #1d4ed8;">
+=======
+                                                    class="bulk-select-all-checkbox w-4 h-4 rounded border-0 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer transition-all"
+                                                    title="Select all"
+                                                    aria-label="Select all rows"
+                                                    style="display: inline-block; margin: 0; cursor: pointer; pointer-events: auto;">
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                                             </th>
                                         <?php endif; ?>
                                         <!-- Index column header -->
@@ -566,15 +599,22 @@ class KIT_Unified_Table
                                             if (is_array($column) && !empty($column['header_class'])) {
                                                 $headerClass = trim($headerClass . ' ' . $column['header_class']);
                                             }
+<<<<<<< HEAD
                                             $headerStyle = '';
                                             if (is_array($column) && !empty($column['header_style'])) {
                                                 $headerStyle = ' style="' . esc_attr($column['header_style']) . '"';
                                             }
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                                             // Check if header should be right-aligned
                                             $isRightAligned = strpos($headerClass, 'text-right') !== false;
                                             $flexJustify = $isRightAligned ? 'justify-end' : '';
                                             ?>
+<<<<<<< HEAD
                                             <th<?php if ($columnSortable): ?> data-column="<?php echo esc_attr($key); ?>" <?php endif; ?> class="<?php echo esc_attr($headerClass); ?>"<?php echo $headerStyle; ?>>
+=======
+                                            <th<?php if ($columnSortable): ?> data-column="<?php echo esc_attr($key); ?>" <?php endif; ?> class="<?php echo esc_attr($headerClass); ?>">
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                                                 <?php if ($columnSortable): ?>
                                                     <?php echo KIT_Commons::renderButton($label, 'ghost', 'sm', [
                                                         'type' => 'button',
@@ -718,7 +758,11 @@ class KIT_Unified_Table
                                         <tr<?php echo $rowAttrStr; ?> class="<?php echo esc_attr($rowClass); ?>" data-row-id="<?php echo esc_attr(is_array($row) ? ($row['id'] ?? '') : (is_object($row) ? ($row->id ?? '') : '')); ?>">
                                             <?php if ($options['bulk_management'] === true): ?>
                                                 <!-- Bulk selection checkbox cell -->
+<<<<<<< HEAD
                                                 <td class="<?php echo esc_attr($options['cell_base_class']); ?> w-12 text-center bulk-checkbox-cell cursor-pointer select-none" style="width: 48px; background-color: #f9fafb;">
+=======
+                                                <td class="<?php echo esc_attr($options['cell_base_class']); ?> w-12 text-center" style="width: 48px;">
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                                                     <?php
                                                     // Use waybill_no (waybill number) as the checkbox value, not the database ID
                                                     if (is_array($row)) {
@@ -728,11 +772,19 @@ class KIT_Unified_Table
                                                     }
                                                     ?>
                                                     <input type="checkbox"
+<<<<<<< HEAD
                                                         class="bulk-row-checkbox w-5 h-5 rounded border-2 border-black bg-white text-blue-700 focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 cursor-pointer transition-all shadow-sm"
                                                         value="<?php echo esc_attr($row_id); ?>"
                                                         data-row-id="<?php echo esc_attr($row_id); ?>"
                                                         aria-label="Select row"
                                                         style="display: inline-block; margin: 0; cursor: pointer; pointer-events: auto; opacity: 1; visibility: visible; accent-color: #1d4ed8;">
+=======
+                                                        class="bulk-row-checkbox w-4 h-4 rounded border-0 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer transition-all"
+                                                        value="<?php echo esc_attr($row_id); ?>"
+                                                        data-row-id="<?php echo esc_attr($row_id); ?>"
+                                                        aria-label="Select row"
+                                                        style="display: inline-block; margin: 0; cursor: pointer; pointer-events: auto;">
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                                                 </td>
                                             <?php endif; ?>
                                             <!-- Index column cell -->
@@ -743,12 +795,17 @@ class KIT_Unified_Table
                                                 if (is_array($column) && isset($column['cell_class'])) {
                                                     $cellClass = trim($cellClass . ' ' . $column['cell_class']);
                                                 }
+<<<<<<< HEAD
                                                 $cellStyle = '';
                                                 if (is_array($column) && !empty($column['cell_style'])) {
                                                     $cellStyle = ' style="' . esc_attr($column['cell_style']) . '"';
                                                 }
                                                 ?>
                                                 <td class="<?php echo esc_attr($cellClass); ?>"<?php echo $cellStyle; ?>>
+=======
+                                                ?>
+                                                <td class="<?php echo esc_attr($cellClass); ?>">
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                                                     <?php
                                                     // Simple, robust value extraction
                                                     $value = '';
@@ -1324,6 +1381,7 @@ class KIT_Unified_Table
                     }
                 }
 
+<<<<<<< HEAD
                 <?php if ($needs_waybill_list_print_globals && function_exists('wp_create_nonce')) : ?>
                 window.kitWaybillListPrintUrl = <?php echo json_encode(dirname(plugin_dir_url(__FILE__)) . '/waybill-list-print.php'); ?>;
                 window.kitWaybillListPrintNonce = <?php echo json_encode(wp_create_nonce('waybill_list_print')); ?>;
@@ -1375,6 +1433,8 @@ class KIT_Unified_Table
                 <?php endif; ?>
                 <?php endif; ?>
 
+=======
+>>>>>>> 5cbaa90360699e03b8fac099559de25a0a4ad7ff
                 // Sorting functionality - client-side sorting for infinite scroll
                 if (<?php echo $options['sortable'] ? 'true' : 'false'; ?>) {
                     if (table.dataset && table.dataset.hasGroupRows === '1') return;
