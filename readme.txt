@@ -4,7 +4,7 @@ Tags: logistics, quotations, waybill, delivery, invoicing
 Requires at least: 5.8
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 2.0.0
+Stable tag: 3.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -37,6 +37,9 @@ Yes, it is tested with PHP 8.0 and above.
 3. Quotation preview and PDF
 
 == Changelog ==
+= 3.1.0 =
+- Version bump to 3.1.0
+
 = 2.0.0 =
 - Major release: stability improvements and UI refinements
 - Updated PDF generation and admin pages
@@ -45,5 +48,8 @@ Yes, it is tested with PHP 8.0 and above.
 - Initial release
 
 == Upgrade Notice ==
+= 3.1.0 =
+Maintenance release. Back up your site before updating.
+
 = 2.0.0 =
 This is a major update with improvements to quotations and waybill management. Please back up your database before upgrading.

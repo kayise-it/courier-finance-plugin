@@ -110,7 +110,7 @@ if (!function_exists('wp_get_current_user')) {
 
 // Plugin-specific constants
 if (!defined('COURIER_FINANCE_PLUGIN_VERSION')) {
-    define('COURIER_FINANCE_PLUGIN_VERSION', '1.0.0');
+    define('COURIER_FINANCE_PLUGIN_VERSION', '3.1.0');
 }
 
 if (!defined('COURIER_FINANCE_PLUGIN_PATH')) {
