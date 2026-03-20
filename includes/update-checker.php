@@ -54,18 +54,8 @@ if (!defined('KIT_GITHUB_BRANCH')) {
 
 $repoUrl = 'https://github.com/' . constant('KIT_GITHUB_PLUGIN_REPO');
 
-$updateChecker = PucFactory::buildUpdateChecker(
-    $repoUrl,
-    $plugin_file,
-    'courier-finance-plugin'
-);
-
-// Ask PUC to look for releases. Set the release asset if needed.
-// If your plugin main file header has Version matching a Git tag (e.g. v2.0.1), ensure tag format aligns.
-$updateChecker->setBranch(constant('KIT_GITHUB_BRANCH'));
-
 // Prefer the tracked branch over GitHub Releases/tags so "push to main" updates apply
-// even when no release exists or an old release would win.
+// even when no release exists or an old release would win. Register before buildUpdateChecker().
 add_filter(
     'puc_vcs_update_detection_strategies-courier-finance-plugin',
     static function ($strategies) {
@@ -80,16 +70,38 @@ add_filter(
     1
 );
 
+// PUC uses check period in hours (4th arg of buildUpdateChecker).
+$check_period_hours = (defined('WP_DEBUG') && WP_DEBUG) ? 1 : 6;
+
+$updateChecker = PucFactory::buildUpdateChecker(
+    $repoUrl,
+    $plugin_file,
+    'courier-finance-plugin',
+    $check_period_hours
+);
+
+// If your plugin main file header has Version matching a Git tag (e.g. v2.0.1), ensure tag format aligns.
+$updateChecker->setBranch(constant('KIT_GITHUB_BRANCH'));
+
 // Support private repos or higher rate limits
 $token = constant('KIT_GITHUB_ACCESS_TOKEN');
 if (is_string($token) && $token !== '') {
     $updateChecker->setAuthentication($token);
 }
 
-if (defined('WP_DEBUG') && WP_DEBUG) {
-    $updateChecker->setCacheDuration(5 * MINUTE_IN_SECONDS);
-} else {
-    $updateChecker->setCacheDuration(6 * HOUR_IN_SECONDS);
-}
-
+// Refresh GitHub metadata when an admin opens the Plugins screen (throttled; avoids waiting on the default schedule).
+add_action(
+    'load-plugins.php',
+    static function () use ($updateChecker) {
+        if (!is_admin() || !current_user_can('update_plugins')) {
+            return;
+        }
+        $ttl = (defined('WP_DEBUG') && WP_DEBUG) ? 120 : 900;
+        if (get_transient('courier_finance_puc_plugin_list_refresh')) {
+            return;
+        }
+        $updateChecker->checkForUpdates();
+        set_transient('courier_finance_puc_plugin_list_refresh', 1, $ttl);
+    }
+);
 
