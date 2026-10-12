@@ -6630,7 +6630,7 @@ document.addEventListener('DOMContentLoaded', function() {
     updatePreview();
 
     // Live Exchange Rate Functionality
-    let currentExchangeRate = 18.50; // Default fallback rate
+    let currentExchangeRate = 1820; // Default fallback rate
 
     async function fetchExchangeRate() {
         try {
