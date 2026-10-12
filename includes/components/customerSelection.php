@@ -244,6 +244,8 @@ if (empty($customers)
             'person_name_input_names' => 'waybill',
             'company_name_wrapper_id' => 'company_name_wrapper',
             'omit_location_section' => false,
+            'form_layout' => 'compact',
+            'origin_select_layout' => 'equal',
             'waybill_origin_context' => [
                 'waybill' => $waybill_for_origin,
                 'delivery' => isset($delivery) ? $delivery : null,
@@ -288,19 +290,37 @@ if (empty($customers)
 </div>
 
 <script>
-    window.CUSTOMERS_DATA = window.CUSTOMERS_DATA || (function() {
+    window.CUSTOMERS_DATA = (function() {
         try {
-            const customers = <?php echo json_encode($customers, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
-            const customersObj = {};
+            const existing = (window.CUSTOMERS_DATA && typeof window.CUSTOMERS_DATA === 'object') ? window.CUSTOMERS_DATA : {};
+            const customers = <?php
+                $customers_json = wp_json_encode(
+                    is_array($customers) ? array_values($customers) : [],
+                    JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+                );
+                echo ($customers_json === false) ? '[]' : $customers_json;
+            ?>;
+            const customersObj = Object.assign({}, existing);
             if (customers && Array.isArray(customers)) {
                 customers.forEach(customer => {
-                    customersObj[customer.cust_id] = customer;
+                    if (!customer || typeof customer !== 'object') {
+                        return;
+                    }
+                    const custId = customer.cust_id || customer.id;
+                    if (!custId) {
+                        return;
+                    }
+                    customersObj[custId] = Object.assign({}, customersObj[custId] || {}, customer, {
+                        cust_id: custId,
+                        customer_name: customer.customer_name || customer.name || '',
+                        customer_surname: customer.customer_surname || customer.surname || ''
+                    });
                 });
             }
             return customersObj;
         } catch (e) {
             console.error('Error loading customers:', e);
-            return {};
+            return (window.CUSTOMERS_DATA && typeof window.CUSTOMERS_DATA === 'object') ? window.CUSTOMERS_DATA : {};
         }
     })();
 
@@ -382,6 +402,91 @@ if (empty($customers)
         const telephoneInput = document.getElementById('telephone');
         const customerNotesInput = document.getElementById('customer_notes');
 
+        function normalizeCustomer(customer) {
+            if (!customer || typeof customer !== 'object') {
+                return customer;
+            }
+            const custId = customer.cust_id || customer.id;
+            return Object.assign({}, customer, {
+                cust_id: custId,
+                customer_name: customer.customer_name || customer.name || '',
+                customer_surname: customer.customer_surname || customer.surname || ''
+            });
+        }
+
+        function cacheCustomers(list) {
+            if (!window.CUSTOMERS_DATA || typeof window.CUSTOMERS_DATA !== 'object') {
+                window.CUSTOMERS_DATA = {};
+            }
+            (list || []).forEach(function(customer) {
+                const normalized = normalizeCustomer(customer);
+                if (normalized && normalized.cust_id) {
+                    window.CUSTOMERS_DATA[normalized.cust_id] = Object.assign(
+                        {},
+                        window.CUSTOMERS_DATA[normalized.cust_id] || {},
+                        normalized
+                    );
+                }
+            });
+        }
+
+        function customerMatches(customer, searchTerm) {
+            const name = (customer.customer_name || customer.name || '').toLowerCase();
+            const surname = (customer.customer_surname || customer.surname || '').toLowerCase();
+            const company = (customer.company_name || '').toLowerCase();
+            const cell = (customer.cell || '').toLowerCase();
+            const email = (customer.email_address || '').toLowerCase();
+            return name.includes(searchTerm) ||
+                surname.includes(searchTerm) ||
+                company.includes(searchTerm) ||
+                cell.includes(searchTerm) ||
+                email.includes(searchTerm) ||
+                `${name} ${surname}`.includes(searchTerm);
+        }
+
+        function searchLocalCustomers(query) {
+            const results = [];
+            const searchTerm = query.toLowerCase();
+            if (!window.CUSTOMERS_DATA) {
+                return results;
+            }
+            Object.values(window.CUSTOMERS_DATA).forEach(function(customer) {
+                if (customerMatches(customer, searchTerm)) {
+                    results.push(normalizeCustomer(customer));
+                }
+            });
+            return results;
+        }
+
+        let searchCustomersTimer = null;
+        function searchCustomersAjax(query) {
+            const ajaxUrl = window.ajaxurl || (window.myPluginAjax && window.myPluginAjax.ajax_url);
+            const nonce = window.myPluginAjax && window.myPluginAjax.nonces ? window.myPluginAjax.nonces.get_waybills_nonce : '';
+            if (!ajaxUrl) {
+                displaySearchResults([]);
+                return;
+            }
+            fetch(ajaxUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                },
+                credentials: 'same-origin',
+                body: 'action=' + encodeURIComponent('kit_search_customers') +
+                    '&q=' + encodeURIComponent(query) +
+                    '&nonce=' + encodeURIComponent(nonce)
+            })
+            .then(function(response) { return response.json(); })
+            .then(function(response) {
+                const rows = (response && response.success && Array.isArray(response.data)) ? response.data : [];
+                cacheCustomers(rows);
+                displaySearchResults(rows.slice(0, 10).map(normalizeCustomer));
+            })
+            .catch(function() {
+                displaySearchResults([]);
+            });
+        }
+
         function searchCustomers(query) {
             if (!customerResults) {
                 return;
@@ -390,28 +495,17 @@ if (empty($customers)
                 customerResults.classList.add('hidden');
                 return;
             }
-            const results = [];
-            const searchTerm = query.toLowerCase();
-
-            if (window.CUSTOMERS_DATA) {
-                Object.values(window.CUSTOMERS_DATA).forEach(customer => {
-                    const name = (customer.customer_name || '').toLowerCase();
-                    const surname = (customer.customer_surname || '').toLowerCase();
-                    const company = (customer.company_name || '').toLowerCase();
-                    const cell = (customer.cell || '').toLowerCase();
-                    const email = (customer.email_address || '').toLowerCase();
-
-                    if (name.includes(searchTerm) ||
-                        surname.includes(searchTerm) ||
-                        company.includes(searchTerm) ||
-                        cell.includes(searchTerm) ||
-                        email.includes(searchTerm) ||
-                        `${name} ${surname}`.includes(searchTerm)) {
-                        results.push(customer);
-                    }
-                });
+            const local = searchLocalCustomers(query);
+            if (local.length > 0) {
+                displaySearchResults(local.slice(0, 10));
+                return;
             }
-            displaySearchResults(results.slice(0, 10));
+            customerResults.innerHTML = '<div class="px-4 py-3 text-gray-500 text-sm text-center">Searching…</div>';
+            customerResults.classList.remove('hidden');
+            clearTimeout(searchCustomersTimer);
+            searchCustomersTimer = setTimeout(function() {
+                searchCustomersAjax(query);
+            }, 200);
         }
 
         function displaySearchResults(results, selectionOptions = {}) {
@@ -507,18 +601,56 @@ if (empty($customers)
                 return;
             }
             // Fallback: show list of recent customers (by created_at)
-            if (!window.CUSTOMERS_DATA) return;
-            const recentCustomers = Object.values(window.CUSTOMERS_DATA)
-                .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
-                .slice(0, 10);
-            if (!recentCustomers.length) {
-                // No previous customers exist yet – make this explicit to the user
-                alert('No recent customers found. Please add a customer first.');
+            const localRecent = window.CUSTOMERS_DATA ? Object.values(window.CUSTOMERS_DATA)
+                .sort((a, b) => (b.created_at || b.cust_id || '').toString().localeCompare((a.created_at || a.cust_id || '').toString()))
+                .slice(0, 10) : [];
+            if (localRecent.length) {
+                displaySearchResults(localRecent, {
+                    openForm: false,
+                    openFormIfMissingRequired: true,
+                    prefillFromLastWaybill: true
+                });
+                return;
             }
-            displaySearchResults(recentCustomers, {
-                openForm: false,
-                openFormIfMissingRequired: true,
-                prefillFromLastWaybill: true
+            const ajaxUrl = window.ajaxurl || (window.myPluginAjax && window.myPluginAjax.ajax_url);
+            const nonce = window.myPluginAjax && window.myPluginAjax.nonces ? window.myPluginAjax.nonces.get_waybills_nonce : '';
+            if (!ajaxUrl) {
+                alert('No recent customers found. Please add a customer first.');
+                return;
+            }
+            if (customerResults) {
+                customerResults.innerHTML = '<div class="px-4 py-3 text-gray-500 text-sm text-center">Loading recent customers…</div>';
+                customerResults.classList.remove('hidden');
+            }
+            fetch(ajaxUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                },
+                credentials: 'same-origin',
+                body: 'action=' + encodeURIComponent('kit_search_customers') +
+                    '&q=' + encodeURIComponent('') +
+                    '&nonce=' + encodeURIComponent(nonce)
+            })
+            .then(function(response) { return response.json(); })
+            .then(function(response) {
+                const rows = (response && response.success && Array.isArray(response.data)) ? response.data : [];
+                cacheCustomers(rows);
+                if (!rows.length) {
+                    alert('No recent customers found. Please add a customer first.');
+                    if (customerResults) {
+                        customerResults.classList.add('hidden');
+                    }
+                    return;
+                }
+                displaySearchResults(rows.map(normalizeCustomer), {
+                    openForm: false,
+                    openFormIfMissingRequired: true,
+                    prefillFromLastWaybill: true
+                });
+            })
+            .catch(function() {
+                alert('No recent customers found. Please add a customer first.');
             });
         }
 

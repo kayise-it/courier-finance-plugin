@@ -1,0 +1,29 @@
+{
+    "ok": true,
+    "mismatch_count": 0,
+    "totals": {
+        "expected": {
+            "waybills": 977,
+            "individuals": 213,
+            "companies": 51,
+            "unassigned": 0
+        },
+        "actual": {
+            "waybills": 977,
+            "individuals": 217,
+            "companies": 45,
+            "unassigned": 0
+        }
+    },
+    "mismatches": [],
+    "missing": [],
+    "extra": [],
+    "blank_individuals": [],
+    "charges": {
+        "ok": true,
+        "checked": 977,
+        "mismatch_count": 0,
+        "mismatches": []
+    },
+    "json_path": "\/Applications\/MAMP\/htdocs\/Wordpress\/08600\/wp-content\/plugins\/courier-finance-plugin\/.cursor\/seed-verification-last.json"
+}

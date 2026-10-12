@@ -65,6 +65,11 @@ function kit_employee_portal_init() {
     // Waybill create form in iframe = backend-only, no theme (no fancy selects)
     add_action('wp_ajax_kit_waybill_create_form', 'kit_waybill_create_form_frame');
 
+    // Staff portal has its own sidebar. Administrators still get the WordPress toolbar unless this runs first.
+    add_filter('show_admin_bar', 'kit_employee_portal_hide_admin_bar', PHP_INT_MAX);
+    add_action('template_redirect', 'kit_employee_portal_suppress_admin_bar', -1);
+    add_action('wp_head', 'kit_employee_portal_hide_admin_bar_css', 100);
+
     // Enqueue login form styles
     add_action('wp_enqueue_scripts', 'kit_employee_enqueue_login_styles', 20);
     // Portal standalone CSS loads after theme (Bootstrap) so selects and layout work when Tailwind is not applied
@@ -218,6 +223,63 @@ function kit_employee_admin_redirect() {
     $dashboard_url = apply_filters('kit_employee_dashboard_url', home_url('/employee-dashboard/'));
     wp_safe_redirect($dashboard_url);
     exit;
+}
+
+/**
+ * Hide the WordPress toolbar on the staff portal. The portal sidebar is the navigation.
+ *
+ * @param bool $show Whether the toolbar would otherwise be shown.
+ * @return bool
+ */
+function kit_employee_portal_is_request() {
+    if (is_admin()) {
+        return false;
+    }
+
+    $uri = isset($_SERVER['REQUEST_URI']) ? (string) wp_parse_url(wp_unslash($_SERVER['REQUEST_URI']), PHP_URL_PATH) : '';
+    $slug = $uri !== '' ? basename(untrailingslashit($uri)) : '';
+    if (in_array($slug, array('login', 'employee-login', 'employee-dashboard'), true)) {
+        return true;
+    }
+
+    if (function_exists('is_singular') && is_singular()) {
+        $post = get_queried_object();
+        if ($post instanceof WP_Post && (
+            has_shortcode($post->post_content, 'kit_employee_portal')
+            || has_shortcode($post->post_content, 'kit_employee_dashboard')
+            || has_shortcode($post->post_content, 'kit_employee_login')
+        )) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function kit_employee_portal_hide_admin_bar($show) {
+    if (kit_employee_portal_is_request()) {
+        return false;
+    }
+    return $show;
+}
+
+/**
+ * Run before WordPress prints the toolbar. The theme leaves the toolbar on for administrators.
+ */
+function kit_employee_portal_suppress_admin_bar() {
+    if (!kit_employee_portal_is_request()) {
+        return;
+    }
+    show_admin_bar(false);
+    remove_action('wp_body_open', 'wp_admin_bar_render', 0);
+    remove_action('wp_footer', 'wp_admin_bar_render', 1000);
+}
+
+function kit_employee_portal_hide_admin_bar_css() {
+    if (!kit_employee_portal_is_request()) {
+        return;
+    }
+    echo '<style id="kit-hide-wpadminbar">html{margin-top:0!important}#wpadminbar{display:none!important}</style>';
 }
 
 /**
@@ -431,6 +493,17 @@ function kit_employee_portal_shortcode() {
         return '<div class="kit-employee-portal-section">' . $main_content . '</div>';
     }
 
+    // Create Trip is administrator-only
+    if ($section === '08600-trip-create' && !KIT_User_Roles::is_admin()) {
+        $dashboard_url = apply_filters('kit_employee_dashboard_url', home_url('/employee-dashboard/'));
+        $msg = __('You don\'t have access to this page. Only administrators can create trips.', '08600-services-quotations');
+        $main_content = '<div class="kit-employee-portal-section-wrap"><div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg">' . esc_html($msg) . ' <a href="' . esc_url($dashboard_url) . '" class="underline font-medium">' . esc_html__('Back to dashboard', '08600-services-quotations') . '</a></div></div>';
+        if (function_exists('kit_employee_portal_layout_with_sidebar')) {
+            return kit_employee_portal_layout_with_sidebar($main_content, $section);
+        }
+        return '<div class="kit-employee-portal-section">' . $main_content . '</div>';
+    }
+
     // Waybill create: show form in an iframe so only backend code runs (no theme = no fancy selects)
     if ($section === '08600-waybill-create') {
         $frame_nonce = wp_create_nonce('kit_waybill_form_frame');
@@ -551,7 +624,7 @@ function kit_employee_portal_enqueue_section_assets($section) {
     // Sections that need waybill scripts (kitscript, waybill-pagination, components) and myPluginAjax
     $waybill_sections = array('08600-waybill-create', '08600-waybill-manage', '08600-Waybill-view', 'warehouse-waybills', '08600-trip-create', 'kit-deliveries');
     if (in_array($section, $waybill_sections, true)) {
-        wp_enqueue_script('kitscript', $plugin_url . 'js/kitscript.js', array('jquery'), '1.0.0', false);
+        wp_enqueue_script('kitscript', $plugin_url . 'js/kitscript.js', array('jquery'), '1.0.12', false);
         wp_enqueue_script('waybill-pagination', $plugin_url . 'js/waybill-pagination.js', array('jquery'), '1.0.0', false);
         wp_enqueue_script('components', $plugin_url . 'js/components.js', array('jquery'), '1.0.0', false);
 

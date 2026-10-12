@@ -1,11 +1,18 @@
-<?php if (!defined('ABSPATH')) { exit; } ?>
+<?php if (!defined('ABSPATH')) { exit; }
+
+$can_see_prices = class_exists('KIT_User_Roles') && KIT_User_Roles::can_see_prices();
+?>
 <div class="bg-white p-6">
     <?= KIT_Commons::prettyHeading([
         'icon' => '<path d="M16 7a4 4 0 1 0-8 0v2a4 4 0 0 0 8 0V7z" /><path d="M12 19v-2m0 0a7 7 0 0 1-7-7V7a7 7 0 0 1 14 0v3a7 7 0 0 1-7 7z" />',
         'words' => 'Charges & Fees'
     ]) ?>
     <p class="text-xs text-gray-600 mb-6">
-        Enter mass and volume charges. Wait for rates to finish before continuing.
+        <?php if ($can_see_prices): ?>
+            Enter mass and volume charges. Wait for rates to finish before continuing.
+        <?php else: ?>
+            Enter the total mass and parcel dimensions.
+        <?php endif; ?>
     </p>
 
     <!-- Waybill section -->
@@ -53,6 +60,8 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    var canSeePrices = <?php echo $can_see_prices ? 'true' : 'false'; ?>;
+
     // Ensure global waybillCount exists but do NOT reset an existing value
     if (typeof window.waybillCount === 'undefined') {
         window.waybillCount = 1;
@@ -138,7 +147,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (loading && !((massKg <= 0 || massCharge > 0) && (volume <= 0 || volumeCharge > 0))) {
             ok = false;
-            message = 'Rates are still calculating. Please wait…';
+            message = canSeePrices
+                ? 'Rates are still calculating. Please wait…'
+                : 'Please wait a moment…';
         } else if (overrideOn) {
             if (overrideTotal <= 0) {
                 ok = false;
@@ -146,10 +157,14 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         } else if (massKg > 0 && massCharge <= 0) {
             ok = false;
-            message = 'Mass was entered but the rate has not resolved. Wait for the rate, or use Override Total.';
+            message = canSeePrices
+                ? 'Mass was entered but the rate has not resolved. Wait for the rate, or use Override Total.'
+                : 'Mass was entered. Please wait a moment…';
         } else if (volume > 0 && volumeCharge <= 0 && massKg <= 0) {
             ok = false;
-            message = 'Volume was entered but the volume charge is still R0.00. Wait for the rate, or use Override Total.';
+            message = canSeePrices
+                ? 'Volume was entered but the volume charge is still R0.00. Wait for the rate, or use Override Total.'
+                : 'Dimensions were entered. Please wait a moment…';
         }
 
         if (status) {

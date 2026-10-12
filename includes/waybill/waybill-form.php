@@ -149,17 +149,17 @@ $form_action = $is_edit_mode
     ? admin_url('admin-post.php?action=update_waybill_action')
     : admin_url('admin-post.php?action=add_waybill_action');
 
-// Debug: Try to get scheduled deliveries
+$scheduled_deliveries = [];
 try {
     $scheduled_deliveries = KIT_Deliveries::getScheduledDeliveries();
-    if (empty($scheduled_deliveries)) {
-        error_log('KIT_Deliveries::getScheduledDeliveries returned empty result');
+    if (!is_array($scheduled_deliveries)) {
         $scheduled_deliveries = [];
     }
 } catch (Exception $e) {
     error_log('Error calling KIT_Deliveries::getScheduledDeliveries: ' . $e->getMessage());
     $scheduled_deliveries = [];
 }
+$GLOBALS['kit_has_scheduled_deliveries'] = !empty($scheduled_deliveries);
 
 // Frontend (website template) vs backend: reload URL after creating delivery must stay on portal when on frontend
 $waybill_create_reload_base = (function_exists('kit_using_employee_portal') && kit_using_employee_portal())
@@ -195,13 +195,10 @@ if ($kit_waybill_create_flat && function_exists('wp_enqueue_style')) {
         ]);
         kit_edit_waybill_render_switcher($kit_create_template_id);
         ?>
-        <div class="ajaxReload mx-auto max-w-7xl">
+        <div class="ajaxReload mx-auto">
             <?php
-            $scheduled_deliveries = KIT_Deliveries::getScheduledDeliveries();
-
-            if (!empty($scheduled_deliveries)):
-                $encoded_customers = base64_encode(json_encode($customers));
-                echo do_shortcode('[waybill_multiform 
+            $encoded_customers = base64_encode(json_encode($customers));
+            echo do_shortcode('[waybill_multiform 
            form_action="' . esc_url($form_action) . '" 
            waybill_id="' . esc_attr($waybill_id) . '" 
            is_edit_mode="' . ($is_edit_mode ? '1' : '0') . '" 
@@ -209,46 +206,7 @@ if ($kit_waybill_create_flat && function_exists('wp_enqueue_style')) {
            customer="' . esc_attr($encoded_customers) . '"
            is_existing_customer="' . ($is_existing_customer ? '1' : '0') . '" 
            customer_id="' . esc_attr($set_cust_id) . '"]');
-
-            else:
-                $can_create_delivery = class_exists('KIT_User_Roles') && KIT_User_Roles::can_create_delivery_truck();
-                if ($can_create_delivery) {
-                    $delivery_form_content = KIT_Deliveries::deliveryForm(null, true);
-                    $create_delivery_modal = KIT_Modal::render(
-                        'create-delivery-modal',
-                        'Create New Delivery',
-                        $delivery_form_content,
-                        'lg',
-                        false,
-                        ''
-                    );
-                    echo $create_delivery_modal;
-                }
             ?>
-                <div class="bg-white p-6 rounded-lg shadow-md">
-                    <p class="text-bold mb-4">No Deliveries Available</p>
-                    <?php if ($can_create_delivery): ?>
-                        <p class="text-bold mb-4">Create a delivery to proceed with creating a waybill</p>
-                        <?php
-                        echo KIT_Commons::renderButton(
-                            'Create Delivery',
-                            'primary',
-                            'md',
-                            [
-                                'type' => 'button',
-                                'modal' => 'create-delivery-modal',
-                                'classes' => 'create-delivery-btn',
-                                'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />',
-                                'iconPosition' => 'left',
-                                'gradient' => true
-                            ]
-                        );
-                        ?>
-                    <?php else: ?>
-                        <p class="text-bold mb-4">Request management to create a delivery to proceed with creating a waybill.</p>
-                    <?php endif; ?>
-                </div>
-            <?php endif; ?>
         </div>
 
         <script>

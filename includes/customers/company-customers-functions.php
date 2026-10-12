@@ -264,6 +264,28 @@ class KIT_Company_Customers
         return $a !== '' && $b !== '' && ($a === $b || KIT_Customers::customer_labels_are_similar($a, $b));
     }
 
+    /** @var array<int,int> extra sheet company_id → canonical company_id for this request */
+    private static array $id_aliases = [];
+
+    public static function register_id_alias(int $from_id, int $to_id): void
+    {
+        if ($from_id <= 0 || $to_id <= 0 || $from_id === $to_id) {
+            return;
+        }
+        self::$id_aliases[$from_id] = $to_id;
+    }
+
+    public static function resolve_id_alias(int $company_id): int
+    {
+        $seen = [];
+        $current = $company_id;
+        while (isset(self::$id_aliases[$current]) && !isset($seen[$current])) {
+            $seen[$current] = true;
+            $current = (int) self::$id_aliases[$current];
+        }
+        return $current;
+    }
+
     public static function find_by_company_id(int $company_id): ?array
     {
         global $wpdb;
@@ -272,6 +294,17 @@ class KIT_Company_Customers
         }
         $row = $wpdb->get_row(
             $wpdb->prepare("SELECT * FROM " . self::table() . " WHERE company_id = %d LIMIT 1", $company_id),
+            ARRAY_A
+        );
+        if ($row) {
+            return $row;
+        }
+        $canonical = self::resolve_id_alias($company_id);
+        if ($canonical === $company_id) {
+            return null;
+        }
+        $row = $wpdb->get_row(
+            $wpdb->prepare("SELECT * FROM " . self::table() . " WHERE company_id = %d LIMIT 1", $canonical),
             ARRAY_A
         );
         return $row ?: null;
@@ -286,7 +319,7 @@ class KIT_Company_Customers
         }
         $row = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT * FROM " . self::table() . " WHERE LOWER(TRIM(company_name)) = %s LIMIT 1",
+                "SELECT * FROM " . self::table() . " WHERE LOWER(TRIM(company_name)) = %s ORDER BY company_id ASC LIMIT 1",
                 strtolower($company_name)
             ),
             ARRAY_A
@@ -342,6 +375,31 @@ class KIT_Company_Customers
         } else {
             $company_id = self::next_company_id();
         }
+
+        // #region agent log
+        static $dbg_ensure_3151cc = 0;
+        if ($dbg_ensure_3151cc < 6) {
+            $dbg_ensure_3151cc++;
+            @file_put_contents(
+                '/Applications/MAMP/htdocs/Wordpress/08600/wp-content/plugins/courier-finance-plugin/.cursor/debug-3151cc.log',
+                wp_json_encode([
+                    'sessionId' => '3151cc',
+                    'runId' => 'pre-fix',
+                    'hypothesisId' => 'D',
+                    'location' => 'company-customers-functions.php:ensure_company',
+                    'message' => 'ensure_company inserting new row',
+                    'data' => [
+                        'company_id' => $company_id,
+                        'preferred_id' => $preferred_id,
+                        'name' => $company_name,
+                        'is_local' => self::is_local_id($company_id),
+                    ],
+                    'timestamp' => (int) round(microtime(true) * 1000),
+                ]) . "\n",
+                FILE_APPEND | LOCK_EX
+            );
+        }
+        // #endregion
 
         $data = [
             'company_id' => $company_id,
@@ -472,6 +530,155 @@ class KIT_Company_Customers
             ));
         }
         return false !== $wpdb->delete(self::table(), ['company_id' => $company_id], ['%d']);
+    }
+
+    /**
+     * Merge duplicate company into keep: move waybills and person FKs, then delete the duplicate row.
+     * Does NOT delete waybills.
+     *
+     * @return array{ok:bool,waybills_moved:int,people_retargeted:int}
+     */
+    public static function merge_companies(int $keep_id, int $drop_id): array
+    {
+        global $wpdb;
+        $result = [
+            'ok' => false,
+            'waybills_moved' => 0,
+            'people_retargeted' => 0,
+        ];
+        $keep_id = (int) $keep_id;
+        $drop_id = (int) $drop_id;
+        if ($keep_id <= 0 || $drop_id <= 0 || $keep_id === $drop_id) {
+            return $result;
+        }
+
+        $keep = $wpdb->get_row(
+            $wpdb->prepare('SELECT company_id FROM ' . self::table() . ' WHERE company_id = %d LIMIT 1', $keep_id),
+            ARRAY_A
+        );
+        $drop = $wpdb->get_row(
+            $wpdb->prepare('SELECT company_id FROM ' . self::table() . ' WHERE company_id = %d LIMIT 1', $drop_id),
+            ARRAY_A
+        );
+        if (!$keep || !$drop) {
+            return $result;
+        }
+
+        $waybills_t = $wpdb->prefix . 'kit_waybills';
+        $customers_t = $wpdb->prefix . 'kit_customers';
+
+        $wpdb->query($wpdb->prepare(
+            "UPDATE {$waybills_t} SET company_id = %d WHERE company_id = %d",
+            $keep_id,
+            $drop_id
+        ));
+        $moved = (int) $wpdb->rows_affected;
+
+        $person_owns_drop = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT cust_id FROM {$customers_t} WHERE cust_id = %d LIMIT 1",
+            $drop_id
+        ));
+        if ($person_owns_drop <= 0) {
+            $wpdb->query($wpdb->prepare(
+                "UPDATE {$waybills_t}
+                 SET company_id = %d, customer_id = 0
+                 WHERE customer_id = %d",
+                $keep_id,
+                $drop_id
+            ));
+            $moved += (int) $wpdb->rows_affected;
+        }
+
+        if (self::customers_have_company_id_column()) {
+            $wpdb->query($wpdb->prepare(
+                "UPDATE {$customers_t} SET company_id = %d WHERE company_id = %d",
+                $keep_id,
+                $drop_id
+            ));
+            $result['people_retargeted'] = (int) $wpdb->rows_affected;
+        }
+
+        $deleted = $wpdb->delete(self::table(), ['company_id' => $drop_id], ['%d']);
+        if ($deleted) {
+            self::register_id_alias($drop_id, $keep_id);
+            $result['ok'] = true;
+            $result['waybills_moved'] = $moved;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Collapse kit_company_customers rows that share a normalized name.
+     * Keeps the row with the most waybills (then the lowest company_id).
+     *
+     * @return array{merged:int,deleted:int,waybills_moved:int}
+     */
+    public static function merge_duplicate_companies(): array
+    {
+        global $wpdb;
+
+        $out = ['merged' => 0, 'deleted' => 0, 'waybills_moved' => 0];
+        $rows = $wpdb->get_results(
+            'SELECT company_id, company_name FROM ' . self::table(),
+            ARRAY_A
+        ) ?: [];
+        $groups = [];
+        foreach ($rows as $row) {
+            $name = trim((string) ($row['company_name'] ?? ''));
+            if ($name === '' || self::is_placeholder_company($name)) {
+                continue;
+            }
+            $key = class_exists('KIT_Customers')
+                ? KIT_Customers::normalize_company_compare_key($name)
+                : strtolower($name);
+            if ($key === '') {
+                continue;
+            }
+            $groups[$key][] = [
+                'company_id' => (int) ($row['company_id'] ?? 0),
+                'company_name' => $name,
+            ];
+        }
+
+        $waybills_t = $wpdb->prefix . 'kit_waybills';
+        $customers_t = $wpdb->prefix . 'kit_customers';
+        foreach ($groups as $members) {
+            if (count($members) < 2) {
+                continue;
+            }
+            foreach ($members as &$member) {
+                $cid = (int) $member['company_id'];
+                $member['waybills'] = (int) $wpdb->get_var($wpdb->prepare(
+                    "SELECT COUNT(*) FROM {$waybills_t} w
+                     WHERE w.company_id = %d
+                        OR (
+                            w.customer_id = %d
+                            AND NOT EXISTS (SELECT 1 FROM {$customers_t} c WHERE c.cust_id = w.customer_id)
+                        )",
+                    $cid,
+                    $cid
+                ));
+            }
+            unset($member);
+            usort($members, static function ($a, $b) {
+                if ($a['waybills'] !== $b['waybills']) {
+                    return $b['waybills'] <=> $a['waybills'];
+                }
+                return $a['company_id'] <=> $b['company_id'];
+            });
+            $keep_id = (int) $members[0]['company_id'];
+            for ($i = 1; $i < count($members); $i++) {
+                $merged = self::merge_companies($keep_id, (int) $members[$i]['company_id']);
+                if (!empty($merged['ok'])) {
+                    $out['merged']++;
+                    $out['deleted']++;
+                    $out['waybills_moved'] += (int) ($merged['waybills_moved'] ?? 0);
+                }
+            }
+        }
+
+        return $out;
     }
 
     /**

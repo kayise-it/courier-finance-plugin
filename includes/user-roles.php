@@ -334,7 +334,8 @@ class KIT_User_Roles {
 
     /**
      * Check if current user is admin or manager (ADMAN).
-     * Only ADMAN can use: Countries, Drivers, Routes & Destinations pages, and create delivery trucks.
+     * Only ADMAN can use: Countries, Drivers, Routes & Destinations pages.
+     * Creating trips/delivery trucks is administrator-only (see can_create_delivery_truck).
      * Data capturers are never ADMAN.
      */
     public static function is_adman() {
@@ -398,10 +399,11 @@ class KIT_User_Roles {
     }
 
     /**
-     * Check if current user can create a delivery truck (managers and admins only).
+     * Check if current user can create a delivery truck / trip.
+     * Administrators only.
      */
     public static function can_create_delivery_truck() {
-        return self::is_adman();
+        return self::is_admin();
     }
     
     /**

@@ -180,7 +180,7 @@ function kit_render_waybill_multiform($atts)
         </div>
 
         <!-- Step 2: Delivery/Destination -->
-        <div class="step step-2<?php echo $kit_create_flat ? '' : ' hidden'; ?>" id="step-2">
+        <div class="step step-2<?php echo $kit_create_flat ? '' : ' hidden'; ?>" id="step-2"> 
             <?php require __DIR__ . '/waybill/steps/step4.php'; ?>
         </div>
 

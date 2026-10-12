@@ -77,66 +77,40 @@ function kit_customer_login_shortcode()
 
     ob_start();
     ?>
-    <div class="kit-customer-portal-login kit-employee-login-wrap">
-        <div class="kit-employee-login-box">
-            <h2 class="kit-employee-login-title"><?php esc_html_e('Customer login', '08600-services-quotations'); ?></h2>
-            <p class="kit-employee-login-desc"><?php esc_html_e('Sign in to view your shipments and account details.', '08600-services-quotations'); ?></p>
+    <div class="kit-portal-auth">
+        <h1><?php esc_html_e('Customer login', '08600-services-quotations'); ?></h1>
+        <p class="kit-portal-lead"><?php esc_html_e('Sign in to see your shipments, quotes, and account details.', '08600-services-quotations'); ?></p>
 
-            <?php if ($error) : ?>
-                <div class="kit-employee-login-error"><?php echo esc_html($error); ?></div>
-            <?php endif; ?>
+        <?php if ($error) : ?>
+            <p class="kit-portal-note kit-portal-note-warn" role="alert"><?php echo esc_html($error); ?></p>
+        <?php endif; ?>
 
-            <form name="kit_customer_login" action="<?php echo esc_url(get_permalink()); ?>" method="post" class="kit-employee-login-form">
-                <?php wp_nonce_field('kit_customer_login', 'kit_customer_login_nonce'); ?>
-                <input type="hidden" name="redirect_to" value="<?php echo esc_url($redirect_to); ?>">
+        <form name="kit_customer_login" action="<?php echo esc_url(get_permalink()); ?>" method="post" class="kit-portal-form">
+            <?php wp_nonce_field('kit_customer_login', 'kit_customer_login_nonce'); ?>
+            <input type="hidden" name="redirect_to" value="<?php echo esc_url($redirect_to); ?>">
 
-                <p>
-                    <label for="kit_customer_user_login"><?php esc_html_e('Username or email', '08600-services-quotations'); ?></label>
-                    <?php echo KIT_Commons::Linput(array(
-                        'no_label' => true,
-                        'label' => '',
-                        'name' => 'log',
-                        'id' => 'kit_customer_user_login',
-                        'type' => 'text',
-                        'value' => '',
-                        'preset' => '',
-                        'class' => 'input',
-                        'special' => 'size="20" autocomplete="username" required',
-                    )); ?>
-                </p>
-
-                <p>
-                    <label for="kit_customer_user_pass"><?php esc_html_e('Password', '08600-services-quotations'); ?></label>
-                    <input type="password" name="pwd" id="kit_customer_user_pass" class="input" size="20" autocomplete="current-password" required>
-                </p>
-
-                <p class="kit-employee-remember">
-                    <label>
-                        <?php
-                        echo KIT_Commons::Lcheckbox(array(
-                            'no_label' => true,
-                            'label' => '',
-                            'name' => 'rememberme',
-                            'omit_id' => true,
-                            'value' => 'forever',
-                            'class' => 'input',
-                        ));
-                        ?>
-                        <?php esc_html_e('Remember Me', '08600-services-quotations'); ?>
-                    </label>
-                </p>
-
-                <p class="kit-employee-submit">
-                    <input type="submit" name="wp-submit" value="<?php esc_attr_e('Log In', '08600-services-quotations'); ?>" class="button button-primary">
-                </p>
-                <p>
-                    <a href="<?php echo esc_url(wp_lostpassword_url(kit_customer_login_url())); ?>"><?php esc_html_e('Forgot password?', '08600-services-quotations'); ?></a>
-                </p>
-                <p>
-                    <a href="<?php echo esc_url(function_exists('kit_customer_register_url') ? kit_customer_register_url() : home_url('/customer/register/')); ?>"><?php esc_html_e('Create an account', '08600-services-quotations'); ?></a>
-                </p>
-            </form>
-        </div>
+            <p>
+                <label for="kit_customer_user_login"><?php esc_html_e('Username or email', '08600-services-quotations'); ?></label>
+                <input type="text" name="log" id="kit_customer_user_login" autocomplete="username" required>
+            </p>
+            <p>
+                <label for="kit_customer_user_pass"><?php esc_html_e('Password', '08600-services-quotations'); ?></label>
+                <input type="password" name="pwd" id="kit_customer_user_pass" autocomplete="current-password" required>
+            </p>
+            <p class="kit-portal-check">
+                <label>
+                    <input type="checkbox" name="rememberme" value="forever">
+                    <?php esc_html_e('Remember me', '08600-services-quotations'); ?>
+                </label>
+            </p>
+            <p class="kit-portal-form-actions">
+                <button type="submit" name="wp-submit" class="kit-portal-btn kit-portal-btn-primary"><?php esc_html_e('Log in', '08600-services-quotations'); ?></button>
+            </p>
+            <p class="kit-portal-auth-links">
+                <a href="<?php echo esc_url(wp_lostpassword_url(kit_customer_login_url())); ?>"><?php esc_html_e('Forgot password?', '08600-services-quotations'); ?></a>
+                <a href="<?php echo esc_url(function_exists('kit_customer_register_url') ? kit_customer_register_url() : home_url('/customer/register/')); ?>"><?php esc_html_e('Create an account', '08600-services-quotations'); ?></a>
+            </p>
+        </form>
     </div>
     <?php
     return ob_get_clean();

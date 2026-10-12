@@ -2,13 +2,20 @@
     exit;
 }
 
+$can_see_prices    = class_exists('KIT_User_Roles') && KIT_User_Roles::can_see_prices();
 $sadcChargeValue   = class_exists('KIT_Waybills') ? floatval(KIT_Waybills::sad()) : 0.0;
 $sad500ChargeValue = class_exists('KIT_Waybills') ? floatval(KIT_Waybills::sadc_certificate()) : 0.0;
+$intlPriceValue    = class_exists('KIT_Waybills') ? floatval(KIT_Waybills::international_price_in_rands()) : 0.0;
 $vatRatePct        = class_exists('KIT_Waybills') ? floatval(KIT_Waybills::vatRate()) : 10.0;
 $vatRateLabel      = rtrim(rtrim(number_format($vatRatePct, 2, '.', ''), '0'), '.') ?: '0';
 $currencySymbol    = class_exists('KIT_Commons') ? KIT_Commons::currency() : 'R';
-$sadcChargeDisplay = $currencySymbol . number_format($sadcChargeValue, 2);
-$sad500ChargeDisplay = $currencySymbol . number_format($sad500ChargeValue, 2);
+$sadcChargeDisplay = $can_see_prices ? ($currencySymbol . number_format($sadcChargeValue, 2)) : '';
+$sad500ChargeDisplay = $can_see_prices ? ($currencySymbol . number_format($sad500ChargeValue, 2)) : '';
+$intlPriceDisplay  = $can_see_prices ? ($currencySymbol . number_format($intlPriceValue, 2)) : '';
+// Do not expose fee amounts in DOM data attrs when the user cannot see prices.
+$dom_sad500 = $can_see_prices ? (string) $sad500ChargeValue : '';
+$dom_sadc = $can_see_prices ? (string) $sadcChargeValue : '';
+$dom_intl = $can_see_prices ? (string) $intlPriceValue : '';
 $vatIncluded = class_exists('KIT_Waybills')
     ? (KIT_Waybills::normalize_flag_int($waybill['vat_include'] ?? 0) === 1)
     : false;
@@ -16,71 +23,85 @@ $vatIncluded = class_exists('KIT_Waybills')
 if (!isset($optionChoice) || $optionChoice == 1) :
     // Modern `.delivery-card` style using renderButton for all options
     ?>
-    <div class="delivery-card flex flex-col gap-2 bg-slate-100 border-dotted border-2 border-gray-300 rounded-lg p-4 mb-2"
+    <div class="kit-addition-charges flex flex-col gap-3 overflow-visible bg-slate-100 border-dotted border-2 border-gray-300 rounded-lg p-4 mb-2"
          data-kit-charge-config
-         data-sad500="<?= esc_attr((string) $sad500ChargeValue); ?>"
-         data-sadc="<?= esc_attr((string) $sadcChargeValue); ?>"
+         data-sad500="<?= esc_attr($dom_sad500); ?>"
+         data-sadc="<?= esc_attr($dom_sadc); ?>"
          data-vat-percent="<?= esc_attr((string) $vatRatePct); ?>"
-         data-international-price="<?= esc_attr((string) (class_exists('KIT_Waybills') ? floatval(KIT_Waybills::international_price_in_rands()) : 0)); ?>">
+         data-international-price="<?= esc_attr($dom_intl); ?>">
         <!-- Hidden inputs for form submission -->
         <input type="hidden" name="include_sadc" id="include_sadc_input" value="<?= (!empty($waybill['include_sadc']) && $waybill['include_sadc'] == 1) ? '1' : '0' ?>">
         <input type="hidden" name="include_sad500" id="include_sad500_input" value="<?= (!empty($waybill['include_sad500']) && $waybill['include_sad500'] == 1) ? '1' : '0' ?>">
         <input type="hidden" name="vat_include" id="vat_include_input" value="<?= $vatIncluded ? '1' : '0' ?>">
         
-        <div class="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
+        <?php
+        // Grow with wrapped/multi-line labels — do not use fixed h-* control height here.
+        $chargeBtnBase = 'addition-charge-btn kit-btn--grow h-auto whitespace-normal text-center leading-snug w-full md:flex-1';
+        ?>
+        <div class="flex flex-col md:flex-row gap-3 items-stretch">
             <?php
             // SADC Certificate
             $sadcHighlight = (!empty($waybill['include_sadc']) && $waybill['include_sadc'] == 1);
+            $sadcLabel = '<span class="block">SADC Certificate</span>'
+                . ($can_see_prices ? '<span class="block text-[11px] font-medium opacity-80">+' . esc_html($sadcChargeDisplay) . '</span>' : '');
             echo KIT_Commons::renderButton(
-                'SADC Certificate +' . $sadcChargeDisplay,
+                $sadcLabel,
                 $sadcHighlight ? 'warning' : 'secondary',
                 'sm',
                 [
-                    'classes'   => 'delivery-card-btn addition-charge-btn w-full md:w-auto ' . ($sadcHighlight ? 'bg-yellow-400 text-black hover:bg-yellow-500' : ''),
+                    'rawHtml'   => true,
+                    'classes'   => $chargeBtnBase . ($sadcHighlight ? ' bg-yellow-400 text-black hover:bg-yellow-500' : ''),
                     'gradient'  => $sadcHighlight,
                     'name'      => 'include_sadc',
                     'id'        => 'sadc_certificate',
                     'type'      => 'button',
                     'data-field' => 'include_sadc',
+                    'noLoading' => true,
                 ]
             );
 
             // SAD500
             $sad500Highlight = (!empty($waybill['include_sad500']) && $waybill['include_sad500'] == 1);
+            $sad500Label = '<span class="block">SAD500</span>'
+                . ($can_see_prices ? '<span class="block text-[11px] font-medium opacity-80">+' . esc_html($sad500ChargeDisplay) . '</span>' : '');
             echo KIT_Commons::renderButton(
-                'SAD500 +' . $sad500ChargeDisplay,
+                $sad500Label,
                 $sad500Highlight ? 'warning' : 'secondary',
                 'sm',
                 [
-                    'classes'   => 'delivery-card-btn addition-charge-btn w-full md:w-auto ' . ($sad500Highlight ? 'bg-yellow-400 text-black hover:bg-yellow-500' : ''),
+                    'rawHtml'   => true,
+                    'classes'   => $chargeBtnBase . ($sad500Highlight ? ' bg-yellow-400 text-black hover:bg-yellow-500' : ''),
                     'gradient'  => $sad500Highlight,
                     'name'      => 'include_sad500',
                     'id'        => 'include_sad500',
                     'type'      => 'button',
                     'data-field' => 'include_sad500',
+                    'noLoading' => true,
                 ]
             );
 
             // VAT Included
             $vatHighlight = $vatIncluded;
+            $vatLabel = '<span class="block">VAT Included</span>'
+                . '<span class="block text-[11px] font-medium opacity-80">(' . esc_html($vatRateLabel) . '%)</span>';
             echo KIT_Commons::renderButton(
-                'VAT Included (' . $vatRateLabel . '%)',
+                $vatLabel,
                 $vatHighlight ? 'warning' : 'secondary',
                 'sm',
                 [
-                    'classes'   => 'delivery-card-btn addition-charge-btn w-full md:w-auto ' . ($vatHighlight ? 'bg-yellow-400 text-black hover:bg-yellow-500' : ''),
+                    'rawHtml'   => true,
+                    'classes'   => $chargeBtnBase . ($vatHighlight ? ' bg-yellow-400 text-black hover:bg-yellow-500' : ''),
                     'gradient'  => $vatHighlight,
                     'name'      => 'vat_include',
                     'id'        => 'vat_include',
                     'type'      => 'button',
                     'data-field' => 'vat_include',
+                    'noLoading' => true,
                 ]
             );
             ?>
         </div>
-        <div>
-            <p class="text-xs text-gray-500 mt-2">Note: VAT and SADC are mutually exclusive. SAD500 is independent.</p>
-        </div>
+        <p class="text-xs text-gray-500">Note: VAT and SADC are mutually exclusive. SAD500 is independent.</p>
     </div>
     <script>
     (function() {
@@ -260,10 +281,10 @@ if (!isset($optionChoice) || $optionChoice == 1) :
         $vatLabelDisabled = $sadc_checked ? ' opacity-40 bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed pointer-events-none hover:shadow-none hover:border-gray-200' : '';
 ?>
     <div class="gap-4" data-kit-charge-config
-         data-sad500="<?= esc_attr((string) $sad500ChargeValue); ?>"
-         data-sadc="<?= esc_attr((string) $sadcChargeValue); ?>"
+         data-sad500="<?= esc_attr($dom_sad500); ?>"
+         data-sadc="<?= esc_attr($dom_sadc); ?>"
          data-vat-percent="<?= esc_attr((string) $vatRatePct); ?>"
-         data-international-price="<?= esc_attr((string) (class_exists('KIT_Waybills') ? floatval(KIT_Waybills::international_price_in_rands()) : 0)); ?>">
+         data-international-price="<?= esc_attr($dom_intl); ?>">
         <p class="text-xs text-gray-500 mb-2">VAT and SADC are mutually exclusive. Deselect one to enable the other. SAD500 is independent.</p>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div class="flex">
@@ -277,7 +298,9 @@ if (!isset($optionChoice) || $optionChoice == 1) :
                     <?= $vat_checked ? 'disabled' : ''; ?>>
                 <label for="sadc_certificate" class="<?= esc_attr($chargeToggleLabelClass . $sadcLabelDisabled); ?>">
                     <span class="block">SADC Certificate</span>
+                    <?php if ($can_see_prices): ?>
                     <span class="block text-[11px] font-medium opacity-70 mt-0.5">+<?= esc_html($sadcChargeDisplay); ?></span>
+                    <?php endif; ?>
                 </label>
             </div>
             <div class="flex">
@@ -290,7 +313,9 @@ if (!isset($optionChoice) || $optionChoice == 1) :
                     <?= $sad500_checked ? 'checked' : ''; ?>>
                 <label for="include_sad500" class="<?= esc_attr($chargeToggleLabelClass); ?>">
                     <span class="block">SAD500</span>
+                    <?php if ($can_see_prices): ?>
                     <span class="block text-[11px] font-medium opacity-70 mt-0.5">+<?= esc_html($sad500ChargeDisplay); ?></span>
+                    <?php endif; ?>
                 </label>
             </div>
             <div class="flex">
@@ -386,34 +411,49 @@ if (!isset($optionChoice) || $optionChoice == 1) :
     <div class="flex flex-col gap-2">
         <div>
             <span class="font-semibold">SADC Certificate:</span>
-            <span><?= !empty($waybill['include_sadc']) ? '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-green-500 text-green-100">
-                                    Yes
-                                </span>: +' . $sadcChargeDisplay : '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-500 text-red-100">
-                                    No
-                                </span>' ?></span>
+            <span><?php
+                if (!empty($waybill['include_sadc'])) {
+                    echo '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-green-500 text-green-100">Yes</span>';
+                    if ($can_see_prices) {
+                        echo ': +' . esc_html($sadcChargeDisplay);
+                    }
+                } else {
+                    echo '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-500 text-red-100">No</span>';
+                }
+            ?></span>
         </div>
         <div>
             <span class="font-semibold">SAD500:</span>
-            <span><?= !empty($waybill['include_sad500']) ? '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-green-500 text-green-100">
-                                    Yes
-                                </span> +' . $sad500ChargeDisplay : '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-500 text-red-100">
-                                    No
-                                </span>' ?></span>
+            <span><?php
+                if (!empty($waybill['include_sad500'])) {
+                    echo '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-green-500 text-green-100">Yes</span>';
+                    if ($can_see_prices) {
+                        echo ' +' . esc_html($sad500ChargeDisplay);
+                    }
+                } else {
+                    echo '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-500 text-red-100">No</span>';
+                }
+            ?></span>
         </div>
         <div>
             <span class="font-semibold">VAT Included:</span>
-            <span><?= $vatIncluded ? '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-green-500 text-blue-100">
-                                    Yes
-                                </span> +' . $currencySymbol . ($waybill['miscellaneous']['others']['vat_total'] ?? 0) : '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-500 text-red-100">
-                                    No
-                                </span>' ?></span>
+            <span><?php
+                if ($vatIncluded) {
+                    echo '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-green-500 text-blue-100">Yes</span>';
+                    if ($can_see_prices) {
+                        echo ' +' . esc_html($currencySymbol . ($waybill['miscellaneous']['others']['vat_total'] ?? 0));
+                    }
+                } else {
+                    echo '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-500 text-red-100">No</span>';
+                }
+            ?></span>
         </div>
         <?php if (!$vatIncluded): ?>
             <div>
                 <span class="font-semibold">Agent Clearing & Documentation:</span>
                 <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-blue-500 text-blue-100">
                     Yes
-                </span>: +<?= $currencySymbol . number_format(KIT_Waybills::international_price_in_rands(), 2) ?>
+                </span><?php if ($can_see_prices): ?>: +<?= esc_html($intlPriceDisplay) ?><?php endif; ?>
             </div>
         <?php endif; ?>
     </div>
@@ -422,14 +462,14 @@ if (!isset($optionChoice) || $optionChoice == 1) :
 
     // SADC Certificate button
     $sadcHighlight = (!empty($waybill['include_sadc']) && $waybill['include_sadc'] == 1);
-    echo KIT_Commons::renderButton('SADC Certificate +' . $sadcChargeDisplay, $sadcHighlight ? 'warning' : 'secondary', 'lg', [
+    echo KIT_Commons::renderButton('SADC Certificate' . ($can_see_prices ? ' +' . $sadcChargeDisplay : ''), $sadcHighlight ? 'warning' : 'secondary', 'lg', [
         'classes' => $sadcHighlight ? 'bg-yellow-400 text-black hover:bg-yellow-500' : '',
         'gradient' => $sadcHighlight
     ]);
 
     // SAD500 button
     $sad500Highlight = (!empty($waybill['include_sad500']) && $waybill['include_sad500'] == 1);
-    echo KIT_Commons::renderButton('SAD500 +' . $sad500ChargeDisplay, $sad500Highlight ? 'warning' : 'secondary', 'lg', [
+    echo KIT_Commons::renderButton('SAD500' . ($can_see_prices ? ' +' . $sad500ChargeDisplay : ''), $sad500Highlight ? 'warning' : 'secondary', 'lg', [
         'classes' => $sad500Highlight ? 'bg-yellow-400 text-black hover:bg-yellow-500' : '',
         'gradient' => $sad500Highlight
     ]);
@@ -443,10 +483,15 @@ if (!isset($optionChoice) || $optionChoice == 1) :
 
     // Agent Clearing button
     if (!$vatIncluded) {
-        echo KIT_Commons::renderButton('Agent Clearing & Documentation +' . $currencySymbol . number_format(KIT_Waybills::international_price_in_rands(), 2), 'warning', 'lg', [
-            'classes' => 'bg-yellow-400 text-black hover:bg-yellow-500',
-            'gradient' => true
-        ]);
+        echo KIT_Commons::renderButton(
+            'Agent Clearing & Documentation' . ($can_see_prices ? ' +' . $intlPriceDisplay : ''),
+            'warning',
+            'lg',
+            [
+                'classes' => 'bg-yellow-400 text-black hover:bg-yellow-500',
+                'gradient' => true
+            ]
+        );
     }
     echo '</div>';
 ?>

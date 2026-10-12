@@ -20,6 +20,7 @@ function kit_employee_dashboard_sidebar_menu() {
     $dashboard_url = apply_filters('kit_employee_dashboard_url', home_url('/employee-dashboard/'));
     $portal_url = function_exists('kit_employee_portal_url') ? 'kit_employee_portal_url' : null;
     $is_adman = class_exists('KIT_User_Roles') && KIT_User_Roles::is_adman();
+    $is_admin = class_exists('KIT_User_Roles') && KIT_User_Roles::is_admin();
     $menu = array(
         array('label' => __('Dashboard', '08600-services-quotations'), 'url' => $dashboard_url, 'icon' => 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6'),
         array('label' => __('Waybills', '08600-services-quotations'), 'children' => array(
@@ -27,12 +28,20 @@ function kit_employee_dashboard_sidebar_menu() {
             array('label' => __('Manage Waybills', '08600-services-quotations'), 'url' => $portal_url ? kit_employee_portal_url('08600-waybill-manage') : admin_url('admin.php?page=08600-waybill-manage')),
         )),
         array('label' => __('Warehouse', '08600-services-quotations'), 'url' => $portal_url ? kit_employee_portal_url('warehouse-waybills') : admin_url('admin.php?page=warehouse-waybills'), 'icon' => 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4'),
-        array('label' => __('Trips', '08600-services-quotations'), 'icon' => 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4', 'children' => array(
-            array('label' => __('Create Trip', '08600-services-quotations'), 'url' => $portal_url ? kit_employee_portal_url('08600-trip-create') : admin_url('admin.php?page=08600-trip-create')),
-            array('label' => __('Trips', '08600-services-quotations'), 'url' => $portal_url ? kit_employee_portal_url('kit-deliveries') : admin_url('admin.php?page=kit-deliveries')),
-        )),
-        array('label' => __('Customers', '08600-services-quotations'), 'url' => $portal_url ? kit_employee_portal_url('08600-customers') : admin_url('admin.php?page=08600-customers'), 'icon' => 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z'),
     );
+
+    // Create Trip is administrator-only; other staff still see Trips list.
+    $trips_url = $portal_url ? kit_employee_portal_url('kit-deliveries') : admin_url('admin.php?page=kit-deliveries');
+    if ($is_admin) {
+        $menu[] = array('label' => __('Trips', '08600-services-quotations'), 'icon' => 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4', 'children' => array(
+            array('label' => __('Create Trip', '08600-services-quotations'), 'url' => $portal_url ? kit_employee_portal_url('08600-trip-create') : admin_url('admin.php?page=08600-trip-create')),
+            array('label' => __('Trips', '08600-services-quotations'), 'url' => $trips_url),
+        ));
+    } else {
+        $menu[] = array('label' => __('Trips', '08600-services-quotations'), 'url' => $trips_url, 'icon' => 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4');
+    }
+
+    $menu[] = array('label' => __('Customers', '08600-services-quotations'), 'url' => $portal_url ? kit_employee_portal_url('08600-customers') : admin_url('admin.php?page=08600-customers'), 'icon' => 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z');
     // Only admin and manager (ADMAN) see Countries, Drivers, Routes & Destinations
     if ($is_adman) {
         $menu[] = array('label' => __('Routes & Destinations', '08600-services-quotations'), 'url' => $portal_url ? kit_employee_portal_url('route-management') : admin_url('admin.php?page=route-management'), 'icon' => 'M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-1.447-.894L15 4m0 13V4m-6 3l6-3');
@@ -103,7 +112,9 @@ function kit_employee_dashboard_shortcode() {
     ob_start();
     ?>
     <style type="text/css">
-    /* No top navbar space on portal; theme can override with body { --kit-employee-header-height: 56px; } if needed */
+    /* No public theme navbar on portal — staff “backend” uses sidebar only. */
+    html { margin-top: 0 !important; }
+    #wpadminbar { display: none !important; }
     :root { --kit-employee-header-height: 0; }
     /* Force sidebar layout — theme must not override. Dashboard uses full viewport. */
     .kit-employee-dashboard-with-sidebar {
@@ -236,6 +247,10 @@ function kit_employee_dashboard_shortcode() {
                         'icon' => 'plus',
                     ], 'Create Waybill'),
                 ]);
+                if (class_exists('KIT_Trip_Requests')) {
+                    KIT_Trip_Requests::render_script();
+                    echo KIT_Trip_Requests::render_pending_banner();
+                }
                 ?>
                 <div class="kit-employee-dashboard-header">
                     <span class="kit-employee-greeting"><?php echo esc_html(sprintf(__('Hello, %s', '08600-services-quotations'), wp_get_current_user()->display_name)); ?></span>

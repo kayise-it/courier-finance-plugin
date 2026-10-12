@@ -1672,19 +1672,21 @@ class KIT_Commons
         if ($map !== null) {
             return $map;
         }
-        $formDefault = 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-3 py-2 text-gray-800 bg-white transition';
+        $formControlLg = 'kit-control w-full rounded border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-0 text-base h-10 text-gray-800 bg-white transition';
+        $formDefault = $formControlLg;
         $choiceCheckbox = 'h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 disabled:opacity-50 disabled:cursor-not-allowed';
         $choiceRadio = 'h-4 w-4 shrink-0 rounded-full border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 disabled:opacity-50 disabled:cursor-not-allowed';
-        $formColor = 'h-10 w-20 min-w-[5rem] p-0 border border-gray-300 rounded cursor-pointer bg-white';
+        $choiceColor = 'h-10 w-20 min-w-[5rem] p-0 border border-gray-300 rounded cursor-pointer bg-white';
         $map = [
             'default_input' => $formDefault,
             'form_default' => $formDefault,
-            'form_lg' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-3 text-gray-800 bg-white transition',
-            'form_md' => 'w-full rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-2 text-gray-800 bg-white transition',
-            'readonly_field' => 'w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500',
+            // Explicit taller override when a screen needs it.
+            'form_lg' => 'kit-control kit-control--lg w-full rounded border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-4 py-0 text-base h-12 text-gray-800 bg-white transition',
+            'form_md' => 'kit-control kit-control--md w-full rounded border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-3 py-0 text-sm h-9 text-gray-800 bg-white transition',
+            'readonly_field' => 'kit-control w-full px-4 py-0 text-base h-10 border border-gray-300 rounded bg-gray-50 text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500',
             'form_checkbox' => $choiceCheckbox,
             'form_radio' => $choiceRadio,
-            'form_color' => $formColor,
+            'form_color' => $choiceColor,
         ];
         return $map;
     }
@@ -2045,9 +2047,25 @@ class KIT_Commons
                     return '<div class="asdasd"></div>';
     }
 
+    /**
+     * Shared control height. Default fields and `lg` buttons use h-10 (40px).
+     * Pass sm/md or a form_* preset / extra classes when a control must differ.
+     */
+    public static function controlHeightClass($size = 'lg')
+    {
+        $map = [
+            'sm' => 'h-8',
+            'md' => 'h-9',
+            'lg' => 'h-10',
+        ];
+        return $map[$size] ?? $map['lg'];
+    }
+
     public static function selectClass()
     {
-        return 'text-xs w-full max-w-none px-3 py-2 border border-gray-300  shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 border border-gray-300 rounded px-3 py-2 bg-white';
+        // Same footprint as buttonSizePadding('lg') so selects match lg buttons.
+        return 'kit-control w-full max-w-none px-4 py-0 text-base ' . self::controlHeightClass('lg')
+            . ' border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white';
     }
     public static function inputClass()
     {
@@ -2061,16 +2079,17 @@ class KIT_Commons
     // Base button classes
     public static function buttonClass()
     {
-        return 'inline-flex items-center gap-2 border rounded';
+        return 'inline-flex items-center justify-center gap-2 border rounded';
     }
 
-    // Size-based padding and min-width for consistent button dimensions
+    // Size-based padding and height — heights match controlHeightClass() / selectClass().
+    // Vertical padding is 0: height comes only from h-* so fields and buttons stay equal.
     public static function buttonSizePadding($size = 'md')
     {
         $sizeClasses = [
-            'sm' => 'px-2 py-1 text-xs',
-            'md' => 'px-3 py-1.5 text-sm min-w-[7.5rem]',
-            'lg' => 'px-4 py-2 text-base'
+            'sm' => 'px-2 py-0 text-xs ' . self::controlHeightClass('sm'),
+            'md' => 'px-3 py-0 text-sm min-w-[7.5rem] ' . self::controlHeightClass('md'),
+            'lg' => 'px-4 py-0 text-base ' . self::controlHeightClass('lg'),
         ];
         return $sizeClasses[$size] ?? $sizeClasses['md'];
     }
@@ -2411,6 +2430,14 @@ class KIT_Commons
             $allClasses = trim($typeClasses . ' kit-btn p-0 inline-flex items-center justify-center shrink-0 ' . $options['classes']);
         } else {
             $allClasses = trim($typeClasses . ' kit-btn px-6 ' . $options['classes']);
+        }
+        // Multi-line / wrapping labels: drop fixed h-* so height can grow (see .kit-btn--grow in components.js).
+        if (preg_match('/\b(kit-btn--grow|h-auto)\b/', $allClasses)) {
+            $allClasses = preg_replace('/\bh-(?:8|9|10|12)\b/', '', $allClasses);
+            $allClasses = preg_replace('/\s+/', ' ', trim($allClasses));
+            if (strpos($allClasses, 'kit-btn--grow') === false && strpos($allClasses, 'h-auto') !== false) {
+                $allClasses .= ' kit-btn--grow';
+            }
         }
         if ($options['loading']) {
             $allClasses .= ' is-loading';
@@ -3492,7 +3519,7 @@ class KIT_Commons
     {
         // Always enqueue components.js first for utilities
         if (!wp_script_is('components', 'enqueued') && !wp_script_is('components', 'done')) {
-            wp_enqueue_script('components', COURIER_FINANCE_PLUGIN_URL . 'js/components.js', ['jquery'], '1.0.2', true);
+            wp_enqueue_script('components', COURIER_FINANCE_PLUGIN_URL . 'js/components.js', ['jquery'], '1.1.4', true);
         }
 
         // Only enqueue if not already enqueued
@@ -3500,7 +3527,7 @@ class KIT_Commons
             if (!wp_script_is($script, 'enqueued') && !wp_script_is($script, 'done')) {
                 switch ($script) {
                     case 'kitscript':
-                        wp_enqueue_script('kitscript', COURIER_FINANCE_PLUGIN_URL . 'js/kitscript.js', ['jquery', 'components'], '1.0.10', true);
+                        wp_enqueue_script('kitscript', COURIER_FINANCE_PLUGIN_URL . 'js/kitscript.js', ['jquery', 'components'], '1.0.13', true);
                         break;
                     case 'waybill-pagination':
                         wp_enqueue_script('waybill-pagination', COURIER_FINANCE_PLUGIN_URL . 'js/waybill-pagination.js', ['jquery', 'components'], '1.0', true);

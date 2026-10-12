@@ -110,7 +110,7 @@ function customStyling()
             );
         }
         if ($is_dashboard) {
-            wp_enqueue_style('kit-dashboard-css', plugin_dir_url(__FILE__) . 'assets/css/dashboard.css', array('kit-tailwindcss'), '1.13');
+            wp_enqueue_style('kit-dashboard-css', plugin_dir_url(__FILE__) . 'assets/css/dashboard.css', array('kit-tailwindcss'), '1.15');
             wp_enqueue_style('leaflet-css', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', array(), '1.9.4');
             wp_enqueue_script('leaflet-js', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', array(), '1.9.4', true);
             wp_enqueue_script('kit-dashboard-map', plugin_dir_url(__FILE__) . 'assets/js/dashboard-map.js', array('jquery', 'leaflet-js'), '1.1', true);
@@ -156,6 +156,7 @@ require_once plugin_dir_path(__FILE__) . 'includes/class-unified-table.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-kit-bulk-action-log.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-google-sheets.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-google-sheets-sync.php';
+require_once plugin_dir_path(__FILE__) . 'includes/sync/class-kit-waybills-sheet-push.php';
 
 // New sync pipeline (Step 4 of the sheet → DB refactor). Independent of the
 // legacy class-google-sheets-sync.php / run_google_sheet_seed pipeline — runs
@@ -231,12 +232,14 @@ require_once plugin_dir_path(__FILE__) . 'includes/customers/company-customers-f
 require_once plugin_dir_path(__FILE__) . 'includes/deliveries/deliveries-functions.php';
 require_once plugin_dir_path(__FILE__) . 'includes/warehouse/warehouse-functions.php';
 require_once plugin_dir_path(__FILE__) . 'includes/waybill/waybill-functions.php';
+require_once plugin_dir_path(__FILE__) . 'includes/waybill/waybill-excel-export.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin-pages.php';
 require_once plugin_dir_path(__FILE__) . 'includes/dashboard/dashboard-functions.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin-menu.php';
 require_once plugin_dir_path(__FILE__) . 'includes/waybillmultiform.php';
 require_once plugin_dir_path(__FILE__) . 'includes/frontend/employee-portal.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-kit-booking-requests.php';
+require_once plugin_dir_path(__FILE__) . 'includes/class-kit-trip-requests.php';
 require_once plugin_dir_path(__FILE__) . 'includes/frontend/customer-portal-init.php';
 require_once plugin_dir_path(__FILE__) . 'includes/api/class-kit-rest-api.php';
 
@@ -245,6 +248,16 @@ require_once plugin_dir_path(__FILE__) . 'includes/api/class-kit-rest-api.php';
  */
 function kit_maintenance_mode_enabled() {
     return (bool) get_option('kit_maintenance_mode', 0);
+}
+
+/**
+ * Whether admin notification emails are enabled (Settings → Setup Seed).
+ * Off by default for offline / local testing.
+ */
+function kit_email_admin_notifications_enabled() {
+    return class_exists('KIT_Trip_Requests')
+        ? KIT_Trip_Requests::email_admin_enabled()
+        : (bool) get_option('kit_email_admin_notifications', 0);
 }
 
 /**
@@ -271,8 +284,56 @@ function kit_is_courier_plugin_admin_screen() {
         '08600-booking-requests',
         '08600-customer-portal-accounts',
     );
+    $hidden_plugin_pages = array(
+        'view-deliveries',
+        '08600-Waybill-view',
+        'route-create',
+        '08600-google-sheets-test',
+    );
+    $is_hidden_plugin_page = in_array($page, $hidden_plugin_pages, true);
     $is_dashboard = in_array($page, $dashboard_like_pages, true);
-    return ($screen->id && strpos($screen->id, '08600') !== false) || $is_routes_page || $is_customer_page || $is_dashboard;
+    return ($screen->id && strpos($screen->id, '08600') !== false) || $is_routes_page || $is_customer_page || $is_dashboard || $is_hidden_plugin_page;
+}
+
+/**
+ * 08600 admin is the product. Drop the WordPress toolbar, the other admin menus, and the "WordPress" window title.
+ */
+function kit_courier_admin_strip_wordpress_chrome() {
+    if (!kit_is_courier_plugin_admin_screen()) {
+        return;
+    }
+    remove_action('in_admin_header', 'wp_admin_bar_render', 0);
+    add_filter('admin_body_class', 'kit_courier_admin_standalone_body_class');
+    add_action('admin_head', 'kit_courier_admin_standalone_css', 1);
+    add_filter('admin_title', 'kit_courier_admin_standalone_title', 20, 2);
+}
+add_action('current_screen', 'kit_courier_admin_strip_wordpress_chrome');
+
+/**
+ * @param string $classes
+ * @return string
+ */
+function kit_courier_admin_standalone_body_class($classes) {
+    return $classes . ' kit-standalone-admin';
+}
+
+function kit_courier_admin_standalone_css() {
+    echo '<style id="kit-standalone-admin">'
+        . 'html.wp-toolbar{padding-top:0!important}'
+        . '#wpadminbar{display:none!important}'
+        . 'body.kit-standalone-admin #adminmenu>li:not(#toplevel_page_08600-dashboard){display:none!important}'
+        . 'body.kit-standalone-admin #wpfooter,.update-nag{display:none!important}'
+        . '</style>';
+}
+
+/**
+ * @param string $admin_title
+ * @param string $title
+ * @return string
+ */
+function kit_courier_admin_standalone_title($admin_title, $title) {
+    unset($title);
+    return (string) preg_replace('/\s*(?:&#8212;|&mdash;|—)\s*WordPress\s*$/u', '', (string) $admin_title);
 }
 
 /**
@@ -344,6 +405,9 @@ add_action('init', function() {
     }
     if (class_exists('KIT_Deliveries')) {
         KIT_Deliveries::init();
+    }
+    if (class_exists('KIT_Trip_Requests')) {
+        KIT_Trip_Requests::init();
     }
     if (class_exists('KIT_Dashboard')) {
         KIT_Dashboard::init();
@@ -851,8 +915,8 @@ function my_plugin_enqueue_scripts()
         return;
     }
 
-    wp_enqueue_script('components', plugin_dir_url(__FILE__) . 'js/components.js', ['jquery'], '1.1.2', true);
-    wp_enqueue_script('kitscript', plugin_dir_url(__FILE__) . 'js/kitscript.js', ['jquery', 'components'], '1.0.8', true);
+    wp_enqueue_script('components', plugin_dir_url(__FILE__) . 'js/components.js', ['jquery'], '1.1.4', true);
+    wp_enqueue_script('kitscript', plugin_dir_url(__FILE__) . 'js/kitscript.js', ['jquery', 'components'], '1.0.13', true);
     wp_enqueue_script('waybill-pagination', plugin_dir_url(__FILE__) . '/js/waybill-pagination.js', ['jquery', 'components'], null, true);
 
     // Preload cities map for instant city dropdown updates without AJAX

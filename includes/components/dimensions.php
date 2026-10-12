@@ -102,6 +102,8 @@ $dimensions_js_prefill = [
 $dimensions_js_prefill_json = function_exists('wp_json_encode')
     ? wp_json_encode($dimensions_js_prefill)
     : json_encode($dimensions_js_prefill);
+
+$can_see_prices = class_exists('KIT_User_Roles') && KIT_User_Roles::can_see_prices();
 ?>
 <input type="hidden" name="origin_country_id" value="<?= esc_attr($origin_country_id_value) ?>" id="countrydestination_id" />
 <div class="">
@@ -128,20 +130,20 @@ $dimensions_js_prefill_json = function_exists('wp_json_encode')
         <?php endforeach; ?>
 
     </div>
-    <?php if (KIT_User_Roles::can_see_prices()): ?>
-        <div class="flex flex-row gap-4 justify-start items-start">
-            <div>
-                <?= KIT_Commons::Lnumber([
-                    'label' => "Total Volume (m³)",
-                    'name'  => 'total_volume',
-                    'id'  => 'total_volume',
-                    'value' => esc_attr($prefill_total_volume !== '' ? $prefill_total_volume : ($waybill['total_volume'] ?? null)),
-                    'preset' => 'readonly_field',
-                    'class' => 'bg-green-50',
-                    'special' => 'readonly',
-                ]); ?>
-                <!-- Auto-calculated Volume -->
-            </div>
+    <div class="flex flex-row gap-4 justify-start items-start">
+        <div>
+            <?= KIT_Commons::Lnumber([
+                'label' => "Total Volume (m³)",
+                'name'  => 'total_volume',
+                'id'  => 'total_volume',
+                'value' => esc_attr($prefill_total_volume !== '' ? $prefill_total_volume : ($waybill['total_volume'] ?? null)),
+                'preset' => 'readonly_field',
+                'class' => 'bg-green-50',
+                'special' => 'readonly',
+            ]); ?>
+            <!-- Auto-calculated Volume -->
+        </div>
+        <?php if ($can_see_prices): ?>
             <div class="mt-6 h-10 flex items-center justify-center px-1 text-gray-600 font-semibold select-none" aria-hidden="true">×</div>
             <div>
             <?= KIT_Commons::Lnumber([
@@ -165,7 +167,11 @@ $dimensions_js_prefill_json = function_exists('wp_json_encode')
                     'special' => 'readonly',
                 ]); ?>
             </div>
-        </div>
+        <?php else: ?>
+            <input type="hidden" name="volume_rate_per_m3" id="volume_rate_per_m3" value="<?php echo esc_attr($prefill_volume_rate_display); ?>">
+            <input type="hidden" name="volume_charge" id="volume_charge" value="<?php echo esc_attr($prefill_volume_charge); ?>">
+        <?php endif; ?>
+    </div>
         <div id="volume-calculation-messages" class="min-h-[0px]"></div>
             <?php echo KIT_Commons::displayHere([
                 'id' => 'volume-display-here',
@@ -174,6 +180,7 @@ $dimensions_js_prefill_json = function_exists('wp_json_encode')
                 'hidden' => true,
             ]); ?>
 
+    <?php if ($can_see_prices): ?>
         <!-- Dimension Manipulator (Admin only) -->
         <div class="mt-4">
             <label class="inline-flex items-center">

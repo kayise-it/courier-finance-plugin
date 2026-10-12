@@ -151,6 +151,27 @@ if (
             ? 'Auto sync is now ON. New changes will upload to Google Sheets.'
             : 'Auto sync is now OFF. New changes will stay local until you turn it back on.',
     ];
+    if ($enable_auto_sync && class_exists('KIT_Waybills_Sheet_Push')) {
+        if (function_exists('kit_seed_extend_runtime_limits')) {
+            kit_seed_extend_runtime_limits();
+        } else {
+            @set_time_limit(300);
+        }
+        $pushed = KIT_Waybills_Sheet_Push::push_all_from_db();
+        if (!empty($pushed['success'])) {
+            $google_auto_sync_result['message'] = $pushed['message']
+                . ' Future waybill edits will keep this spreadsheet up to date.';
+        } else {
+            $google_auto_sync_result['message'] .= ' Initial Waybills-tab upload did not finish: '
+                . ($pushed['message'] ?? 'unknown error');
+        }
+        if (!wp_next_scheduled(KIT_Waybills_Sheet_Push::CRON_HOOK)) {
+            wp_schedule_single_event(time() + 15, KIT_Waybills_Sheet_Push::CRON_HOOK);
+        }
+        if (function_exists('spawn_cron')) {
+            spawn_cron();
+        }
+    }
 }
 
 // Toggle fake filler for fast UI testing.
@@ -184,6 +205,24 @@ if (
         'message' => $enable_maint
             ? 'Maintenance mode is ON. Plugin screens are blurred until you turn it off.'
             : 'Maintenance mode is OFF. Plugin screens are available again.',
+    ];
+}
+
+// Toggle email admin notifications (trip requests, etc.). Off by default for offline testing.
+if (
+    isset($_POST['action'])
+    && $_POST['action'] === 'toggle_email_admin_notifications'
+    && isset($_POST['toggle_email_admin_notifications_nonce'])
+    && wp_verify_nonce($_POST['toggle_email_admin_notifications_nonce'], 'toggle_email_admin_notifications')
+) {
+    $enable_email_admin = isset($_POST['enable_email_admin_notifications']) && (int) $_POST['enable_email_admin_notifications'] === 1;
+    update_option('kit_email_admin_notifications', $enable_email_admin ? 1 : 0, false);
+    $email_admin_notifications_result = [
+        'success' => true,
+        'enabled' => $enable_email_admin,
+        'message' => $enable_email_admin
+            ? 'Email admin notifications are ON. Trip creation requests will email administrators.'
+            : 'Email admin notifications are OFF. Trip requests still notify in-app; no emails are sent (good for offline testing).',
     ];
 }
 
@@ -1318,7 +1357,7 @@ try {
                 $company_by_party_id = null;
             }
             if ($company_by_party_id) {
-                $seed_company_id = $customer_id;
+                $seed_company_id = (int) ($company_by_party_id['company_id'] ?? $customer_id);
                 $customer_id = 0;
             } elseif (
                 $exists_by_cust_id === 0
@@ -3265,6 +3304,20 @@ function kit_seed_merge_duplicate_customers(): array
 }
 
 /**
+ * Merge duplicate kit_company_customers rows that share the same normalized name.
+ * Keep the row with the most waybills (then the lowest company_id). Waybills are moved, not deleted.
+ *
+ * @return array{merged:int,deleted:int,waybills_moved:int}
+ */
+function kit_seed_merge_duplicate_companies(): array
+{
+    if (class_exists('KIT_Company_Customers') && method_exists('KIT_Company_Customers', 'merge_duplicate_companies')) {
+        return KIT_Company_Customers::merge_duplicate_companies();
+    }
+    return ['merged' => 0, 'deleted' => 0, 'waybills_moved' => 0];
+}
+
+/**
  * Build cust_id registry: one entry per unique Waybills CUSTOMER label (~300 rows).
  *
  * @param array<int, array<int, mixed>> $rows
@@ -3817,6 +3870,30 @@ function kit_seed_ensure_customer_exists($wpdb, string $customers_t, int $cust_i
 
     if ($is_blank) {
         return 0;
+    }
+
+    $matched = kit_seed_find_customer_cust_id_by_label(
+        $wpdb,
+        $customers_t,
+        (string) $insert_payload['name'],
+        (string) $insert_payload['surname'],
+        '',
+        $label
+    );
+    if ($matched > 0) {
+        return $matched;
+    }
+    if (class_exists('KIT_Customers')) {
+        $similar = KIT_Customers::find_similar_person_customers(
+            (string) $insert_payload['name'],
+            (string) $insert_payload['surname'],
+            null,
+            8
+        );
+        if (!empty($similar)) {
+            $ids = array_map(static fn($m) => (int) $m->cust_id, $similar);
+            return min($ids);
+        }
     }
 
     $wpdb->insert($customers_t, $insert_payload, ['%d', '%s', '%s', '%d']);
@@ -4461,6 +4538,7 @@ try {
         $company_id_relocation = KIT_Company_Customers::relocate_unclaimed_sheet_ids(
             KIT_Company_Seeder::sheet_claimed_labels($company_rows, $customers_rows)
         );
+        kit_seed_merge_duplicate_companies();
     }
 
     kit_seed_update_progress('customers', 0, 0);
@@ -4527,6 +4605,64 @@ try {
             $result['stats']['customers_duplicates_deleted_final'] = (int) ($final_merge['deleted'] ?? 0);
         }
         kit_debug_log_033ead('B', 'handle_setup_seed_from_google_sheet', 'final duplicate merge after customer sheet import', $final_merge);
+        $company_merge = kit_seed_merge_duplicate_companies();
+        if (isset($result['stats']) && is_array($result['stats'])) {
+            $result['stats']['companies_merged_final'] = (int) ($company_merge['merged'] ?? 0);
+            $result['stats']['companies_duplicates_deleted_final'] = (int) ($company_merge['deleted'] ?? 0);
+        }
+        // #region agent log
+        $dbg_co_groups = [];
+        foreach ((array) $wpdb->get_results("SELECT company_id, company_name FROM {$wpdb->prefix}kit_company_customers", ARRAY_A) as $dbg_co) {
+            $dbg_k = strtolower(trim((string) ($dbg_co['company_name'] ?? '')));
+            if ($dbg_k === '') {
+                continue;
+            }
+            $dbg_co_groups[$dbg_k][] = (int) $dbg_co['company_id'];
+        }
+        $dbg_co_dups = 0;
+        foreach ($dbg_co_groups as $dbg_ids) {
+            if (count($dbg_ids) > 1) {
+                $dbg_co_dups++;
+            }
+        }
+        @file_put_contents(
+            '/Applications/MAMP/htdocs/Wordpress/08600/wp-content/plugins/courier-finance-plugin/.cursor/debug-3151cc.log',
+            wp_json_encode([
+                'sessionId' => '3151cc',
+                'runId' => 'pre-fix',
+                'hypothesisId' => 'C',
+                'location' => 'settings.php:after_merge_duplicate_customers',
+                'message' => 'company table after person-only merge',
+                'data' => [
+                    'customers_merged' => (int) ($final_merge['merged'] ?? 0),
+                    'company_rows' => array_sum(array_map('count', $dbg_co_groups)),
+                    'company_unique_names' => count($dbg_co_groups),
+                    'company_dup_name_groups' => $dbg_co_dups,
+                ],
+                'timestamp' => (int) round(microtime(true) * 1000),
+            ]) . "\n",
+            FILE_APPEND | LOCK_EX
+        );
+        @file_put_contents(
+            '/Applications/MAMP/htdocs/Wordpress/08600/wp-content/plugins/courier-finance-plugin/.cursor/debug-3151cc.log',
+            wp_json_encode([
+                'sessionId' => '3151cc',
+                'runId' => 'post-fix',
+                'hypothesisId' => 'C',
+                'location' => 'settings.php:after_merge_duplicate_companies',
+                'message' => 'company table after company name merge',
+                'data' => [
+                    'companies_merged' => (int) ($company_merge['merged'] ?? 0),
+                    'companies_deleted' => (int) ($company_merge['deleted'] ?? 0),
+                    'company_rows' => array_sum(array_map('count', $dbg_co_groups)),
+                    'company_unique_names' => count($dbg_co_groups),
+                    'company_dup_name_groups' => $dbg_co_dups,
+                ],
+                'timestamp' => (int) round(microtime(true) * 1000),
+            ]) . "\n",
+            FILE_APPEND | LOCK_EX
+        );
+        // #endregion
 
         // Remove nameless / company-mirror person stubs left by older seed paths.
         if (function_exists('kit_seed_prune_blank_customer_stubs')) {
@@ -5005,6 +5141,15 @@ function kit_settings_resolve_page_notice(array $vars): ?array
         return [
             'type' => 'warning',
             'title' => 'Maintenance Mode Updated',
+            'html' => '<p>' . esc_html($result['message'] ?? '') . '</p>',
+        ];
+    }
+
+    if (!empty($vars['email_admin_notifications_result']) && is_array($vars['email_admin_notifications_result'])) {
+        $result = $vars['email_admin_notifications_result'];
+        return [
+            'type' => !empty($result['enabled']) ? 'success' : 'info',
+            'title' => 'Email Admin Notifications',
             'html' => '<p>' . esc_html($result['message'] ?? '') . '</p>',
         ];
     }
@@ -5547,6 +5692,7 @@ kit_debug_log_45951e('D', 'settings.php:render', 'settings page UI render start'
                     $auto_sync_enabled = (bool) get_option('courier_google_auto_sync_enabled', 0);
                     $fake_filler_enabled = (bool) get_option('courier_fake_filler_enabled', 0);
                     $maintenance_mode_enabled = (bool) get_option('kit_maintenance_mode', 0);
+                    $email_admin_notifications_enabled = (bool) get_option('kit_email_admin_notifications', 0);
                     ?>
                     <p class="text-sm text-gray-700 mb-4">
                         <strong>Pull source:</strong>
@@ -5619,7 +5765,9 @@ kit_debug_log_45951e('D', 'settings.php:render', 'settings page UI render start'
                                         <?php echo $auto_sync_enabled ? 'Auto Sync Active' : 'Auto Sync Paused'; ?>
                                     </p>
                                     <p class="mt-1 <?php echo $auto_sync_enabled ? 'text-green-700' : 'text-gray-600'; ?>">
-                                        <?php echo $auto_sync_enabled ? 'Waybill changes are uploading automatically to the push destination sheet.' : 'Waybill changes are not sent to the push destination Google Sheet.'; ?>
+                                        <?php echo $auto_sync_enabled
+                                            ? 'Waybill changes upload to the 08600Africa Waybills tab and matching kit_* sheets.'
+                                            : 'Waybill changes stay in the database until you turn auto sync on.'; ?>
                                     </p>
                                 </div>
                             </div>
@@ -5698,6 +5846,42 @@ kit_debug_log_45951e('D', 'settings.php:render', 'settings page UI render start'
                                 <?php echo KIT_Commons::renderButton(
                                     $maintenance_mode_enabled ? 'Turn Maintenance Mode Off' : 'Turn Maintenance Mode On',
                                     $maintenance_mode_enabled ? 'secondary' : 'primary',
+                                    'lg',
+                                    ['type' => 'submit']
+                                ); ?>
+                            </form>
+                        </div>
+                        <div class="p-4 rounded-lg border <?php echo $email_admin_notifications_enabled ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'; ?>">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    <?php if ($email_admin_notifications_enabled): ?>
+                                        <svg class="h-5 w-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                        </svg>
+                                    <?php else: ?>
+                                        <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                        </svg>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="ml-3 text-sm">
+                                    <p class="font-medium <?php echo $email_admin_notifications_enabled ? 'text-green-900' : 'text-gray-700'; ?>">
+                                        <?php echo $email_admin_notifications_enabled ? 'Email admin notifications are ON' : 'Email admin notifications are OFF'; ?>
+                                    </p>
+                                    <p class="mt-1 <?php echo $email_admin_notifications_enabled ? 'text-green-800' : 'text-gray-600'; ?>">
+                                        <?php echo $email_admin_notifications_enabled
+                                            ? 'Trip creation requests email administrators (in addition to the in-app banner).'
+                                            : 'Keep off while testing offline. Staff can still request trips; admins see an in-app banner only — no email is sent.'; ?>
+                                    </p>
+                                </div>
+                            </div>
+                            <form method="post" action="" class="mt-3">
+                                <?php wp_nonce_field('toggle_email_admin_notifications', 'toggle_email_admin_notifications_nonce'); ?>
+                                <input type="hidden" name="action" value="toggle_email_admin_notifications">
+                                <input type="hidden" name="enable_email_admin_notifications" value="<?php echo $email_admin_notifications_enabled ? '0' : '1'; ?>">
+                                <?php echo KIT_Commons::renderButton(
+                                    $email_admin_notifications_enabled ? 'Turn Email Admin Off' : 'Turn Email Admin On',
+                                    $email_admin_notifications_enabled ? 'secondary' : 'primary',
                                     'lg',
                                     ['type' => 'submit']
                                 ); ?>
@@ -5788,8 +5972,8 @@ kit_debug_log_45951e('D', 'settings.php:render', 'settings page UI render start'
                         if (syncBtn) {
                             syncBtn.addEventListener('click', function() {
                                 if (!confirm('This will overwrite all data in the Google Sheet with current DB values. Continue?')) return;
-                                var entities = ['drivers', 'customers', 'deliveries', 'waybills'];
-                                var labels   = { drivers: 'Drivers', customers: 'Customers', deliveries: 'Deliveries', waybills: 'Waybills + Items' };
+                                var entities = ['drivers', 'customers', 'deliveries', 'waybills', 'kit_tables'];
+                                var labels   = { drivers: 'Drivers', customers: 'Customers', deliveries: 'Deliveries', waybills: 'Waybills tab', kit_tables: 'kit_* DB tables' };
                                 syncBtn.disabled = true;
                                 syncBtn.style.background = '#9ca3af';
                                 kitSettingsShowNotice('info', 'Syncing to Sheet', '<strong>Syncing…</strong><br>');

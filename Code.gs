@@ -448,12 +448,40 @@ function extractWaybillNo_(raw) {
 function toPositiveId_(value) {
   if (value === '' || value == null) return '';
   if (value === true || value === false) return '';
+  if (Object.prototype.toString.call(value) === '[object Date]') return '';
   var raw = String(value).trim();
   if (!raw) return '';
   var low = raw.toLowerCase();
   if (low === 'true' || low === 'false') return '';
   var n = parseInt(raw.replace(/[^\d-]/g, ''), 10);
   return n > 0 ? n : '';
+}
+
+/**
+ * trip_membership column C is formatted as a date. getValues() then returns a
+ * Date for the real integer (46 → 14 Feb 1900). String(date) in
+ * Africa/Johannesburg includes the historical GMT+0130 offset, and
+ * toPositiveId_ joins those digits into a fake count (1419000000000130).
+ * Recover the spreadsheet serial, which is the original integer.
+ * Real 2020s dates are left alone.
+ */
+function sheetSerialFromDate_(value) {
+  if (Object.prototype.toString.call(value) !== '[object Date]' || isNaN(value.getTime())) {
+    return '';
+  }
+  var tz = scriptTimeZone_();
+  var y = Number(Utilities.formatDate(value, tz, 'yyyy'));
+  var m = Number(Utilities.formatDate(value, tz, 'MM'));
+  var d = Number(Utilities.formatDate(value, tz, 'dd'));
+  if (!(y >= 1899 && y <= 1905)) return '';
+  var serial = Math.round((Date.UTC(y, m - 1, d) - Date.UTC(1899, 11, 30)) / 86400000);
+  return serial > 0 && serial < 100000 ? serial : '';
+}
+
+function sheetPositiveId_(value) {
+  var serial = sheetSerialFromDate_(value);
+  if (serial !== '') return serial;
+  return toPositiveId_(value);
 }
 
 function parseSourceDeliveryNo_(value) {
@@ -1669,11 +1697,14 @@ function isTripMembershipHeaderRow_(row) {
 
 function isTripMembershipWaybillRow_(row) {
   var label = cleanText_(row && row[1]).toLowerCase();
-  return label === 'waybill' || label === 'waybills';
+  if (label === 'waybill' || label === 'waybills') return true;
+  // DEL-20260213-001 has the count in col B and no "Waybills" label.
+  var ref = cleanText_(row && row[7]);
+  return isValidDeliveryReference_(ref) && ref.toLowerCase() !== 'pending';
 }
 
 function parseTripMembershipBlock_(headerRow, waybillRow) {
-  var seq = toPositiveId_(headerRow[2]);
+  var seq = sheetPositiveId_(headerRow[2]);
   var driver = cleanText_(headerRow[3]);
   if (/^driver$/i.test(driver)) driver = '';
   var dispatch = normalizeDispatchDateOnly_(headerRow[4]);
@@ -1681,9 +1712,10 @@ function parseTripMembershipBlock_(headerRow, waybillRow) {
   var tripId = toPositiveId_(headerRow[8]);
   if (!(tripId > 0) && waybillRow) tripId = toPositiveId_(waybillRow[8]);
   var waybills = waybillRow ? parseWaybillList_(joinWaybillListCells_(waybillRow)) : [];
-  var statedCount = waybillRow ? toPositiveId_(waybillRow[2]) : '';
-  if (!(statedCount > 0)) statedCount = toPositiveId_(headerRow[6]);
-  if (!(statedCount > 0) && waybillRow) statedCount = toPositiveId_(waybillRow[6]);
+  var statedCount = waybillRow ? sheetPositiveId_(waybillRow[2]) : '';
+  if (!(statedCount > 0)) statedCount = sheetPositiveId_(headerRow[6]);
+  if (!(statedCount > 0) && waybillRow) statedCount = sheetPositiveId_(waybillRow[6]);
+  if (!(statedCount > 0) && waybillRow) statedCount = sheetPositiveId_(waybillRow[1]);
   return {
     seq: seq === '' ? 0 : seq,
     tripId: tripId === '' ? 0 : tripId,

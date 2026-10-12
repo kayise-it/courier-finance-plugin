@@ -22,54 +22,6 @@ $smallWidth = isset($atts['small_width']) && $atts['small_width'] === true;
 #scheduled-deliveries-container {
     background: transparent;
 }
-
-/* Match step4 Warehouse / Truck segmented control (dark active + amber text, slate inactive + white text) */
-.kit-del-filter-wrap .kit-del-filter-segment {
-    display: inline-flex;
-    border-radius: 0.5rem;
-    overflow: hidden;
-    border: 1px solid #1e293b;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
-}
-.kit-del-filter-wrap .kit-del-filter-btn {
-    margin: 0;
-    min-width: 5.75rem;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    line-height: 1.25rem;
-    border: none;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
-}
-.kit-del-filter-wrap .kit-del-filter-btn + .kit-del-filter-btn {
-    border-left: 1px solid rgba(15, 23, 42, 0.45);
-}
-.kit-del-filter-wrap .kit-del-filter-btn:focus {
-    outline: 2px solid #3b82f6;
-    outline-offset: 2px;
-    z-index: 1;
-}
-.kit-del-filter-wrap .kit-del-filter-btn.kit-del-filter--inactive {
-    background: linear-gradient(180deg, #64748b 0%, #475569 55%, #334155 100%);
-    color: #ffffff;
-    text-shadow: 0 1px 0 rgba(15, 23, 42, 0.25);
-}
-.kit-del-filter-wrap .kit-del-filter-btn.kit-del-filter--inactive:hover {
-    background: linear-gradient(180deg, #708196 0%, #526077 55%, #3d4a5c 100%);
-    color: #ffffff;
-}
-.kit-del-filter-wrap .kit-del-filter-btn.kit-del-filter--active {
-    background: linear-gradient(115deg, #0b1220 0%, #0f2847 38%, #172554 72%, #1e1b4b 100%);
-    color: #fde68a;
-    text-shadow: 0 1px 1px rgba(15, 23, 42, 0.45);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
-}
-.kit-del-filter-wrap .kit-del-filter-btn.kit-del-filter--active:hover {
-    background: linear-gradient(115deg, #111827 0%, #15365a 38%, #1c2f66 72%, #25205e 100%);
-    color: #fef3c7;
-}
 </style>
 <div id="scheduled-deliveries-container" class="<?= $hide_header ? '' : 'mt-4' ?>">
     <?php
@@ -91,30 +43,44 @@ $smallWidth = isset($atts['small_width']) && $atts['small_width'] === true;
     </p>
     <?php endif; ?>
     
-    <!-- Filter tabs: same visual language as step4 Warehouse / Truck -->
-    <div class="kit-del-filter-wrap mb-4" role="group" aria-label="Delivery filter toggle">
-        <div class="kit-del-filter-segment">
-            <?php
-            $filter_types = [
-                'scheduled' => 'Scheduled',
-                'all'         => 'All Deliveries',
-                'past'        => 'Past Waybills',
-            ];
-            foreach ($filter_types as $filter_key => $filter_label) :
-                $is_active      = $current_filter === $filter_key;
-                $state_class    = $is_active ? 'kit-del-filter--active' : 'kit-del-filter--inactive';
-                ?>
-                <button
-                    type="button"
-                    class="delivery-filter-btn kit-del-filter-btn <?= esc_attr($state_class); ?>"
-                    data-filter="<?= esc_attr($filter_key); ?>"
-                    data-active="<?= $is_active ? '1' : '0'; ?>"
-                    aria-pressed="<?= $is_active ? 'true' : 'false'; ?>"
-                ><?php echo esc_html($filter_label); ?></button>
-                <?php
-            endforeach;
+    <?php
+    $filter_active_classes = trim(
+        KIT_Commons::buttonClass() . ' ' .
+        KIT_Commons::buttonPrimary('sm', false, true, false) .
+        ' kit-btn px-6 delivery-filter-btn'
+    );
+    $filter_inactive_classes = trim(
+        KIT_Commons::buttonClass() . ' ' .
+        KIT_Commons::buttonSecondary('sm', false, false, true) .
+        ' kit-btn px-6 delivery-filter-btn'
+    );
+    ?>
+    <!-- Filter tabs: KIT_Commons primary / secondary buttons -->
+    <div class="kit-del-filter-wrap mb-4 inline-flex flex-wrap gap-2"
+         role="group"
+         aria-label="Delivery filter toggle"
+         data-filter-active-class="<?php echo esc_attr($filter_active_classes); ?>"
+         data-filter-inactive-class="<?php echo esc_attr($filter_inactive_classes); ?>">
+        <?php
+        $filter_types = [
+            'scheduled' => 'Scheduled',
+            'all'         => 'All Deliveries',
+            'past'        => 'Past Waybills',
+        ];
+        foreach ($filter_types as $filter_key => $filter_label) :
+            $is_active = $current_filter === $filter_key;
+            $btn_class = $is_active ? $filter_active_classes : $filter_inactive_classes;
             ?>
-        </div>
+            <button
+                type="button"
+                class="<?php echo esc_attr($btn_class); ?>"
+                data-filter="<?php echo esc_attr($filter_key); ?>"
+                data-active="<?php echo $is_active ? '1' : '0'; ?>"
+                aria-pressed="<?php echo $is_active ? 'true' : 'false'; ?>"
+            ><?php echo esc_html($filter_label); ?></button>
+            <?php
+        endforeach;
+        ?>
     </div>
     
     <!-- Horizontal Row Layout - match the image layout -->
@@ -195,13 +161,39 @@ $smallWidth = isset($atts['small_width']) && $atts['small_width'] === true;
         <p class="text-gray-600">
             <?php
             $empty_descriptions = [
-                'scheduled' => 'No deliveries are currently scheduled',
+                'scheduled' => 'No deliveries are currently scheduled. Keep this waybill in the warehouse, or create a trip if you need a truck now.',
                 'all' => 'No deliveries are available',
                 'past' => 'No past waybills found'
             ];
             echo esc_html($empty_descriptions[$current_filter] ?? 'No deliveries are available');
             ?>
         </p>
+        <?php
+        $can_create_delivery_from_empty = class_exists('KIT_User_Roles') && KIT_User_Roles::can_create_delivery_truck();
+        if ($current_filter === 'scheduled') :
+            echo '<div class="mt-4">';
+            if ($can_create_delivery_from_empty) {
+                $create_trip_url = (function_exists('kit_using_employee_portal') && kit_using_employee_portal())
+                    ? kit_employee_portal_url('08600-trip-create')
+                    : admin_url('admin.php?page=08600-trip-create');
+                echo KIT_Commons::renderButton(
+                    'Create Trip',
+                    'secondary',
+                    'md',
+                    [
+                        'href' => $create_trip_url,
+                        'classes' => 'create-delivery-btn',
+                        'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />',
+                        'iconPosition' => 'left',
+                    ]
+                );
+            } elseif (class_exists('KIT_Trip_Requests')) {
+                KIT_Trip_Requests::render_script();
+                echo KIT_Trip_Requests::render_request_button();
+            }
+            echo '</div>';
+        endif;
+        ?>
     </div>
 </div>
 
@@ -547,13 +539,13 @@ $smallWidth = isset($atts['small_width']) && $atts['small_width'] === true;
     if (canProceed) {
         nextButton.disabled = false;
         nextButton.removeAttribute('disabled');
-        nextButton.classList.remove('opacity-50', 'cursor-not-allowed');
-        nextButton.classList.add('bg-blue-600', 'text-white', 'hover:bg-blue-700');
+        nextButton.classList.remove('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
+        nextButton.setAttribute('aria-disabled', 'false');
         console.log('Next button enabled - conditions met');
     } else {
         nextButton.disabled = true;
         nextButton.classList.add('opacity-50', 'cursor-not-allowed');
-        nextButton.classList.remove('bg-blue-600', 'text-white', 'hover:bg-blue-700');
+        nextButton.setAttribute('aria-disabled', 'true');
             console.log('Next button disabled - conditions not met');
         }
         };
@@ -647,13 +639,17 @@ $smallWidth = isset($atts['small_width']) && $atts['small_width'] === true;
             
             const filterType = this.getAttribute('data-filter');
             
-            // Update button states (match step4 segmented control)
+            // Update button states using KIT_Commons class strings from the wrap
+            const filterWrap = button.closest('.kit-del-filter-wrap');
+            const activeCls = filterWrap ? (filterWrap.getAttribute('data-filter-active-class') || '') : '';
+            const inactiveCls = filterWrap ? (filterWrap.getAttribute('data-filter-inactive-class') || '') : '';
             filterButtons.forEach(btn => {
                 const isActive = btn === button;
                 btn.setAttribute('data-active', isActive ? '1' : '0');
                 btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-                btn.classList.toggle('kit-del-filter--active', isActive);
-                btn.classList.toggle('kit-del-filter--inactive', !isActive);
+                if (activeCls && inactiveCls) {
+                    btn.className = isActive ? activeCls : inactiveCls;
+                }
             });
             
             // Show loading state
@@ -803,7 +799,7 @@ $smallWidth = isset($atts['small_width']) && $atts['small_width'] === true;
                 if (nextButton) {
                     nextButton.disabled = true;
                     nextButton.classList.add('opacity-50', 'cursor-not-allowed');
-                    nextButton.classList.remove('bg-blue-600', 'text-white', 'hover:bg-blue-700');
+                    nextButton.setAttribute('aria-disabled', 'true');
                     console.log('Button manually disabled');
                 }
             };
@@ -812,8 +808,9 @@ $smallWidth = isset($atts['small_width']) && $atts['small_width'] === true;
                 const nextButton = document.getElementById('step4NextBtn');
                 if (nextButton) {
                     nextButton.disabled = false;
-                    nextButton.classList.remove('opacity-50', 'cursor-not-allowed');
-                    nextButton.classList.add('bg-blue-600', 'text-white', 'hover:bg-blue-700');
+                    nextButton.removeAttribute('disabled');
+                    nextButton.classList.remove('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
+                    nextButton.setAttribute('aria-disabled', 'false');
                     console.log('Button manually enabled');
                 }
             };

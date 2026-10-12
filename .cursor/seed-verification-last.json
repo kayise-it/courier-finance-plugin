@@ -1,0 +1,60 @@
+{
+    "generated_at": "2026-08-29T12:06:00+00:00",
+    "expected": {
+        "totals": {
+            "waybills": 996,
+            "individuals": 226,
+            "companies": 51,
+            "unassigned": 0
+        },
+        "by_waybill_count": 996,
+        "by_party_count": 277
+    },
+    "actual": {
+        "totals": {
+            "waybills": 996,
+            "individuals": 222,
+            "companies": 45,
+            "unassigned": 0
+        },
+        "by_waybill_count": 996,
+        "by_party_count": 267,
+        "blank_individuals": []
+    },
+    "diff": {
+        "ok": true,
+        "mismatch_count": 0,
+        "mismatches": [],
+        "missing": [],
+        "extra": [],
+        "party_count_mismatches": [],
+        "blank_individuals": [],
+        "totals": {
+            "expected": {
+                "waybills": 996,
+                "individuals": 226,
+                "companies": 51,
+                "unassigned": 0
+            },
+            "actual": {
+                "waybills": 996,
+                "individuals": 222,
+                "companies": 45,
+                "unassigned": 0
+            }
+        },
+        "mismatches_truncated": 0,
+        "missing_truncated": 0,
+        "extra_truncated": 0,
+        "party_count_mismatches_truncated": 0
+    },
+    "charges": {
+        "ok": true,
+        "checked": 996,
+        "mismatch_count": 0,
+        "mismatches": [],
+        "rule": "kit_waybills AB charge_basis selects Z mass_charge or AA volume_charge as billed total (product_invoice_amount)"
+    },
+    "ok": true,
+    "mismatch_count": 0
+}

@@ -11,6 +11,7 @@ if (!defined('ABSPATH')) {
 
 $waybill_index = $waybill_index ?? 0;
 $is_first = $waybill_index === 0;
+$can_see_prices = class_exists('KIT_User_Roles') && KIT_User_Roles::can_see_prices();
 
 // Set global waybill_index for child components to use
 $GLOBALS['current_waybill_index'] = $waybill_index;
@@ -121,11 +122,13 @@ $GLOBALS['current_waybill_index'] = $waybill_index;
                                 </div>
                             <?php endforeach; ?>
                         </div>
+                        <?php if ($can_see_prices): ?>
                         <div class="mt-4 rounded border border-slate-200 bg-white p-3">
                             <div class="text-xs font-medium text-gray-500 uppercase tracking-wide">Billed freight</div>
                             <div id="kit-billed-freight-display" class="mt-1 text-xl font-semibold text-slate-900">R 0.00</div>
                             <p id="kit-billed-freight-hint" class="mt-1 text-xs text-gray-500">Enter mass or volume to calculate.</p>
                         </div>
+                        <?php endif; ?>
                     </div>
                     <div id="totalOverride-<?php echo $waybill_index; ?>">
                         <?php require(COURIER_FINANCE_PLUGIN_PATH . 'includes/components/totalOverride.php'); ?>

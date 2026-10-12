@@ -66,7 +66,7 @@ const ComponentUtils = {
     },
 
     showInputLoader: function(inputEl, text = 'Calculating…') {
-        if (!inputEl) return;
+        if (!inputEl || inputEl.type === 'hidden') return;
         ComponentUtils.ensureInputLoaderStyles();
 
         // Wrap input (once) so we can absolutely-position overlay
@@ -240,6 +240,69 @@ const KitButton = {
                 align-items: center;
                 justify-content: center;
                 gap: 0.5rem;
+            }
+            /* Lock field/button height to commons controlHeightClass (default lg = 40px).
+               Beats WP admin select/button padding so inputs match .kit-btn unless overridden. */
+            .kit-btn.h-10,
+            .kit-control:not(.kit-control--md):not(.kit-control--lg) {
+                height: 2.5rem !important;
+                min-height: 2.5rem !important;
+                max-height: 2.5rem !important;
+                padding-top: 0 !important;
+                padding-bottom: 0 !important;
+                box-sizing: border-box !important;
+            }
+            .kit-btn.h-9,
+            .kit-control--md {
+                height: 2.25rem !important;
+                min-height: 2.25rem !important;
+                max-height: 2.25rem !important;
+                padding-top: 0 !important;
+                padding-bottom: 0 !important;
+                box-sizing: border-box !important;
+            }
+            .kit-btn.h-8 {
+                height: 2rem !important;
+                min-height: 2rem !important;
+                max-height: 2rem !important;
+                padding-top: 0 !important;
+                padding-bottom: 0 !important;
+                box-sizing: border-box !important;
+            }
+            .kit-btn.h-12,
+            .kit-control--lg {
+                height: 3rem !important;
+                min-height: 3rem !important;
+                max-height: 3rem !important;
+                padding-top: 0 !important;
+                padding-bottom: 0 !important;
+                box-sizing: border-box !important;
+            }
+            /* Opt-out: multi-line / wrapping labels (e.g. SADC/VAT chips) must grow with content. */
+            .kit-btn.kit-btn--grow,
+            .kit-btn.h-auto {
+                height: auto !important;
+                min-height: 2.5rem !important;
+                max-height: none !important;
+                padding-top: 0.5rem !important;
+                padding-bottom: 0.5rem !important;
+                white-space: normal !important;
+                overflow: visible !important;
+                align-items: center !important;
+            }
+            .kit-btn.kit-btn--grow .kit-btn__text,
+            .kit-btn.h-auto .kit-btn__text {
+                display: flex !important;
+                flex-direction: column !important;
+                align-items: center !important;
+                justify-content: center !important;
+                gap: 0.125rem !important;
+                white-space: normal !important;
+                line-height: 1.25 !important;
+                text-align: center !important;
+            }
+            select.kit-control {
+                line-height: 1.25 !important;
             }
             .kit-btn .kit-btn__spinner {
                 display: none;

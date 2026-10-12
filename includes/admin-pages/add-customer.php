@@ -38,7 +38,7 @@ if (isset($_GET['error']) && $_GET['error'] == '1') {
         </div>
     <?php endif; ?>
 
-    <p class="description">Choose <strong>Individual</strong> for a person (Individuals list) or <strong>Business</strong> for a company (Companies list).</p>
+    <p class="description">Choose <strong>Individual</strong> for a person only, or <strong>Company</strong> for a business with a contact person attached.</p>
     
     <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6" style="max-width: 800px;">
             <?php
