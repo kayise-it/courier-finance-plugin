@@ -1,46 +1,444 @@
 {
-    "generated_at": "2026-08-29T12:06:00+00:00",
+    "generated_at": "2026-10-12T17:45:46+00:00",
     "expected": {
         "totals": {
-            "waybills": 996,
-            "individuals": 226,
-            "companies": 51,
-            "unassigned": 0
+            "waybills": 1108,
+            "individuals": 232,
+            "companies": 55,
+            "unassigned": 1
         },
-        "by_waybill_count": 996,
-        "by_party_count": 277
+        "by_waybill_count": 1108,
+        "by_party_count": 287
     },
     "actual": {
         "totals": {
-            "waybills": 996,
-            "individuals": 222,
-            "companies": 45,
-            "unassigned": 0
+            "waybills": 1108,
+            "individuals": 235,
+            "companies": 48,
+            "unassigned": 1
         },
-        "by_waybill_count": 996,
-        "by_party_count": 267,
+        "by_waybill_count": 1108,
+        "by_party_count": 283,
         "blank_individuals": []
     },
     "diff": {
-        "ok": true,
-        "mismatch_count": 0,
-        "mismatches": [],
+        "ok": false,
+        "mismatch_count": 27,
+        "mismatches": [
+            {
+                "waybill_no": "5915",
+                "reason": "party_id_mismatch",
+                "expected": {
+                    "waybill_no": "5915",
+                    "party_type": "individual",
+                    "sheet_party_id": 8867,
+                    "label": "Mirriam"
+                },
+                "actual": {
+                    "waybill_no": "5915",
+                    "party_type": "individual",
+                    "sheet_party_id": 8899,
+                    "label": "",
+                    "customer_id": 8899,
+                    "company_id": 0
+                }
+            },
+            {
+                "waybill_no": "5933",
+                "reason": "party_id_mismatch",
+                "expected": {
+                    "waybill_no": "5933",
+                    "party_type": "individual",
+                    "sheet_party_id": 8868,
+                    "label": "Shiloo Lyimo"
+                },
+                "actual": {
+                    "waybill_no": "5933",
+                    "party_type": "individual",
+                    "sheet_party_id": 8900,
+                    "label": "",
+                    "customer_id": 8900,
+                    "company_id": 0
+                }
+            },
+            {
+                "waybill_no": "5940",
+                "reason": "party_id_mismatch",
+                "expected": {
+                    "waybill_no": "5940",
+                    "party_type": "individual",
+                    "sheet_party_id": 8869,
+                    "label": "Josephine"
+                },
+                "actual": {
+                    "waybill_no": "5940",
+                    "party_type": "individual",
+                    "sheet_party_id": 8902,
+                    "label": "",
+                    "customer_id": 8902,
+                    "company_id": 0
+                }
+            },
+            {
+                "waybill_no": "5942",
+                "reason": "party_id_mismatch",
+                "expected": {
+                    "waybill_no": "5942",
+                    "party_type": "individual",
+                    "sheet_party_id": 8870,
+                    "label": "Florian Bapst"
+                },
+                "actual": {
+                    "waybill_no": "5942",
+                    "party_type": "individual",
+                    "sheet_party_id": 8903,
+                    "label": "",
+                    "customer_id": 8903,
+                    "company_id": 0
+                }
+            },
+            {
+                "waybill_no": "5952",
+                "reason": "party_id_mismatch",
+                "expected": {
+                    "waybill_no": "5952",
+                    "party_type": "individual",
+                    "sheet_party_id": 8857,
+                    "label": "Wycliff Mainye"
+                },
+                "actual": {
+                    "waybill_no": "5952",
+                    "party_type": "individual",
+                    "sheet_party_id": 8904,
+                    "label": "",
+                    "customer_id": 8904,
+                    "company_id": 0
+                }
+            },
+            {
+                "waybill_no": "5954",
+                "reason": "party_id_mismatch",
+                "expected": {
+                    "waybill_no": "5954",
+                    "party_type": "individual",
+                    "sheet_party_id": 8871,
+                    "label": "Franco Potgieter"
+                },
+                "actual": {
+                    "waybill_no": "5954",
+                    "party_type": "individual",
+                    "sheet_party_id": 8905,
+                    "label": "",
+                    "customer_id": 8905,
+                    "company_id": 0
+                }
+            },
+            {
+                "waybill_no": "5989",
+                "reason": "party_id_mismatch",
+                "expected": {
+                    "waybill_no": "5989",
+                    "party_type": "individual",
+                    "sheet_party_id": 8870,
+                    "label": "Florian Bapst"
+                },
+                "actual": {
+                    "waybill_no": "5989",
+                    "party_type": "individual",
+                    "sheet_party_id": 8903,
+                    "label": "",
+                    "customer_id": 8903,
+                    "company_id": 0
+                }
+            },
+            {
+                "waybill_no": "6001",
+                "reason": "party_id_mismatch",
+                "expected": {
+                    "waybill_no": "6001",
+                    "party_type": "individual",
+                    "sheet_party_id": 8877,
+                    "label": "Lydia Becker"
+                },
+                "actual": {
+                    "waybill_no": "6001",
+                    "party_type": "individual",
+                    "sheet_party_id": 8906,
+                    "label": "",
+                    "customer_id": 8906,
+                    "company_id": 0
+                }
+            },
+            {
+                "waybill_no": "",
+                "reason": "totals_mismatch_individuals",
+                "expected": {
+                    "waybills": 1108,
+                    "individuals": 232,
+                    "companies": 55,
+                    "unassigned": 1
+                },
+                "actual": {
+                    "waybills": 1108,
+                    "individuals": 235,
+                    "companies": 48,
+                    "unassigned": 1
+                }
+            }
+        ],
         "missing": [],
         "extra": [],
-        "party_count_mismatches": [],
+        "party_count_mismatches": [
+            {
+                "party_key": "person:grumeti reserves limited",
+                "label": "Grumeti Reserves_Limited",
+                "expected_count": 1,
+                "actual_count": 0,
+                "expected_waybill_nos": [
+                    "5517"
+                ],
+                "actual_waybill_nos": [],
+                "merged_identities": [
+                    "person:grumeti reserves limited"
+                ]
+            },
+            {
+                "party_key": "person:silverlands ndolela ltd",
+                "label": "Silverlands Ndolela_Ltd",
+                "expected_count": 1,
+                "actual_count": 0,
+                "expected_waybill_nos": [
+                    "5589"
+                ],
+                "actual_waybill_nos": [],
+                "merged_identities": [
+                    "person:silverlands ndolela ltd"
+                ]
+            },
+            {
+                "party_key": "person:mirriam",
+                "label": "Mirriam",
+                "expected_count": 1,
+                "actual_count": 0,
+                "expected_waybill_nos": [
+                    "5915"
+                ],
+                "actual_waybill_nos": [],
+                "merged_identities": [
+                    "person:mirriam"
+                ]
+            },
+            {
+                "party_key": "person:shiloo lyimo",
+                "label": "Shiloo Lyimo",
+                "expected_count": 1,
+                "actual_count": 0,
+                "expected_waybill_nos": [
+                    "5933"
+                ],
+                "actual_waybill_nos": [],
+                "merged_identities": [
+                    "person:shiloo lyimo"
+                ]
+            },
+            {
+                "party_key": "person:josephine",
+                "label": "Josephine",
+                "expected_count": 1,
+                "actual_count": 0,
+                "expected_waybill_nos": [
+                    "5940"
+                ],
+                "actual_waybill_nos": [],
+                "merged_identities": [
+                    "person:josephine"
+                ]
+            },
+            {
+                "party_key": "person:florian bapst",
+                "label": "Florian Bapst",
+                "expected_count": 2,
+                "actual_count": 0,
+                "expected_waybill_nos": [
+                    "5942",
+                    "5989"
+                ],
+                "actual_waybill_nos": [],
+                "merged_identities": [
+                    "person:florian bapst"
+                ]
+            },
+            {
+                "party_key": "person:wycliff mainye",
+                "label": "Wycliff Mainye",
+                "expected_count": 1,
+                "actual_count": 0,
+                "expected_waybill_nos": [
+                    "5952"
+                ],
+                "actual_waybill_nos": [],
+                "merged_identities": [
+                    "person:wycliff mainye"
+                ]
+            },
+            {
+                "party_key": "person:franco potgieter",
+                "label": "Franco Potgieter",
+                "expected_count": 1,
+                "actual_count": 0,
+                "expected_waybill_nos": [
+                    "5954"
+                ],
+                "actual_waybill_nos": [],
+                "merged_identities": [
+                    "person:franco potgieter"
+                ]
+            },
+            {
+                "party_key": "person:lydia becker",
+                "label": "Lydia Becker",
+                "expected_count": 1,
+                "actual_count": 0,
+                "expected_waybill_nos": [
+                    "6001"
+                ],
+                "actual_waybill_nos": [],
+                "merged_identities": [
+                    "person:lydia becker"
+                ]
+            },
+            {
+                "party_key": "person:8893",
+                "label": "",
+                "expected_count": 0,
+                "actual_count": 1,
+                "expected_waybill_nos": [],
+                "actual_waybill_nos": [
+                    "5517"
+                ],
+                "merged_identities": [
+                    "person:8893"
+                ]
+            },
+            {
+                "party_key": "person:8894",
+                "label": "",
+                "expected_count": 0,
+                "actual_count": 1,
+                "expected_waybill_nos": [],
+                "actual_waybill_nos": [
+                    "5589"
+                ],
+                "merged_identities": [
+                    "person:8894"
+                ]
+            },
+            {
+                "party_key": "person:8899",
+                "label": "",
+                "expected_count": 0,
+                "actual_count": 1,
+                "expected_waybill_nos": [],
+                "actual_waybill_nos": [
+                    "5915"
+                ],
+                "merged_identities": [
+                    "person:8899"
+                ]
+            },
+            {
+                "party_key": "person:8900",
+                "label": "",
+                "expected_count": 0,
+                "actual_count": 1,
+                "expected_waybill_nos": [],
+                "actual_waybill_nos": [
+                    "5933"
+                ],
+                "merged_identities": [
+                    "person:8900"
+                ]
+            },
+            {
+                "party_key": "person:8902",
+                "label": "",
+                "expected_count": 0,
+                "actual_count": 1,
+                "expected_waybill_nos": [],
+                "actual_waybill_nos": [
+                    "5940"
+                ],
+                "merged_identities": [
+                    "person:8902"
+                ]
+            },
+            {
+                "party_key": "person:8903",
+                "label": "",
+                "expected_count": 0,
+                "actual_count": 2,
+                "expected_waybill_nos": [],
+                "actual_waybill_nos": [
+                    "5942",
+                    "5989"
+                ],
+                "merged_identities": [
+                    "person:8903"
+                ]
+            },
+            {
+                "party_key": "person:8904",
+                "label": "",
+                "expected_count": 0,
+                "actual_count": 1,
+                "expected_waybill_nos": [],
+                "actual_waybill_nos": [
+                    "5952"
+                ],
+                "merged_identities": [
+                    "person:8904"
+                ]
+            },
+            {
+                "party_key": "person:8905",
+                "label": "",
+                "expected_count": 0,
+                "actual_count": 1,
+                "expected_waybill_nos": [],
+                "actual_waybill_nos": [
+                    "5954"
+                ],
+                "merged_identities": [
+                    "person:8905"
+                ]
+            },
+            {
+                "party_key": "person:8906",
+                "label": "",
+                "expected_count": 0,
+                "actual_count": 1,
+                "expected_waybill_nos": [],
+                "actual_waybill_nos": [
+                    "6001"
+                ],
+                "merged_identities": [
+                    "person:8906"
+                ]
+            }
+        ],
         "blank_individuals": [],
         "totals": {
             "expected": {
-                "waybills": 996,
-                "individuals": 226,
-                "companies": 51,
-                "unassigned": 0
+                "waybills": 1108,
+                "individuals": 232,
+                "companies": 55,
+                "unassigned": 1
             },
             "actual": {
-                "waybills": 996,
-                "individuals": 222,
-                "companies": 45,
-                "unassigned": 0
+                "waybills": 1108,
+                "individuals": 235,
+                "companies": 48,
+                "unassigned": 1
             }
         },
         "mismatches_truncated": 0,
@@ -50,11 +448,11 @@
     },
     "charges": {
         "ok": true,
-        "checked": 996,
+        "checked": 1108,
         "mismatch_count": 0,
         "mismatches": [],
         "rule": "kit_waybills AB charge_basis selects Z mass_charge or AA volume_charge as billed total (product_invoice_amount)"
     },
-    "ok": true,
-    "mismatch_count": 0
+    "ok": false,
+    "mismatch_count": 27
 }

@@ -296,10 +296,34 @@ function kit_is_courier_plugin_admin_screen() {
 }
 
 /**
- * 08600 admin is the product. Drop the WordPress toolbar, the other admin menus, and the "WordPress" window title.
+ * True only inside the 08600 Solution desktop shell.
+ *
+ * The plugin and the desktop app share this file. WordPress admin must keep
+ * the toolbar and the other admin menus. The desktop PHP server sets
+ * KIT_DESKTOP_SITE_URL; the bundled copy also has .08600-desktop-bundled.
+ */
+function kit_courier_is_desktop_shell() {
+    if (defined('KIT_DESKTOP_APP') && KIT_DESKTOP_APP) {
+        return true;
+    }
+    $desktop_url = getenv('KIT_DESKTOP_SITE_URL');
+    if (is_string($desktop_url) && trim($desktop_url) !== '') {
+        return true;
+    }
+    if (defined('ABSPATH')) {
+        $marker = rtrim(ABSPATH, '/\\') . DIRECTORY_SEPARATOR . '.08600-desktop-bundled';
+        if (is_file($marker)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Desktop shell only: drop the WordPress toolbar, the other admin menus, and the "WordPress" window title.
  */
 function kit_courier_admin_strip_wordpress_chrome() {
-    if (!kit_is_courier_plugin_admin_screen()) {
+    if (!kit_courier_is_desktop_shell() || !kit_is_courier_plugin_admin_screen()) {
         return;
     }
     remove_action('in_admin_header', 'wp_admin_bar_render', 0);
