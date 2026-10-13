@@ -280,7 +280,7 @@ class KIT_User_Roles {
         $current_user = wp_get_current_user();
         $user_roles = is_array($current_user->roles) ? $current_user->roles : [];
         $username = isset($current_user->user_login) ? strtolower($current_user->user_login) : '';
-        $allowed_users = ['thando', 'mel', 'patricia'];
+        $allowed_users = ['thando', 'mel', 'patricia', 'siyabonga'];
         $is_admin = in_array('administrator', $user_roles) || current_user_can('manage_options');
         return $is_admin && in_array($username, $allowed_users, true);
     }

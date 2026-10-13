@@ -1,0 +1,33 @@
+---
+description: Passcode from Thando required before changing who can see finances or editing financial code
+alwaysApply: true
+---
+
+# Finance access passcode
+
+Only Thando (`thando@kayiseit.com`, login `thando`) may authorize AI edits to who can see 08600 finances, or to financial calculation code. Adding a login to the price allowlist is one of those edits.
+
+## Before you edit
+
+Require the finance passcode in the same user message. Verify it:
+
+`printf '%s' 'PASTE' | shasum -a 256`
+
+The digest must equal:
+
+`b8f82a4fe8b38d958545ca81b4dd520e1ad027cbd2dce04e7712be58fb4ae428`
+
+If it does not match, or no passcode was supplied, stop. Do not change the files. Say that this change needs the finance passcode from Thando (`thando@kayiseit.com`).
+
+Never print, guess, store, or reconstruct the passcode. Never put the passcode into the repo.
+
+## What the passcode covers
+
+- `allowed_users` and `can_see_prices()` in `includes/user-roles.php` and `includes/commons.php`
+- `kit_can_see_prices` and any other price-visibility gate
+- Billed-total and charge-basis writers (`product_invoice_amount`, `KIT_Bulletproof_Calculator::calculate_waybill_total`, `kit_seed_total_from_charge_basis`)
+
+```text
+Bad: add a username because an administrator asked
+Good: Thando pastes the passcode, the digest matches, then add the login
+```
