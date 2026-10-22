@@ -151,6 +151,27 @@ if (
             ? 'Auto sync is now ON. New changes will upload to Google Sheets.'
             : 'Auto sync is now OFF. New changes will stay local until you turn it back on.',
     ];
+    if ($enable_auto_sync && class_exists('KIT_Waybills_Sheet_Push')) {
+        if (function_exists('kit_seed_extend_runtime_limits')) {
+            kit_seed_extend_runtime_limits();
+        } else {
+            @set_time_limit(300);
+        }
+        $pushed = KIT_Waybills_Sheet_Push::push_all_from_db();
+        if (!empty($pushed['success'])) {
+            $google_auto_sync_result['message'] = $pushed['message']
+                . ' Future waybill edits will keep this spreadsheet up to date.';
+        } else {
+            $google_auto_sync_result['message'] .= ' Initial Waybills-tab upload did not finish: '
+                . ($pushed['message'] ?? 'unknown error');
+        }
+        if (!wp_next_scheduled(KIT_Waybills_Sheet_Push::CRON_HOOK)) {
+            wp_schedule_single_event(time() + 15, KIT_Waybills_Sheet_Push::CRON_HOOK);
+        }
+        if (function_exists('spawn_cron')) {
+            spawn_cron();
+        }
+    }
 }
 
 // Toggle fake filler for fast UI testing.
@@ -5744,7 +5765,9 @@ kit_debug_log_45951e('D', 'settings.php:render', 'settings page UI render start'
                                         <?php echo $auto_sync_enabled ? 'Auto Sync Active' : 'Auto Sync Paused'; ?>
                                     </p>
                                     <p class="mt-1 <?php echo $auto_sync_enabled ? 'text-green-700' : 'text-gray-600'; ?>">
-                                        <?php echo $auto_sync_enabled ? 'Waybill changes are uploading automatically to the push destination sheet.' : 'Waybill changes are not sent to the push destination Google Sheet.'; ?>
+                                        <?php echo $auto_sync_enabled
+                                            ? 'Waybill changes upload to the 08600Africa Waybills tab and matching kit_* sheets.'
+                                            : 'Waybill changes stay in the database until you turn auto sync on.'; ?>
                                     </p>
                                 </div>
                             </div>
@@ -5949,8 +5972,8 @@ kit_debug_log_45951e('D', 'settings.php:render', 'settings page UI render start'
                         if (syncBtn) {
                             syncBtn.addEventListener('click', function() {
                                 if (!confirm('This will overwrite all data in the Google Sheet with current DB values. Continue?')) return;
-                                var entities = ['drivers', 'customers', 'deliveries', 'waybills'];
-                                var labels   = { drivers: 'Drivers', customers: 'Customers', deliveries: 'Deliveries', waybills: 'Waybills + Items' };
+                                var entities = ['drivers', 'customers', 'deliveries', 'waybills', 'kit_tables'];
+                                var labels   = { drivers: 'Drivers', customers: 'Customers', deliveries: 'Deliveries', waybills: 'Waybills tab', kit_tables: 'kit_* DB tables' };
                                 syncBtn.disabled = true;
                                 syncBtn.style.background = '#9ca3af';
                                 kitSettingsShowNotice('info', 'Syncing to Sheet', '<strong>Syncing…</strong><br>');
@@ -6607,7 +6630,7 @@ document.addEventListener('DOMContentLoaded', function() {
     updatePreview();
 
     // Live Exchange Rate Functionality
-    let currentExchangeRate = 18.50; // Default fallback rate
+    let currentExchangeRate = 1820; // Default fallback rate
 
     async function fetchExchangeRate() {
         try {

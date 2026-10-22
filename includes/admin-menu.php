@@ -368,7 +368,7 @@ function handle_kit_google_sheet_sync() {
     }
     $entity = sanitize_text_field($_POST['entity'] ?? '');
     $direction = sanitize_text_field($_POST['direction'] ?? '');
-    $allowed = ['drivers', 'customers', 'deliveries', 'waybills'];
+    $allowed = ['drivers', 'customers', 'deliveries', 'waybills', 'kit_tables'];
     if (!in_array($entity, $allowed, true) || !in_array($direction, ['push', 'pull'], true)) {
         if ($log_path) { @file_put_contents($log_path, json_encode(['sessionId'=>'a8826f','hypothesisId'=>'B','location'=>'admin-menu.php:handle_kit_google_sheet_sync:invalid','message'=>'sync rejected: invalid entity or direction','data'=>['entity'=>$entity,'direction'=>$direction],'timestamp'=>round(microtime(true)*1000)])."\n", FILE_APPEND | LOCK_EX); }
         wp_send_json_error(['message' => 'Invalid entity or direction']);
@@ -382,6 +382,8 @@ function handle_kit_google_sheet_sync() {
     // #endregion
     if ($direction === 'push') {
         $result = Courier_Google_Sheets_Sync::push_all($entity);
+    } elseif ($entity === 'kit_tables') {
+        wp_send_json_error(['message' => 'kit_* table export is push-only.']);
     } else {
         if ($entity === 'waybills') {
             // Load seed function without running settings-page access check (user already passed kit_view_waybills)
@@ -433,7 +435,7 @@ function kit_ajax_sync_all_to_sheet_handler(): void
     check_ajax_referer('kit_sync_all_to_sheet', 'nonce');
 
     $entity = sanitize_text_field($_POST['entity'] ?? '');
-    $allowed = ['drivers', 'customers', 'deliveries', 'waybills'];
+    $allowed = ['drivers', 'customers', 'deliveries', 'waybills', 'kit_tables'];
     if (!in_array($entity, $allowed, true)) {
         wp_send_json_error(['message' => 'Invalid entity']);
     }

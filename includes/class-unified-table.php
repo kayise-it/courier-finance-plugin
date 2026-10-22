@@ -403,6 +403,8 @@ CSS;
             'selectable' => false,
             'bulk_management' => false,
             'bulk_actions_list' => [], // ['delete', 'export', 'packing_list', 'move_to_warehouse', 'status_active', 'status_inactive']
+            'bulk_action_labels' => [], // Per-table label overrides, keyed by action
+            'bulk_excel_export' => false, // Waybills: Export downloads the selected rows as Excel
             'delivery_list_print' => false, // Waybills: toolbar "Print delivery list" (visible rows only)
             'bulk_action_handler' => null, // Callback function to handle bulk actions
             'empty_message' => 'No data found',
@@ -716,6 +718,13 @@ CSS;
                     $bulk_actions = ['delete', 'export'];
                 }
                 $bulk_action_labels = self::bulkActionLabels();
+                if (!empty($options['bulk_action_labels']) && is_array($options['bulk_action_labels'])) {
+                    $bulk_action_labels = array_merge($bulk_action_labels, $options['bulk_action_labels']);
+                }
+                $bulk_excel_export = !empty($options['bulk_excel_export']);
+                $bulk_excel_export_url = ($bulk_excel_export && function_exists('admin_url'))
+                    ? admin_url('admin-post.php')
+                    : '';
                 $bulk_select_id = 'bulk-action-select-' . $table_id;
                 $view_is_grouped = ($view_param === 'grouped' && $hasGroupRows);
                 ?>
@@ -812,6 +821,9 @@ CSS;
                                 id="<?php echo esc_attr($bulk_select_id); ?>"
                                 class="kit-table-toolbar__select"
                                 data-bulk-action-select="1"
+                                <?php if ($bulk_excel_export_url !== '') : ?>
+                                data-excel-export-url="<?php echo esc_url($bulk_excel_export_url); ?>"
+                                <?php endif; ?>
                                 disabled
                             >
                                 <option value=""><?php esc_html_e('Choose action…', '08600-services-quotations'); ?></option>

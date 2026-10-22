@@ -2136,12 +2136,12 @@ class KIT_Waybills
 
     public static function international_price_in_rands()
     {
-        // Live USD->ZAR with transient caching (fallback to 18.50)
+        // Live USD->ZAR with transient caching (fallback to 1820)
         $usd_price = self::international_price();
         $cache_key = 'kit_usd_zar_rate';
         $rate = get_transient($cache_key);
         if ($rate === false) {
-            $rate = 18.50; // fallback
+            $rate = 1820; // fallback
             $response = wp_remote_get('https://open.er-api.com/v6/latest/USD', ['timeout' => 6]);
             if (!is_wp_error($response) && (int) wp_remote_retrieve_response_code($response) === 200) {
                 $data = json_decode(wp_remote_retrieve_body($response), true);

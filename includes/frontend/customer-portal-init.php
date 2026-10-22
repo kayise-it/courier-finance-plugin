@@ -164,16 +164,9 @@ function kit_customer_portal_enqueue()
         return;
     }
     $base = trailingslashit(COURIER_FINANCE_PLUGIN_URL);
-    wp_enqueue_style('kit-customer-portal', $base . 'assets/css/customer-portal.css', array(), '1.0');
-    if ($has_dash && apply_filters('kit_customer_portal_enqueue_plugin_styles', true)) {
-        wp_enqueue_style('kit-customer-portal-fe', $base . 'assets/css/frontend.css', array('kit-customer-portal'), '1.0');
-    }
-    if ($has_login || $has_register) {
-        wp_enqueue_style('kit-customer-portal-login-fe', $base . 'assets/css/frontend.css', array('kit-customer-portal'), '1.0');
-        if (function_exists('kit_employee_login_inline_css')) {
-            wp_add_inline_style('kit-customer-portal-login-fe', kit_employee_login_inline_css());
-        }
-    }
+    $css_file = dirname(__FILE__, 3) . '/assets/css/customer-portal.css';
+    $css_ver = file_exists($css_file) ? (string) filemtime($css_file) : '1.1';
+    wp_enqueue_style('kit-customer-portal', $base . 'assets/css/customer-portal.css', array(), $css_ver);
 }
 
 function kit_customer_portal_init()

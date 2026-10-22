@@ -596,6 +596,9 @@ class Courier_Google_Sheets_Sync {
             if (!$updated) {
                 Courier_Google_Sheets::append_row_skip_columns($row, $sheet, [5], '');
             }
+            if (class_exists('KIT_Waybills_Sheet_Push')) {
+                KIT_Waybills_Sheet_Push::upsert_waybill($waybill);
+            }
             delete_option('courier_last_sync_error');
         } catch (Throwable $e) {
             if (function_exists('error_log')) {
@@ -616,6 +619,9 @@ class Courier_Google_Sheets_Sync {
         }
         try {
             Courier_Google_Sheets::delete_row_by_value((string) $waybill_no, self::get_sheet_name('waybills'), 11);
+            if (class_exists('KIT_Waybills_Sheet_Push')) {
+                KIT_Waybills_Sheet_Push::delete_waybill((string) $waybill_no);
+            }
         } catch (Throwable $e) {
             if (function_exists('error_log')) {
                 error_log('[Courier] Waybill delete sync failed: ' . $e->getMessage());
@@ -832,11 +838,39 @@ class Courier_Google_Sheets_Sync {
             return ['success' => false, 'message' => 'Google Sheets not configured.', 'count' => 0];
         }
         $entity = (string) $entity;
+        if ($entity === 'waybills' && class_exists('KIT_Waybills_Sheet_Push')) {
+            $operational = KIT_Waybills_Sheet_Push::push_all_from_db();
+            if (self::is_apps_script_owned_entity($entity)) {
+                return $operational;
+            }
+            if (empty($operational['success'])) {
+                return $operational;
+            }
+        }
+        if ($entity === 'kit_tables') {
+            if (!class_exists('Courier_Google_Sheets') || !Courier_Google_Sheets::is_configured()) {
+                return ['success' => false, 'message' => 'Google Sheets not configured.', 'count' => 0];
+            }
+            $exported = Courier_Google_Sheets::export_all_kit_tables(
+                method_exists('KIT_Waybills_Sheet_Push', 'spreadsheet_id')
+                    ? KIT_Waybills_Sheet_Push::spreadsheet_id()
+                    : Courier_Google_Sheets::get_source_spreadsheet_id()
+            );
+            $count = 0;
+            foreach ($exported['results'] ?? [] as $r) {
+                $count += (int) ($r['rows'] ?? 0);
+            }
+            return [
+                'success' => !empty($exported['success']),
+                'message' => (string) ($exported['message'] ?? 'kit_* export finished.'),
+                'count' => $count,
+            ];
+        }
         if (self::is_apps_script_owned_entity($entity)) {
             return [
-                'success' => false,
+                'success' => true,
                 'message' => sprintf(
-                    'Push blocked: Apps Script owns the %s sheet (Waybills projection). Use apps-script/ runFullProjection, then KIT_Seed_Pipeline for DB. Define COURIER_APPS_SCRIPT_OWNS_KIT_SHEETS false only to re-enable DB→sheet push.',
+                    'Skipped kit_%s tab (Apps Script owns that projection). Operational Waybills tab is updated on the waybills step.',
                     $entity
                 ),
                 'count' => 0,
@@ -1182,15 +1216,12 @@ class Courier_Google_Sheets_Sync {
         $errors  = [];
         $skipped = [];
         foreach ($order as $entity) {
-            if (self::is_apps_script_owned_entity($entity)) {
-                $totals[$entity] = 0;
-                $skipped[] = $entity;
-                continue;
-            }
             $r = self::push_all($entity);
             $totals[$entity] = $r['count'] ?? 0;
             if (!$r['success']) {
                 $errors[] = $entity . ': ' . ($r['message'] ?? 'unknown error');
+            } elseif (self::is_apps_script_owned_entity($entity) && $entity !== 'waybills') {
+                $skipped[] = $entity;
             }
         }
         if (!empty($errors)) {

@@ -2035,7 +2035,32 @@ function initBulkManagement(tableId, bulkNonce) {
                 deleteForm.submit();
                 break;
 
-            case 'export':
+            case 'export': {
+                const excelUrl = bulkActionSelect ? (bulkActionSelect.getAttribute('data-excel-export-url') || '') : '';
+                if (excelUrl) {
+                    logBulkConfirmation('export', selectedIds, nonce);
+                    const excelForm = document.createElement('form');
+                    excelForm.method = 'POST';
+                    excelForm.action = excelUrl;
+
+                    const excelFields = {
+                        action: 'kit_export_waybills_excel',
+                        bulk_ids: ids,
+                        bulk_nonce: nonce || ''
+                    };
+                    Object.keys(excelFields).forEach(function(name) {
+                        const input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = name;
+                        input.value = excelFields[name];
+                        excelForm.appendChild(input);
+                    });
+
+                    document.body.appendChild(excelForm);
+                    excelForm.submit();
+                    break;
+                }
+
                 logBulkConfirmation('export', selectedIds, nonce);
                 const currentUrl = new URL(window.location.href);
                 currentUrl.searchParams.set('export_selected', ids);
@@ -2045,6 +2070,7 @@ function initBulkManagement(tableId, bulkNonce) {
                 }
                 window.open(currentUrl.toString(), '_blank');
                 break;
+            }
 
             case 'move_to_warehouse': {
                 const warehouseForm = document.createElement('form');

@@ -133,16 +133,15 @@ function kit_customer_register_shortcode()
 
     ob_start();
     ?>
-    <div class="kit-customer-portal-login kit-employee-login-wrap">
-        <div class="kit-employee-login-box">
-            <h2 class="kit-employee-login-title"><?php esc_html_e('Create your account', '08600-services-quotations'); ?></h2>
-            <p class="kit-employee-login-desc"><?php esc_html_e('Register to request quotes and manage your details.', '08600-services-quotations'); ?></p>
+    <div class="kit-portal-auth">
+        <h1><?php esc_html_e('Create your account', '08600-services-quotations'); ?></h1>
+        <p class="kit-portal-lead"><?php esc_html_e('Register to request quotes and follow your shipments.', '08600-services-quotations'); ?></p>
 
-            <?php if ($error) : ?>
-                <div class="kit-employee-login-error"><?php echo wp_kses($error, array('a' => array('href' => array()))); ?></div>
-            <?php endif; ?>
+        <?php if ($error) : ?>
+            <p class="kit-portal-note kit-portal-note-warn" role="alert"><?php echo wp_kses($error, array('a' => array('href' => array()))); ?></p>
+        <?php endif; ?>
 
-            <form name="kit_customer_register" action="<?php echo esc_url(get_permalink()); ?>" method="post" class="kit-employee-login-form">
+        <form name="kit_customer_register" action="<?php echo esc_url(get_permalink()); ?>" method="post" class="kit-portal-form">
                 <?php wp_nonce_field('kit_customer_register', 'kit_customer_register_nonce'); ?>
                 <p>
                     <label for="kit_reg_name"><?php esc_html_e('First name', '08600-services-quotations'); ?></label>
@@ -168,14 +167,13 @@ function kit_customer_register_shortcode()
                     <label for="kit_reg_pwd2"><?php esc_html_e('Confirm password', '08600-services-quotations'); ?></label>
                     <input type="password" name="pwd_confirm" id="kit_reg_pwd2" class="input" required autocomplete="new-password" minlength="8">
                 </p>
-                <p class="kit-employee-submit">
-                    <input type="submit" value="<?php esc_attr_e('Create account', '08600-services-quotations'); ?>" class="button button-primary">
+                <p class="kit-portal-form-actions">
+                    <button type="submit" class="kit-portal-btn kit-portal-btn-primary"><?php esc_html_e('Create account', '08600-services-quotations'); ?></button>
                 </p>
-                <p>
+                <p class="kit-portal-auth-links">
                     <a href="<?php echo esc_url(kit_customer_login_url()); ?>"><?php esc_html_e('Already have an account? Log in', '08600-services-quotations'); ?></a>
                 </p>
             </form>
-        </div>
     </div>
     <?php
     return ob_get_clean();

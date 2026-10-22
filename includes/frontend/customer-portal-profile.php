@@ -182,17 +182,19 @@ function kit_customer_portal_render_edit_profile($cust_id)
 
     ob_start();
     ?>
-    <div class="kit-customer-portal-wrap">
-        <div class="kit-customer-portal-header">
-            <h1><?php esc_html_e('Edit your details', '08600-services-quotations'); ?></h1>
-            <div class="flex flex-wrap gap-2">
-                <a class="button" href="<?php echo esc_url(kit_customer_dashboard_url()); ?>"><?php esc_html_e('Back to My account', '08600-services-quotations'); ?></a>
-                <a class="button" href="<?php echo esc_url(wp_logout_url(kit_customer_login_url())); ?>"><?php esc_html_e('Log out', '08600-services-quotations'); ?></a>
+    <div class="kit-portal">
+        <header class="kit-portal-bar">
+            <div class="kit-portal-bar-copy">
+                <p class="kit-portal-kicker"><?php esc_html_e('Customer portal', '08600-services-quotations'); ?></p>
+                <h1><?php esc_html_e('Edit your details', '08600-services-quotations'); ?></h1>
             </div>
-        </div>
+            <div class="kit-portal-actions">
+                <a class="kit-portal-btn" href="<?php echo esc_url(kit_customer_dashboard_url()); ?>"><?php esc_html_e('Back to shipments', '08600-services-quotations'); ?></a>
+            </div>
+        </header>
 
         <?php if (isset($_GET['profile_error'])) : ?>
-            <div class="rounded-lg border border-red-200 bg-red-50 text-red-800 px-4 py-3 mb-4" role="alert">
+            <p class="kit-portal-note kit-portal-note-warn" role="alert">
                 <?php
                 $code = sanitize_text_field(wp_unslash($_GET['profile_error']));
                 if ($code === 'invalid_email') {
@@ -205,15 +207,12 @@ function kit_customer_portal_render_edit_profile($cust_id)
                     esc_html_e('Something went wrong. Please try again.', '08600-services-quotations');
                 }
                 ?>
-            </div>
+            </p>
         <?php endif; ?>
 
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden max-w-5xl mx-auto">
-            <div class="px-4 py-4 md:px-6 md:py-5 border-b border-gray-200 bg-gray-50">
-                <p class="text-sm text-gray-600"><?php esc_html_e('Update your contact and location information. Your login email will match the email you save here.', '08600-services-quotations'); ?></p>
-            </div>
-            <div class="px-4 py-5 md:px-6 md:py-6">
-                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="space-y-5">
+        <p class="kit-portal-lead"><?php esc_html_e('Update your contact and location. The email you save here is also your login email.', '08600-services-quotations'); ?></p>
+        <div class="kit-portal-form">
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="kit-portal-edit-form">
                     <?php wp_nonce_field('update_customer_nonce', 'cust_update_nonce'); ?>
                     <input type="hidden" name="action" value="kit_portal_update_customer" />
                     <input type="hidden" name="customer_id" value="<?php echo esc_attr((string) $cust_id); ?>" />
@@ -222,20 +221,11 @@ function kit_customer_portal_render_edit_profile($cust_id)
                         theForm($customer);
                     }
                     ?>
-                    <div class="flex flex-col sm:flex-row justify-end gap-2 pt-5 border-t border-gray-200">
-                        <a class="button w-full sm:w-auto text-center" href="<?php echo esc_url(kit_customer_dashboard_url()); ?>"><?php esc_html_e('Cancel', '08600-services-quotations'); ?></a>
-                        <?php
-                        echo KIT_Commons::renderButton(__('Save changes', '08600-services-quotations'), 'primary', 'md', array(
-                            'type'      => 'submit',
-                            'name'      => 'kit_portal_customer_submit',
-                            'value'     => '1',
-                            'gradient'  => true,
-                            'classes'   => 'w-full sm:w-auto justify-center',
-                        ));
-                        ?>
+                    <div class="kit-portal-form-actions">
+                        <a class="kit-portal-btn" href="<?php echo esc_url(kit_customer_dashboard_url()); ?>"><?php esc_html_e('Cancel', '08600-services-quotations'); ?></a>
+                        <button type="submit" class="kit-portal-btn kit-portal-btn-primary" name="kit_portal_customer_submit" value="1"><?php esc_html_e('Save changes', '08600-services-quotations'); ?></button>
                     </div>
                 </form>
-            </div>
         </div>
     </div>
     <?php

@@ -65,6 +65,11 @@ function kit_employee_portal_init() {
     // Waybill create form in iframe = backend-only, no theme (no fancy selects)
     add_action('wp_ajax_kit_waybill_create_form', 'kit_waybill_create_form_frame');
 
+    // Staff portal has its own sidebar. Administrators still get the WordPress toolbar unless this runs first.
+    add_filter('show_admin_bar', 'kit_employee_portal_hide_admin_bar', PHP_INT_MAX);
+    add_action('template_redirect', 'kit_employee_portal_suppress_admin_bar', -1);
+    add_action('wp_head', 'kit_employee_portal_hide_admin_bar_css', 100);
+
     // Enqueue login form styles
     add_action('wp_enqueue_scripts', 'kit_employee_enqueue_login_styles', 20);
     // Portal standalone CSS loads after theme (Bootstrap) so selects and layout work when Tailwind is not applied
@@ -218,6 +223,63 @@ function kit_employee_admin_redirect() {
     $dashboard_url = apply_filters('kit_employee_dashboard_url', home_url('/employee-dashboard/'));
     wp_safe_redirect($dashboard_url);
     exit;
+}
+
+/**
+ * Hide the WordPress toolbar on the staff portal. The portal sidebar is the navigation.
+ *
+ * @param bool $show Whether the toolbar would otherwise be shown.
+ * @return bool
+ */
+function kit_employee_portal_is_request() {
+    if (is_admin()) {
+        return false;
+    }
+
+    $uri = isset($_SERVER['REQUEST_URI']) ? (string) wp_parse_url(wp_unslash($_SERVER['REQUEST_URI']), PHP_URL_PATH) : '';
+    $slug = $uri !== '' ? basename(untrailingslashit($uri)) : '';
+    if (in_array($slug, array('login', 'employee-login', 'employee-dashboard'), true)) {
+        return true;
+    }
+
+    if (function_exists('is_singular') && is_singular()) {
+        $post = get_queried_object();
+        if ($post instanceof WP_Post && (
+            has_shortcode($post->post_content, 'kit_employee_portal')
+            || has_shortcode($post->post_content, 'kit_employee_dashboard')
+            || has_shortcode($post->post_content, 'kit_employee_login')
+        )) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function kit_employee_portal_hide_admin_bar($show) {
+    if (kit_employee_portal_is_request()) {
+        return false;
+    }
+    return $show;
+}
+
+/**
+ * Run before WordPress prints the toolbar. The theme leaves the toolbar on for administrators.
+ */
+function kit_employee_portal_suppress_admin_bar() {
+    if (!kit_employee_portal_is_request()) {
+        return;
+    }
+    show_admin_bar(false);
+    remove_action('wp_body_open', 'wp_admin_bar_render', 0);
+    remove_action('wp_footer', 'wp_admin_bar_render', 1000);
+}
+
+function kit_employee_portal_hide_admin_bar_css() {
+    if (!kit_employee_portal_is_request()) {
+        return;
+    }
+    echo '<style id="kit-hide-wpadminbar">html{margin-top:0!important}#wpadminbar{display:none!important}</style>';
 }
 
 /**

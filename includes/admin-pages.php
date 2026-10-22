@@ -164,8 +164,9 @@ function plugin_Waybill_list_page()
         exit;
     }
 
-    // Handle bulk export to PDF
-    if (isset($_GET['export_selected']) && !empty($_GET['export_selected'])) {
+    // Selected-waybill export leaves this page for admin-post, which can
+    // send the spreadsheet before any admin HTML is written.
+    if (isset($_GET['export_selected']) && $_GET['export_selected'] !== '') {
         if (!current_user_can('kit_view_waybills')) {
             wp_die('Unauthorized');
         }
@@ -174,15 +175,8 @@ function plugin_Waybill_list_page()
         $selected_ids_array = array_filter(array_map('trim', explode(',', $selected_ids_string)));
         $selected_ids_array = array_values(array_unique(array_map('sanitize_text_field', $selected_ids_array)));
 
-        if (!empty($selected_ids_array)) {
-            // Redirect to PDF generation with selected_ids parameter
-            // Get plugin root URL (go up one level from includes/)
-            $plugin_url = dirname(plugin_dir_url(__FILE__));
-            $pdf_url = add_query_arg([
-                'selected_ids' => implode(',', $selected_ids_array)
-            ], $plugin_url . '/includes/customers/pdf-bulkinvoicing.php');
-
-            wp_redirect($pdf_url);
+        if (!empty($selected_ids_array) && class_exists('KIT_Waybill_Excel_Export')) {
+            wp_safe_redirect(KIT_Waybill_Excel_Export::download_url($selected_ids_array));
             exit;
         }
     }
@@ -566,6 +560,10 @@ function plugin_Waybill_list_page()
                             'title' => 'All Waybills',
                             'actions' => $actions,
                             'empty_message' => 'No waybills found',
+                            'bulk_excel_export' => true,
+                            'bulk_action_labels' => [
+                                'export' => __('Export to Excel', '08600-services-quotations'),
+                            ],
                         ]);
 
                         echo KIT_Unified_Table::infinite($waybillData, $columns, $main_table_options);
