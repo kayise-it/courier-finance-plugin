@@ -431,6 +431,17 @@ function kit_employee_portal_shortcode() {
         return '<div class="kit-employee-portal-section">' . $main_content . '</div>';
     }
 
+    // Create Trip is administrator-only
+    if ($section === '08600-trip-create' && !KIT_User_Roles::is_admin()) {
+        $dashboard_url = apply_filters('kit_employee_dashboard_url', home_url('/employee-dashboard/'));
+        $msg = __('You don\'t have access to this page. Only administrators can create trips.', '08600-services-quotations');
+        $main_content = '<div class="kit-employee-portal-section-wrap"><div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg">' . esc_html($msg) . ' <a href="' . esc_url($dashboard_url) . '" class="underline font-medium">' . esc_html__('Back to dashboard', '08600-services-quotations') . '</a></div></div>';
+        if (function_exists('kit_employee_portal_layout_with_sidebar')) {
+            return kit_employee_portal_layout_with_sidebar($main_content, $section);
+        }
+        return '<div class="kit-employee-portal-section">' . $main_content . '</div>';
+    }
+
     // Waybill create: show form in an iframe so only backend code runs (no theme = no fancy selects)
     if ($section === '08600-waybill-create') {
         $frame_nonce = wp_create_nonce('kit_waybill_form_frame');
@@ -551,7 +562,7 @@ function kit_employee_portal_enqueue_section_assets($section) {
     // Sections that need waybill scripts (kitscript, waybill-pagination, components) and myPluginAjax
     $waybill_sections = array('08600-waybill-create', '08600-waybill-manage', '08600-Waybill-view', 'warehouse-waybills', '08600-trip-create', 'kit-deliveries');
     if (in_array($section, $waybill_sections, true)) {
-        wp_enqueue_script('kitscript', $plugin_url . 'js/kitscript.js', array('jquery'), '1.0.0', false);
+        wp_enqueue_script('kitscript', $plugin_url . 'js/kitscript.js', array('jquery'), '1.0.12', false);
         wp_enqueue_script('waybill-pagination', $plugin_url . 'js/waybill-pagination.js', array('jquery'), '1.0.0', false);
         wp_enqueue_script('components', $plugin_url . 'js/components.js', array('jquery'), '1.0.0', false);
 

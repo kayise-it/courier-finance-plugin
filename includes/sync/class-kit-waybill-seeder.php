@@ -296,6 +296,21 @@ class KIT_Waybill_Seeder
             }
         }
 
+        // Make sure every AfricaWaybills trip referenced by these waybills has
+        // a kit_deliveries row first. This cron seeds waybills with the
+        // workbook trip id as delivery_id, but trips were previously only
+        // created during a manual Settings seed — so waybills for new trips
+        // pointed at a non-existent truck and never showed on truck pages.
+        if (class_exists('KIT_Sheet_Delivery_Resolve')
+            && method_exists('KIT_Sheet_Delivery_Resolve', 'ensure_africa_trips_in_db')
+        ) {
+            try {
+                KIT_Sheet_Delivery_Resolve::ensure_africa_trips_in_db();
+            } catch (Throwable $e) {
+                error_log('[KIT_Waybill_Seeder] ensure_africa_trips_in_db failed: ' . $e->getMessage());
+            }
+        }
+
         for ($r = 1; $r < count($rows); $r++) {
             $row = $rows[$r];
             $source_row_num = $r + 1;

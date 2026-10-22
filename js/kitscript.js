@@ -25,6 +25,12 @@ function hello() {
         });
     }
 
+    const hasExisting = Object.keys(existingData).length > 0;
+    const hasLocalized = Object.keys(customersFromLocalized).length > 0;
+    if (!hasExisting && !hasLocalized) {
+        return;
+    }
+
     window.CUSTOMERS_DATA = Object.assign({}, existingData, customersFromLocalized);
 })();
 
@@ -799,26 +805,19 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    // Helpers for Step 4 next button styling
+    // Enable/disable Step 4 next without rewriting KIT_Commons button size/style classes.
     function setStep4NextState(enabled) {
         var btn = document.getElementById('step4NextBtn');
         if (!btn) return;
-        var active = [
-            'inline-flex','items-center','px-6','py-3','bg-gradient-to-r','from-blue-600','to-indigo-600',
-            'hover:from-blue-700','hover:to-indigo-700','text-white','font-semibold','rounded-xl','shadow-lg',
-            'hover:shadow-xl','transform','hover:-translate-y-0.5','transition-all','duration-200'
-        ];
-        var disabled = ['opacity-50','cursor-not-allowed','pointer-events-none','bg-blue-400','bg-gray-300','text-gray-500'];
         if (enabled) {
-            btn.classList.add(...active);
-            btn.classList.remove(...disabled);
             btn.disabled = false;
-            btn.setAttribute('aria-disabled','false');
+            btn.removeAttribute('disabled');
+            btn.classList.remove('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
+            btn.setAttribute('aria-disabled', 'false');
         } else {
-            btn.classList.remove(...active);
-            btn.classList.add(...disabled);
             btn.disabled = true;
-            btn.setAttribute('aria-disabled','true');
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+            btn.setAttribute('aria-disabled', 'true');
         }
     }
 

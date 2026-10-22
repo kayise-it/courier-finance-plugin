@@ -320,6 +320,12 @@ function kit_render_customers_form_client_type_script()
             formRoot.dataset.clientTypeInit = '1';
 
             var radios = formRoot.querySelectorAll('.kit-customer-client-type-radio');
+            // Edit-individual uses the convert checkbox, not these radios.
+            // Without this guard, submit assumes Individual and clears the company name.
+            if (!radios.length) {
+                return;
+            }
+
             var companyWrap = formRoot.querySelector('.kit-customer-form__company-wrap');
             var companyInput = formRoot.querySelector('#company_name');
             var individualFallback = formRoot.querySelector('#company_name_individual_fallback');
@@ -328,7 +334,7 @@ function kit_render_customers_form_client_type_script()
 
             function updateCompanyNameVisibility() {
                 var selectedType = formRoot.querySelector('input[name="kit_customer_client_type"]:checked');
-                selectedType = selectedType ? selectedType.value : 'business';
+                selectedType = selectedType ? selectedType.value : 'individual';
                 var isIndividual = selectedType === 'individual';
 
                 if (companyWrap) {
@@ -353,19 +359,12 @@ function kit_render_customers_form_client_type_script()
                         individualFallback.removeAttribute('name');
                     }
                 }
+                // Company always includes a contact person — keep name fields required.
                 if (nameInput) {
-                    if (isIndividual) {
-                        nameInput.setAttribute('required', 'required');
-                    } else {
-                        nameInput.removeAttribute('required');
-                    }
+                    nameInput.setAttribute('required', 'required');
                 }
                 if (surnameInput) {
-                    if (isIndividual) {
-                        surnameInput.setAttribute('required', 'required');
-                    } else {
-                        surnameInput.removeAttribute('required');
-                    }
+                    surnameInput.setAttribute('required', 'required');
                 }
             }
 
@@ -562,6 +561,8 @@ function kit_render_customers_form_client_type_script()
  *     @type bool   $show_telephone           Extra landline field (waybill).
  *     @type bool   $show_customer_notes      Optional notes field (waybill).
  *     @type bool   $use_container_query_layout Use kit-customer-form container-query grid (theForm / narrow columns).
+ *     @type string $form_layout               `split` (profile|contact cards) or `compact` (one full-width field grid).
+ *     @type string $origin_select_layout      `equal` (50/50) or `compact` (narrow country). Default equal.
  *     @type bool   $show_client_type_toggle  Business / Individual radios; hides company name when Individual.
  *     @type bool   $show_convert_to_company  Edit-individual: checkbox to move row into kit_company_customers.
  *     @type string $company_name_wrapper_class Extra class on company name wrapper (e.g. kit-customer-form__company-wrap).
@@ -588,6 +589,10 @@ function kit_render_customers_form_fields($customer = null, $args = [])
         'show_telephone' => false,
         'show_customer_notes' => false,
         'use_container_query_layout' => false,
+        /** split = two cards; compact = single full-width grid (waybill modal / narrow panels). */
+        'form_layout' => 'split',
+        /** equal keeps country/city readable; compact truncates long names. */
+        'origin_select_layout' => 'equal',
         'show_client_type_toggle' => false,
         'show_convert_to_company' => false,
         /** When true (individual admin edit), hide company name unless converting. */
@@ -690,18 +695,24 @@ function kit_render_customers_form_fields($customer = null, $args = [])
     $cust_id_hidden = isset($cust['cust_id']) ? (string) $cust['cust_id'] : '';
 
     $use_container = !empty($args['use_container_query_layout']);
+    $is_compact = ($args['form_layout'] === 'compact');
+    $origin_layout = ($args['origin_select_layout'] === 'compact') ? 'compact' : 'equal';
     $section_class = $use_container
         ? 'kit-customer-form__section min-w-0 w-full rounded-xl border border-gray-200 bg-white p-3 sm:p-4 md:p-5'
         : 'rounded-xl border border-gray-200 bg-white p-4 md:p-5';
     $heading_class = $use_container
         ? 'text-sm sm:text-base font-semibold text-gray-900 mb-3 sm:mb-4'
         : 'text-base font-semibold text-gray-900 mb-4';
+    $subheading_class = 'text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3';
     $inner_space_class = $use_container ? 'space-y-3 sm:space-y-4' : 'space-y-4';
-    $main_grid_class = $use_container ? 'kit-customer-form__main' : 'grid grid-cols-1 lg:grid-cols-2 gap-4';
-    $pair_grid_class = $use_container ? 'kit-customer-form__pair' : 'grid grid-cols-1 md:grid-cols-2 gap-4';
-    $location_section_class = $section_class . ($use_container ? ' kit-customer-form__location' : ' lg:col-span-2');
-    $location_grid_class = $use_container ? 'kit-customer-form__pair' : 'grid grid-cols-1 md:grid-cols-2 gap-4';
-    $field_wrap_class = $use_container ? 'min-w-0' : '';
+    $main_grid_class = $use_container
+        ? 'kit-customer-form__main'
+        : ($is_compact ? 'grid grid-cols-1 gap-4' : 'grid grid-cols-1 lg:grid-cols-2 gap-4');
+    $pair_grid_class = $use_container ? 'kit-customer-form__pair' : 'grid grid-cols-1 sm:grid-cols-2 gap-4';
+    $compact_fields_class = 'kit-customer-form__fields grid grid-cols-1 sm:grid-cols-2 gap-4';
+    $location_section_class = $section_class . ($use_container ? ' kit-customer-form__location' : ($is_compact ? '' : ' lg:col-span-2'));
+    $field_wrap_class = $use_container || $is_compact ? 'min-w-0' : '';
+    $span_full_class = $is_compact ? 'sm:col-span-2 min-w-0' : $field_wrap_class;
 
     $first_input_name = ($args['person_name_input_names'] === 'waybill') ? 'customer_name' : 'name';
     $surname_input_name = ($args['person_name_input_names'] === 'waybill') ? 'customer_surname' : 'surname';
@@ -719,9 +730,40 @@ function kit_render_customers_form_fields($customer = null, $args = [])
     $hide_company_by_default = (!empty($args['show_convert_to_company']) || !empty($args['individual_profile']))
         && empty($args['show_client_type_toggle']);
 
-    $needs_form_root = $use_container || !empty($args['show_client_type_toggle']) || !empty($args['show_convert_to_company']) || !empty($args['individual_profile']);
+    $needs_form_root = $use_container || $is_compact || !empty($args['show_client_type_toggle']) || !empty($args['show_convert_to_company']) || !empty($args['individual_profile']);
 
     $convert_checked = !empty($_POST['kit_convert_to_company']);
+
+    $company_special = '';
+    if (!empty($args['show_client_type_toggle'])) {
+        $company_special = $is_business ? 'required' : '';
+    } elseif (!empty($args['show_convert_to_company']) || !empty($args['individual_profile'])) {
+        $company_special = $convert_checked ? 'required' : '';
+    } else {
+        $company_special = 'required';
+    }
+    $company_display_value = $val('company_name');
+    if ((!empty($args['show_client_type_toggle']) && !$is_business)
+        || ((!empty($args['show_convert_to_company']) || !empty($args['individual_profile'])) && !$convert_checked)
+    ) {
+        $company_display_value = '';
+    }
+    $company_input_name = 'company_name';
+    if ($hide_company_by_default && !$convert_checked && empty($args['show_client_type_toggle'])) {
+        // Omit name until convert is checked (JS re-adds it).
+        $company_input_name = '';
+    }
+
+    $hide_company = false;
+    if (!empty($args['show_client_type_toggle']) && !$is_business) {
+        $hide_company = true;
+    } elseif ($hide_company_by_default && !$convert_checked) {
+        $hide_company = true;
+    }
+
+    $profile_title = !empty($args['individual_profile']) || !empty($args['show_convert_to_company'])
+        ? __('Individual Profile', '08600')
+        : __('Customer Profile', '08600');
 
     ob_start();
     ?>
@@ -729,24 +771,19 @@ function kit_render_customers_form_fields($customer = null, $args = [])
         <input type="hidden" name="cust_id" id="cust_id" value="<?php echo esc_attr($cust_id_hidden); ?>">
     <?php endif; ?>
 
-    <?php if ($needs_form_root) : ?><div class="kit-customer-form w-full min-w-0"><?php endif; ?>
+    <?php if ($needs_form_root) : ?>
+        <div class="kit-customer-form w-full min-w-0<?php echo $is_compact ? ' kit-customer-form--compact' : ''; ?>">
+    <?php endif; ?>
     <div class="<?php echo esc_attr($main_grid_class); ?>">
+        <?php if ($is_compact) : ?>
         <section class="<?php echo esc_attr($section_class); ?>">
-            <h2 class="<?php echo esc_attr($heading_class); ?>"><?php echo !empty($args['individual_profile']) || !empty($args['show_convert_to_company']) ? esc_html__('Individual Profile', '08600') : esc_html__('Customer Profile', '08600'); ?></h2>
-            <div class="<?php echo esc_attr($inner_space_class); ?>">
+            <h2 class="<?php echo esc_attr($heading_class); ?>"><?php echo esc_html__('Customer Details', '08600'); ?></h2>
+            <div class="<?php echo esc_attr($compact_fields_class); ?>">
                 <?php if (!empty($args['show_client_type_toggle'])) : ?>
-                <div class="<?php echo esc_attr($field_wrap_class); ?>">
+                <div class="<?php echo esc_attr($span_full_class); ?>">
                     <span class="<?php echo esc_attr(KIT_Commons::labelClass()); ?>">Client Type</span>
                     <div class="flex flex-wrap gap-4 sm:gap-6 mt-1">
                         <?php
-                        echo KIT_Commons::Lradio([
-                            'name' => 'kit_customer_client_type',
-                            'id' => 'kit_customer_client_type_business',
-                            'value' => 'business',
-                            'label' => 'Business',
-                            'checked' => $is_business,
-                            'class' => 'kit-customer-client-type-radio',
-                        ]);
                         echo KIT_Commons::Lradio([
                             'name' => 'kit_customer_client_type',
                             'id' => 'kit_customer_client_type_individual',
@@ -755,8 +792,230 @@ function kit_render_customers_form_fields($customer = null, $args = [])
                             'checked' => !$is_business,
                             'class' => 'kit-customer-client-type-radio',
                         ]);
+                        echo KIT_Commons::Lradio([
+                            'name' => 'kit_customer_client_type',
+                            'id' => 'kit_customer_client_type_business',
+                            'value' => 'business',
+                            'label' => 'Company',
+                            'checked' => $is_business,
+                            'class' => 'kit-customer-client-type-radio',
+                        ]);
                         ?>
                     </div>
+                    <p class="text-xs text-gray-500 mt-2 mb-0">
+                        <?php echo esc_html__('Individual is a person only. Company is a business with a contact person attached.', '08600'); ?>
+                    </p>
+                </div>
+                <?php endif; ?>
+
+                <?php if (!empty($args['show_convert_to_company'])) : ?>
+                <div class="<?php echo esc_attr($span_full_class); ?> rounded-lg border border-amber-200 bg-amber-50 p-3">
+                    <?php
+                    echo KIT_Commons::Lcheckbox([
+                        'name' => 'kit_convert_to_company',
+                        'id' => 'kit_convert_to_company',
+                        'value' => '1',
+                        'label' => 'Convert this client into a company',
+                        'checked' => $convert_checked,
+                    ]);
+                    ?>
+                    <p class="text-xs text-amber-900 mt-2 mb-0">
+                        <?php echo esc_html__('When checked and saved, this individual is moved to the Companies list. Waybills are re-linked to the company and the person record is removed.', '08600'); ?>
+                    </p>
+                </div>
+                <?php endif; ?>
+
+                <?php if ($wraps_company_name) : ?>
+                <div
+                    <?php if ($company_wrap_id !== '') : ?>id="<?php echo esc_attr($company_wrap_id); ?>"<?php endif; ?>
+                    class="<?php echo esc_attr(trim($span_full_class . ' ' . $company_wrap_class)); ?>"
+                    <?php if ($hide_company) : ?>style="display:none;"<?php endif; ?>
+                >
+                <?php endif; ?>
+                <div class="<?php echo esc_attr($wraps_company_name ? $field_wrap_class : $span_full_class); ?>">
+                    <?php
+                    echo KIT_Commons::Linput([
+                        'label' => 'Company Name',
+                        'name' => $company_input_name,
+                        'id' => 'company_name',
+                        'type' => 'text',
+                        'value' => $company_display_value,
+                        'special' => $company_special,
+                    ]);
+                    ?>
+                </div>
+                <?php if ($wraps_company_name) : ?>
+                </div>
+                <?php endif; ?>
+
+                <?php if (!empty($args['show_client_type_toggle'])) : ?>
+                <input type="hidden" id="company_name_individual_fallback" value="Individual"<?php echo $is_business ? ' disabled' : ' name="company_name"'; ?>>
+                <?php elseif (!empty($args['individual_profile']) || !empty($args['show_convert_to_company'])) : ?>
+                <input type="hidden" name="company_name" id="company_name_individual_fallback" value=""<?php echo $convert_checked ? ' disabled' : ''; ?>>
+                <?php endif; ?>
+
+                <div class="<?php echo esc_attr(trim($span_full_class . ' kit-customer-form__person-wrap')); ?>">
+                    <div class="<?php echo esc_attr($pair_grid_class); ?>">
+                        <div class="<?php echo esc_attr($field_wrap_class); ?>">
+                            <?php
+                            echo KIT_Commons::Linput([
+                                'label' => 'First Name',
+                                'name' => $first_input_name,
+                                'id' => 'customer_name',
+                                'type' => 'text',
+                                'value' => $val('name'),
+                                'special' => $convert_checked ? '' : 'required',
+                            ]);
+                            ?>
+                        </div>
+                        <div class="<?php echo esc_attr($field_wrap_class); ?>">
+                            <?php
+                            echo KIT_Commons::Linput([
+                                'label' => 'Last Name',
+                                'name' => $surname_input_name,
+                                'id' => 'customer_surname',
+                                'type' => 'text',
+                                'value' => $val('surname'),
+                                'special' => $convert_checked ? '' : 'required',
+                            ]);
+                            ?>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="<?php echo esc_attr($field_wrap_class); ?>">
+                    <?php
+                    echo KIT_Commons::Linput([
+                        'label' => 'Cell Phone',
+                        'name' => 'cell',
+                        'id' => 'cell',
+                        'type' => 'tel',
+                        'value' => $val('cell'),
+                        'special' => 'inputmode="tel" autocomplete="tel"',
+                    ]);
+                    ?>
+                </div>
+                <div class="<?php echo esc_attr($field_wrap_class); ?>">
+                    <?php
+                    echo KIT_Commons::Linput([
+                        'label' => 'Email Address',
+                        'name' => 'email_address',
+                        'id' => 'email_address',
+                        'type' => 'email',
+                        'value' => $val('email_address'),
+                        'special' => 'autocomplete="email"',
+                    ]);
+                    ?>
+                </div>
+
+                <div class="<?php echo esc_attr($span_full_class); ?>">
+                    <?php
+                    echo KIT_Commons::TextAreaField([
+                        'label' => 'Address',
+                        'name' => 'address',
+                        'id' => 'address',
+                        'value' => $val('address'),
+                        'height' => '72',
+                    ]);
+                    ?>
+                </div>
+
+                <?php if ($args['show_telephone']) : ?>
+                    <div class="<?php echo esc_attr($field_wrap_class); ?>">
+                        <?php
+                        echo KIT_Commons::Linput([
+                            'label' => 'Telephone',
+                            'name' => 'telephone',
+                            'id' => 'telephone',
+                            'type' => 'tel',
+                            'value' => $val('telephone'),
+                            'special' => 'autocomplete="tel"',
+                        ]);
+                        ?>
+                    </div>
+                <?php endif; ?>
+                <?php if ($args['show_customer_notes']) : ?>
+                    <div class="<?php echo esc_attr($field_wrap_class); ?>">
+                        <?php
+                        echo KIT_Commons::Linput([
+                            'label' => 'Notes (optional)',
+                            'name' => 'customer_notes',
+                            'id' => 'customer_notes',
+                            'type' => 'text',
+                            'value' => $val('customer_notes'),
+                            'special' => '',
+                        ]);
+                        ?>
+                    </div>
+                <?php elseif ($args['show_telephone']) : ?>
+                    <div class="<?php echo esc_attr($field_wrap_class); ?>" aria-hidden="true"></div>
+                <?php endif; ?>
+
+                <?php if (!$args['omit_location_section']) : ?>
+                <div class="<?php echo esc_attr($span_full_class); ?> mt-1 pt-3 border-t border-gray-100">
+                    <h3 class="<?php echo esc_attr($subheading_class); ?>"><?php echo esc_html($args['location_section_title']); ?></h3>
+                    <?php
+                    echo kit_render_origin_selects_markup([
+                        'default_country_id' => $defaultCountryId,
+                        'default_city_id' => $defaultCityId,
+                        'origin_country_initial' => $origin_country_initial,
+                        'origin_city_initial' => $origin_city_initial,
+                        'country_select_options' => $country_select_options,
+                        'country_label' => $args['origin_country_label'],
+                        'city_label' => $args['origin_city_label'],
+                        'field_wrap_class' => $field_wrap_class,
+                        'layout' => $origin_layout,
+                    ]);
+                    ?>
+                </div>
+                <?php endif; ?>
+
+                <?php if ($args['show_vat']) : ?>
+                    <div class="<?php echo esc_attr($span_full_class); ?>">
+                        <?php
+                        echo KIT_Commons::Linput([
+                            'label' => 'VAT Number',
+                            'name' => 'vat_number',
+                            'id' => 'vat_number',
+                            'type' => 'text',
+                            'value' => $val('vat_number'),
+                            'special' => '',
+                        ]);
+                        ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </section>
+        <?php else : ?>
+        <section class="<?php echo esc_attr($section_class); ?>">
+            <h2 class="<?php echo esc_attr($heading_class); ?>"><?php echo esc_html($profile_title); ?></h2>
+            <div class="<?php echo esc_attr($inner_space_class); ?>">
+                <?php if (!empty($args['show_client_type_toggle'])) : ?>
+                <div class="<?php echo esc_attr($field_wrap_class); ?>">
+                    <span class="<?php echo esc_attr(KIT_Commons::labelClass()); ?>">Client Type</span>
+                    <div class="flex flex-wrap gap-4 sm:gap-6 mt-1">
+                        <?php
+                        echo KIT_Commons::Lradio([
+                            'name' => 'kit_customer_client_type',
+                            'id' => 'kit_customer_client_type_individual',
+                            'value' => 'individual',
+                            'label' => 'Individual',
+                            'checked' => !$is_business,
+                            'class' => 'kit-customer-client-type-radio',
+                        ]);
+                        echo KIT_Commons::Lradio([
+                            'name' => 'kit_customer_client_type',
+                            'id' => 'kit_customer_client_type_business',
+                            'value' => 'business',
+                            'label' => 'Company',
+                            'checked' => $is_business,
+                            'class' => 'kit-customer-client-type-radio',
+                        ]);
+                        ?>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-2 mb-0">
+                        <?php echo esc_html__('Individual is a person only. Company is a business with a contact person attached.', '08600'); ?>
+                    </p>
                 </div>
                 <?php endif; ?>
 
@@ -781,40 +1040,11 @@ function kit_render_customers_form_fields($customer = null, $args = [])
                 <div
                     <?php if ($company_wrap_id !== '') : ?>id="<?php echo esc_attr($company_wrap_id); ?>"<?php endif; ?>
                     class="<?php echo esc_attr(trim($field_wrap_class . ' ' . $company_wrap_class)); ?>"
-                    <?php
-                    $hide_company = false;
-                    if (!empty($args['show_client_type_toggle']) && !$is_business) {
-                        $hide_company = true;
-                    } elseif ($hide_company_by_default && !$convert_checked) {
-                        $hide_company = true;
-                    }
-                    if ($hide_company) :
-                        ?>style="display:none;"<?php
-                    endif;
-                    ?>
+                    <?php if ($hide_company) : ?>style="display:none;"<?php endif; ?>
                 >
                 <?php endif; ?>
                 <div class="<?php echo esc_attr($field_wrap_class); ?>">
                     <?php
-                    $company_special = '';
-                    if (!empty($args['show_client_type_toggle'])) {
-                        $company_special = $is_business ? 'required' : '';
-                    } elseif (!empty($args['show_convert_to_company']) || !empty($args['individual_profile'])) {
-                        $company_special = $convert_checked ? 'required' : '';
-                    } else {
-                        $company_special = 'required';
-                    }
-                    $company_display_value = $val('company_name');
-                    if ((!empty($args['show_client_type_toggle']) && !$is_business)
-                        || ((!empty($args['show_convert_to_company']) || !empty($args['individual_profile'])) && !$convert_checked)
-                    ) {
-                        $company_display_value = '';
-                    }
-                    $company_input_name = 'company_name';
-                    if ($hide_company_by_default && !$convert_checked && empty($args['show_client_type_toggle'])) {
-                        // Omit name until convert is checked (JS re-adds it).
-                        $company_input_name = '';
-                    }
                     echo KIT_Commons::Linput([
                         'label' => 'Company Name',
                         'name' => $company_input_name,
@@ -867,29 +1097,31 @@ function kit_render_customers_form_fields($customer = null, $args = [])
         <section class="<?php echo esc_attr($section_class); ?>">
             <h2 class="<?php echo esc_attr($heading_class); ?>">Contact</h2>
             <div class="<?php echo esc_attr($inner_space_class); ?>">
-                <div class="<?php echo esc_attr($field_wrap_class); ?>">
-                    <?php
-                    echo KIT_Commons::Linput([
-                        'label' => 'Cell Phone',
-                        'name' => 'cell',
-                        'id' => 'cell',
-                        'type' => 'tel',
-                        'value' => $val('cell'),
-                        'special' => 'inputmode="tel" autocomplete="tel"',
-                    ]);
-                    ?>
-                </div>
-                <div class="<?php echo esc_attr($field_wrap_class); ?>">
-                    <?php
-                    echo KIT_Commons::Linput([
-                        'label' => 'Email Address',
-                        'name' => 'email_address',
-                        'id' => 'email_address',
-                        'type' => 'email',
-                        'value' => $val('email_address'),
-                        'special' => 'autocomplete="email"',
-                    ]);
-                    ?>
+                <div class="<?php echo esc_attr($pair_grid_class); ?>">
+                    <div class="<?php echo esc_attr($field_wrap_class); ?>">
+                        <?php
+                        echo KIT_Commons::Linput([
+                            'label' => 'Cell Phone',
+                            'name' => 'cell',
+                            'id' => 'cell',
+                            'type' => 'tel',
+                            'value' => $val('cell'),
+                            'special' => 'inputmode="tel" autocomplete="tel"',
+                        ]);
+                        ?>
+                    </div>
+                    <div class="<?php echo esc_attr($field_wrap_class); ?>">
+                        <?php
+                        echo KIT_Commons::Linput([
+                            'label' => 'Email Address',
+                            'name' => 'email_address',
+                            'id' => 'email_address',
+                            'type' => 'email',
+                            'value' => $val('email_address'),
+                            'special' => 'autocomplete="email"',
+                        ]);
+                        ?>
+                    </div>
                 </div>
                 <div class="<?php echo esc_attr($field_wrap_class); ?>">
                     <?php
@@ -902,33 +1134,37 @@ function kit_render_customers_form_fields($customer = null, $args = [])
                     ]);
                     ?>
                 </div>
-                <?php if ($args['show_telephone']) : ?>
-                    <div class="<?php echo esc_attr($field_wrap_class); ?>">
-                        <?php
-                        echo KIT_Commons::Linput([
-                            'label' => 'Telephone',
-                            'name' => 'telephone',
-                            'id' => 'telephone',
-                            'type' => 'tel',
-                            'value' => $val('telephone'),
-                            'special' => 'autocomplete="tel"',
-                        ]);
-                        ?>
-                    </div>
-                <?php endif; ?>
-                <?php if ($args['show_customer_notes']) : ?>
-                    <div class="<?php echo esc_attr($field_wrap_class); ?>">
-                        <?php
-                        echo KIT_Commons::Linput([
-                            'label' => 'Notes (optional)',
-                            'name' => 'customer_notes',
-                            'id' => 'customer_notes',
-                            'type' => 'text',
-                            'value' => $val('customer_notes'),
-                            'special' => '',
-                        ]);
-                        ?>
-                    </div>
+                <?php if ($args['show_telephone'] || $args['show_customer_notes']) : ?>
+                <div class="<?php echo esc_attr($pair_grid_class); ?>">
+                    <?php if ($args['show_telephone']) : ?>
+                        <div class="<?php echo esc_attr($field_wrap_class); ?>">
+                            <?php
+                            echo KIT_Commons::Linput([
+                                'label' => 'Telephone',
+                                'name' => 'telephone',
+                                'id' => 'telephone',
+                                'type' => 'tel',
+                                'value' => $val('telephone'),
+                                'special' => 'autocomplete="tel"',
+                            ]);
+                            ?>
+                        </div>
+                    <?php endif; ?>
+                    <?php if ($args['show_customer_notes']) : ?>
+                        <div class="<?php echo esc_attr($field_wrap_class); ?>">
+                            <?php
+                            echo KIT_Commons::Linput([
+                                'label' => 'Notes (optional)',
+                                'name' => 'customer_notes',
+                                'id' => 'customer_notes',
+                                'type' => 'text',
+                                'value' => $val('customer_notes'),
+                                'special' => '',
+                            ]);
+                            ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
                 <?php endif; ?>
             </div>
         </section>
@@ -936,36 +1172,36 @@ function kit_render_customers_form_fields($customer = null, $args = [])
         <?php if (!$args['omit_location_section']) : ?>
         <section class="<?php echo esc_attr($location_section_class); ?>">
             <h2 class="<?php echo esc_attr($heading_class); ?>"><?php echo esc_html($args['location_section_title']); ?></h2>
-            <div class="<?php echo esc_attr($location_grid_class); ?>">
-                <?php
-                echo kit_render_origin_selects_markup([
-                    'default_country_id' => $defaultCountryId,
-                    'default_city_id' => $defaultCityId,
-                    'origin_country_initial' => $origin_country_initial,
-                    'origin_city_initial' => $origin_city_initial,
-                    'country_select_options' => $country_select_options,
-                    'country_label' => $args['origin_country_label'],
-                    'city_label' => $args['origin_city_label'],
-                    'field_wrap_class' => $field_wrap_class,
-                ]);
-                ?>
+            <?php
+            echo kit_render_origin_selects_markup([
+                'default_country_id' => $defaultCountryId,
+                'default_city_id' => $defaultCityId,
+                'origin_country_initial' => $origin_country_initial,
+                'origin_city_initial' => $origin_city_initial,
+                'country_select_options' => $country_select_options,
+                'country_label' => $args['origin_country_label'],
+                'city_label' => $args['origin_city_label'],
+                'field_wrap_class' => $field_wrap_class,
+                'layout' => $origin_layout,
+            ]);
+            ?>
 
-                <?php if ($args['show_vat']) : ?>
-                    <div class="md:col-span-2">
-                        <?php
-                        echo KIT_Commons::Linput([
-                            'label' => 'VAT Number',
-                            'name' => 'vat_number',
-                            'id' => 'vat_number',
-                            'type' => 'text',
-                            'value' => $val('vat_number'),
-                            'special' => '',
-                        ]);
-                        ?>
-                    </div>
-                <?php endif; ?>
-            </div>
+            <?php if ($args['show_vat']) : ?>
+                <div class="mt-4">
+                    <?php
+                    echo KIT_Commons::Linput([
+                        'label' => 'VAT Number',
+                        'name' => 'vat_number',
+                        'id' => 'vat_number',
+                        'type' => 'text',
+                        'value' => $val('vat_number'),
+                        'special' => '',
+                    ]);
+                    ?>
+                </div>
+            <?php endif; ?>
         </section>
+        <?php endif; ?>
         <?php endif; ?>
     </div>
     <?php if ($needs_form_root) : ?></div><?php endif; ?>

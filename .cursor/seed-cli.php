@@ -134,6 +134,7 @@ if ($cmd === 'stages') {
     $snap('after run_google_sheet_seed');
 
     kit_seed_merge_duplicate_customers();
+    kit_seed_merge_duplicate_companies();
     $snap('after merge_duplicate_customers');
     kit_seed_prune_blank_customer_stubs();
     $snap('after prune_blank_customer_stubs');

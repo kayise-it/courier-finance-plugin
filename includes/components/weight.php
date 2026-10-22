@@ -42,6 +42,7 @@ if (isset($waybill) && is_array($waybill)) {
     }
 }
 $showManipulatorInput = ($checkManny === 'checked') || ($manny_mass_rate_value != 0);
+$can_see_prices = class_exists('KIT_User_Roles') && KIT_User_Roles::can_see_prices();
 
 // Resolve mass rate for display: misc snapshot, then derive from mass_charge / kg.
 $display_mass_rate = '';
@@ -71,6 +72,7 @@ if (isset($waybill) && is_array($waybill)) {
     <div class="kit-mass-component">
         <div class="flex justify-between items-center">
             <?php echo KIT_Commons::prettyHeading(['words' => 'Mass', 'classes' => 'mb-6']) ?>
+            <?php if ($can_see_prices): ?>
             <span class="kit-tooltip" data-tooltip="Open Mass Calculator">
                 <button class="btn btn-primary" type="button" aria-label="Open Mass Calculator">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -78,6 +80,7 @@ if (isset($waybill) && is_array($waybill)) {
                     </svg>
                 </button>
             </span>
+            <?php endif; ?>
 
         </div>
 
@@ -96,8 +99,8 @@ if (isset($waybill) && is_array($waybill)) {
                         'onclick' => '',
                     ]); ?>
                 </div>
+                <?php if ($can_see_prices): ?>
                 <div class="mt-6 h-10 flex items-center justify-center px-1 text-gray-600 font-semibold select-none" aria-hidden="true">×</div>
-                <?php if (KIT_User_Roles::can_see_prices()): ?>
                     <div>
                         <?php echo KIT_Commons::Lnumber([
                             'label'    => 'Mass Rate (R)',
@@ -111,9 +114,7 @@ if (isset($waybill) && is_array($waybill)) {
                         ]); ?>
                         
                     </div>
-                <?php endif; ?>
                 <div class="mt-6 h-10 flex items-center justify-center px-1 text-gray-600 font-semibold select-none" aria-hidden="true">=</div>
-                <?php if (KIT_User_Roles::can_see_prices()): ?>
                     <div>
                         <?php echo KIT_Commons::Linput([
                             'label'   => 'Mass Total Cost (R)',
@@ -126,6 +127,9 @@ if (isset($waybill) && is_array($waybill)) {
                             'special' => 'readonly',
                         ]); ?>
                     </div>
+                <?php else: ?>
+                    <input type="hidden" name="mass_rate" id="mass_rate" class="kit-mass-rate" value="<?php echo esc_attr($display_mass_rate); ?>">
+                    <input type="hidden" name="mass_charge" id="mass_charge" class="kit-mass-charge" value="<?php echo esc_attr($display_mass_charge); ?>">
                 <?php endif; ?>
             </div>
             <div id="mass-calculation-messages" class="min-h-[0px]"></div>
@@ -139,7 +143,7 @@ if (isset($waybill) && is_array($waybill)) {
             </div>
 
             <div class="flex flex-row gap-4 justify-start align-start">
-                <?php if (KIT_User_Roles::can_see_prices()): ?>
+                <?php if ($can_see_prices): ?>
                     <div>
                         <label for="enable_price_manipulator">
                             <div>

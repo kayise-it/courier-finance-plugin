@@ -207,7 +207,7 @@ class KIT_Dashboard {
     public static function render_month_band(array $options = []) {
         $include_revenue = array_key_exists('include_revenue', $options)
             ? (bool) $options['include_revenue']
-            : true;
+            : (class_exists('KIT_User_Roles') && KIT_User_Roles::can_see_prices());
         $use_portal = !empty($options['use_portal_urls']);
 
         $currency = class_exists('KIT_Commons') ? KIT_Commons::currency() : 'R';

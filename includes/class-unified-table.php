@@ -204,6 +204,27 @@ CSS;
     public static function toolbar_css(): string
     {
         return <<<'CSS'
+.kit-unified-table-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem 1rem;
+    box-sizing: border-box;
+    padding: 1.25rem 1.5rem 0.75rem;
+}
+.kit-unified-table-header > div:first-child {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+.kit-unified-table-header > div:last-child {
+    flex: 0 0 auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
 .kit-table-toolbar {
     display: flex;
     flex-wrap: wrap;
@@ -389,7 +410,8 @@ CSS;
             'header_base_class' => 'px-3 py-2 text-xs font-semibold text-left uppercase tracking-wide',
             'cell_base_class' => 'px-3 py-2 text-sm text-gray-900 whitespace-normal break-words align-top',
             'index_cell_class' => 'px-3 py-2 text-sm font-medium text-gray-600 whitespace-nowrap text-center',
-            'actions_cell_class' => 'px-3 py-2 text-sm font-medium text-gray-900 whitespace-normal break-words align-top flex flex-wrap items-center gap-2',
+            'actions_cell_class' => 'px-3 py-2 text-sm font-medium text-gray-900 whitespace-normal break-words align-top',
+            'actions_inner_class' => 'inline-flex flex-wrap items-center gap-2',
             'primary_action' => null,
             'items_per_page' => 100,
             'current_page' => 1,
@@ -627,7 +649,7 @@ CSS;
 ?>
         <div id="<?php echo esc_attr($container_id); ?>" class="kit-unified-table-wrap w-full max-w-full min-w-0 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden" style="box-sizing: border-box;">
             <?php if ($options['title'] || $options['subtitle'] || $options['table_type'] || !empty($options['primary_action']) || !empty($options['sync_entity'])): ?>
-                <div class="px-4 sm:px-6 pt-5 sm:pt-6 pb-3 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                <div class="kit-unified-table-header kit-detail-card-header">
                     <div class="min-w-0">
                         <?php if ($options['title']): ?>
                             <h3 class="text-lg font-semibold text-gray-900 leading-tight"><?php echo esc_html($options['title']); ?></h3>
@@ -1079,6 +1101,7 @@ CSS;
                                             <?php endforeach; ?>
                                             <?php if (!empty($options['actions'])): ?>
                                                 <td class="<?php echo esc_attr($options['actions_cell_class']); ?>">
+                                                    <div class="<?php echo esc_attr($options['actions_inner_class'] ?? 'inline-flex flex-wrap items-center gap-2'); ?>">
                                                     <?php foreach ($options['actions'] as $action): ?>
                                                         <?php
                                                         $href = $action['href'] ?? '#';
@@ -1116,6 +1139,7 @@ CSS;
                                                             ?>
                                                         </a>
                                                     <?php endforeach; ?>
+                                                    </div>
                                                 </td>
                                             <?php endif; ?>
                                             </tr>

@@ -40,9 +40,10 @@ class KIT_Deliveries
         add_action('wp_ajax_restore_delivery_backup', [self::class, 'handle_restore_delivery_backup']);
         add_action('wp_ajax_filter_deliveries', [self::class, 'ajax_filter_deliveries']);
 
-        // Schedule daily task to update past deliveries
-        add_action('init', [self::class, 'schedule_daily_delivery_status_update']);
-        add_action('kit_daily_update_past_deliveries', [self::class, 'update_past_deliveries_to_delivered']);
+        // Deliveries are only ever marked "delivered" manually (dispatcher/driver
+        // confirmation via set_delivery_status). No automatic date-based flip:
+        // clear any legacy daily cron event scheduled by older versions.
+        add_action('init', [self::class, 'unschedule_daily_delivery_status_update']);
     }
     public static function shippingDirections()
     {
@@ -376,10 +377,10 @@ class KIT_Deliveries
                 true,
                 'handleDeliveryClick',
                 [
-                    'type'       => 'radio',
-                    'name'       => 'delivery_id',
-                    'checked_id' => 1,
-                ]
+                        'type'       => 'radio',
+                        'name'       => 'delivery_id',
+                        'checked_id' => 1,
+                    ]
             );
             ?>
         <?php endforeach;
@@ -527,23 +528,23 @@ class KIT_Deliveries
             <?php
             // Ensure status is not null before using string functions
             $status       = $status ?? '';
-            $status_label = ucfirst(str_replace('_', ' ', (string) $status));
+        $status_label = ucfirst(str_replace('_', ' ', (string) $status));
 
-            echo KIT_Commons::renderButton(
-                $status_label,
-                'secondary',
-                'lg',
-                [
-                    'type'        => 'button',
-                    'id'          => 'delivery-status-button-' . $delivery_id,
-                    'onclick'     => sprintf("toggleDropdownDeliveryStatus('%s')", esc_js($delivery_id)),
-                    'fullWidth'   => true,
-                    'classes'     => 'justify-between text-left',
-                    'iconPosition' => 'right',
-                    'icon'        => '<path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />',
-                ]
-            );
-            ?>
+        echo KIT_Commons::renderButton(
+            $status_label,
+            'secondary',
+            'lg',
+            [
+                'type'        => 'button',
+                'id'          => 'delivery-status-button-' . $delivery_id,
+                'onclick'     => sprintf("toggleDropdownDeliveryStatus('%s')", esc_js($delivery_id)),
+                'fullWidth'   => true,
+                'classes'     => 'justify-between text-left',
+                'iconPosition' => 'right',
+                'icon'        => '<path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />',
+            ]
+        );
+        ?>
 
             <div id="delivery-status-dropdown-<?php echo $delivery_id; ?>"
                 class="hidden absolute right-0 mt-2 w-56 bg-white shadow-lg rounded-md z-10">
@@ -572,7 +573,7 @@ class KIT_Deliveries
             $status = $wpdb->get_var($wpdb->prepare("SELECT status FROM $table_name WHERE id = %d", $atts['delivery_id']));
 
             ob_start();
-        ?>
+            ?>
             <form method="POST" action="<?php echo esc_url(admin_url('admin-post.php')) ?>" id="delivery-status-form">
                 <input type="hidden" name="action" value="update_delivery_status">
                 <input type="hidden" name="delivery_id" value="<?php echo esc_attr($atts['delivery_id'] ?? '') ?>">
@@ -643,7 +644,7 @@ class KIT_Deliveries
 
     /**
      * Filter deliveries by type: all, scheduled (future), or past
-     * 
+     *
      * @param string $filter_type Filter type: 'all', 'scheduled', or 'past'. Default: 'scheduled'
      * @param string $country_code Optional country code to filter by
      * @return array Array of delivery objects
@@ -765,61 +766,41 @@ class KIT_Deliveries
     }
 
     /**
-     * Schedule daily task to update past deliveries to "Unconfirmed" status
-     * Runs at midnight (00:00) every day
-     * 
-     * NOTE: WordPress cron is "pseudo-cron" - it only runs when someone visits your site.
-     * For true midnight execution, set up a real server cron job (see function documentation below).
+     * Remove the legacy daily "past deliveries" cron event, if one is scheduled.
+     *
+     * Deliveries used to be auto-marked "delivered" once their dispatch_date
+     * had passed. That assumed delivery instead of confirming it, so the
+     * automation was removed: a delivery only becomes "delivered" when a
+     * dispatcher/driver sets it via set_delivery_status().
      */
-    public static function schedule_daily_delivery_status_update()
+    public static function unschedule_daily_delivery_status_update()
     {
-        // Check if the event is already scheduled
-        if (!wp_next_scheduled('kit_daily_update_past_deliveries')) {
-            // Schedule the event to run daily at midnight (00:00)
-            // WordPress cron uses server time, so we schedule it for 00:00
-            $timestamp = strtotime('tomorrow midnight');
-            wp_schedule_event($timestamp, 'daily', 'kit_daily_update_past_deliveries');
-
-            error_log('KIT Deliveries: Scheduled daily delivery status update cron job');
+        if (wp_next_scheduled('kit_daily_update_past_deliveries')) {
+            wp_clear_scheduled_hook('kit_daily_update_past_deliveries');
+            error_log('KIT Deliveries: Removed legacy daily delivery status update cron job');
         }
     }
 
     /**
-     * Set past-dispatch deliveries to "delivered" (scheduled only; leaves unconfirmed/in_transit/manual statuses unchanged).
-     * Runs via WordPress cron daily (hook kit_daily_update_past_deliveries).
+     * @deprecated Deliveries are no longer auto-marked delivered. Kept as a
+     *             no-op so existing callers do not break; always returns 0.
+     */
+    public static function schedule_daily_delivery_status_update()
+    {
+        self::unschedule_daily_delivery_status_update();
+    }
+
+    /**
+     * @deprecated Used to set past-dispatch "scheduled" deliveries to
+     *             "delivered" automatically. Removed on purpose: a passed
+     *             dispatch date is not proof of delivery. Confirm deliveries
+     *             manually via set_delivery_status(). Always returns 0.
      *
-     * IMPORTANT: WordPress cron is "pseudo-cron" - it only runs when someone visits your site.
-     * For midnight execution regardless of traffic, use a real server cron hitting wp-cron.php.
+     * @return int Rows updated (always 0)
      */
     public static function update_past_deliveries_to_delivered()
     {
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'kit_deliveries';
-        $today      = current_time('Y-m-d');
-
-        $ids = $wpdb->get_col($wpdb->prepare(
-            "SELECT id FROM $table_name
-             WHERE dispatch_date IS NOT NULL
-             AND dispatch_date < %s
-             AND status = 'scheduled'",
-            $today
-        ));
-
-        $result = 0;
-        foreach ((array) $ids as $id) {
-            $set = self::set_delivery_status((int) $id, 'delivered');
-            if (! is_wp_error($set)) {
-                $result++;
-            }
-        }
-
-        if ($result > 0) {
-            error_log("KIT Deliveries: Marked {$result} past-dispatch delivery(ies) as delivered at " . current_time('mysql'));
-        } elseif ($wpdb->last_error) {
-            error_log('KIT Deliveries: Error updating past deliveries — ' . $wpdb->last_error);
-        }
-
-        return $result;
+        return 0;
     }
 
     /**
@@ -843,14 +824,16 @@ class KIT_Deliveries
     }
 
     /**
-     * Past dispatch_date (before today) + status scheduled or unconfirmed → delivered.
-     * Called when staff open the deliveries list or a delivery view so the UI matches without waiting for cron.
+     * @deprecated Formerly auto-marked past-dispatch deliveries as delivered
+     *             when staff opened the deliveries list or a delivery view.
+     *             Removed: delivery must be confirmed by a person. Kept as a
+     *             no-op for backward compatibility; always returns 0.
      *
-     * @return int|false Rows updated, or false on error
+     * @return int Rows updated (always 0)
      */
     public static function auto_update_past_deliveries()
     {
-        return self::update_past_deliveries_to_delivered();
+        return 0;
     }
 
     /**
@@ -926,8 +909,6 @@ class KIT_Deliveries
     // Removed legacy endpoint that read destination city from misc->others
     public static function view_deliveries_page()
     {
-        self::auto_update_past_deliveries();
-
         if (
             isset($_POST['bulk_action'], $_POST['bulk_ids'], $_POST['bulk_nonce'])
             && wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['bulk_nonce'])), 'bulk_action_nonce')
@@ -1178,56 +1159,56 @@ class KIT_Deliveries
                 if (!isset($form_action)) {
                     $form_action = admin_url('admin-post.php?action=add_waybill_action');
                 }
-                if (!isset($customers_encoded)) {
-                    $customers = tholaMaCustomer();
-                    $customers_encoded = base64_encode(json_encode($customers));
-                }
-                if (!isset($delivery_id)) {
-                    $delivery_id = intval($_GET['delivery_id'] ?? 0);
-                }
+        if (!isset($customers_encoded)) {
+            $customers = tholaMaCustomer();
+            $customers_encoded = base64_encode(json_encode($customers));
+        }
+        if (!isset($delivery_id)) {
+            $delivery_id = intval($_GET['delivery_id'] ?? 0);
+        }
 
-                $header_actions = [];
-                if (! $show_edit_delivery) {
-                    require_once COURIER_FINANCE_PLUGIN_PATH . 'includes/components/warehouse-load-modal.php';
-                    $header_actions[] = kit_render_warehouse_load_modal($delivery);
-                    $header_actions[] = KIT_Modal::render(
-                        'create-waybill-modal',
-                        'Create New Waybill',
-                        '<!-- DEBUG: Modal content start -->' . kit_render_waybill_multiform([
-                            'form_action'          => $form_action,
-                            'waybill_id'           => '',
-                            'is_edit_mode'         => '0',
-                            'waybill'              => '{}',
-                            'customer_id'          => '0',
-                            'delivery_id'          => $delivery_id,
-                            'is_existing_customer' => '0',
-                            'customer'             => $customers_encoded,
-                        ]) . '<!-- DEBUG: Modal content end -->',
-                        '6xl'
-                    );
-                }
+        $header_actions = [];
+        if (! $show_edit_delivery) {
+            require_once COURIER_FINANCE_PLUGIN_PATH . 'includes/components/warehouse-load-modal.php';
+            $header_actions[] = kit_render_warehouse_load_modal($delivery);
+            $header_actions[] = KIT_Modal::render(
+                'create-waybill-modal',
+                'Create New Waybill',
+                '<!-- DEBUG: Modal content start -->' . kit_render_waybill_multiform([
+                    'form_action'          => $form_action,
+                    'waybill_id'           => '',
+                    'is_edit_mode'         => '0',
+                    'waybill'              => '{}',
+                    'customer_id'          => '0',
+                    'delivery_id'          => $delivery_id,
+                    'is_existing_customer' => '0',
+                    'customer'             => $customers_encoded,
+                ]) . '<!-- DEBUG: Modal content end -->',
+                '6xl'
+            );
+        }
 
-                $delivery_view_header = [
-                    'title'   => __('Delivery Details', '08600-services-quotations'),
-                    'icon'    => KIT_Commons::icon('receipt'),
-                    'content' => $header_actions,
-                ];
-                if ($show_edit_delivery) {
-                    $delivery_view_header['desc'] = __('Update route, schedule, and driver.', '08600-services-quotations');
-                }
-                echo KIT_Commons::showingHeader($delivery_view_header);
-                ?>
+        $delivery_view_header = [
+            'title'   => __('Delivery Details', '08600-services-quotations'),
+            'icon'    => KIT_Commons::icon('receipt'),
+            'content' => $header_actions,
+        ];
+        if ($show_edit_delivery) {
+            $delivery_view_header['desc'] = __('Update route, schedule, and driver.', '08600-services-quotations');
+        }
+        echo KIT_Commons::showingHeader($delivery_view_header);
+        ?>
 
                 <script>
                     jQuery(document).ready(function($) {
                         const deliveryId = <?php echo intval($delivery_id); ?>;
                         const deliveryData = <?php echo json_encode([
-                                                    'id' => $delivery->id ?? 0,
-                                                    'direction_id' => $delivery->direction_id ?? 0,
-                                                    'destination_country_id' => $delivery->destination_country_id ?? 0,
-                                                    'destination_city_id' => $delivery->destination_city_id ?? 0,
-                                                    'destination_country' => isset($delivery->destination_country) ? $delivery->destination_country : ''
-                                                ]); ?>;
+                                            'id' => $delivery->id ?? 0,
+                                            'direction_id' => $delivery->direction_id ?? 0,
+                                            'destination_country_id' => $delivery->destination_country_id ?? 0,
+                                            'destination_city_id' => $delivery->destination_city_id ?? 0,
+                                            'destination_country' => isset($delivery->destination_country) ? $delivery->destination_country : ''
+                                        ]); ?>;
 
                         // Verification function to ensure all required fields are set
                         function verifyFieldsSet() {
@@ -1750,34 +1731,34 @@ class KIT_Deliveries
                     });
                 </script>
                 <?php
-                // Display success message if waybill was created
-                if (isset($_GET['waybill_created']) && $_GET['waybill_created'] === '1') {
-                    if (!class_exists('KIT_Toast')) {
-                        require_once plugin_dir_path(__FILE__) . '../components/toast.php';
-                    }
-                    KIT_Toast::ensure_toast_loads();
-                    $waybill_no = isset($_GET['waybill_no']) ? sanitize_text_field($_GET['waybill_no']) : '';
-                    $message    = isset($_GET['message']) ? sanitize_text_field($_GET['message']) : 'Waybill created successfully!';
-                    echo KIT_Toast::success($message, 'Success');
-                }
-                ?>
+        // Display success message if waybill was created
+        if (isset($_GET['waybill_created']) && $_GET['waybill_created'] === '1') {
+            if (!class_exists('KIT_Toast')) {
+                require_once plugin_dir_path(__FILE__) . '../components/toast.php';
+            }
+            KIT_Toast::ensure_toast_loads();
+            $waybill_no = isset($_GET['waybill_no']) ? sanitize_text_field($_GET['waybill_no']) : '';
+            $message    = isset($_GET['message']) ? sanitize_text_field($_GET['message']) : 'Waybill created successfully!';
+            echo KIT_Toast::success($message, 'Success');
+        }
+        ?>
 
                 <?php
-                $view_delivery_url = self::delivery_view_url($delivery_id);
-                $edit_delivery_url = self::delivery_view_url($delivery_id, ['edit_delivery' => '1']);
-                $on_truck_count    = is_array($waybillsandItems) ? count($waybillsandItems) : 0;
-                $delivery_pdf_url  = add_query_arg(
-                    [
-                        'delivery_id'    => $delivery_id,
-                        'delivery_nonce' => wp_create_nonce('delivery_truck_pdf'),
-                    ],
-                    plugin_dir_url(__FILE__) . '../../delivery-truck-pdf.php'
-                );
-                ?>
+        $view_delivery_url = self::delivery_view_url($delivery_id);
+        $edit_delivery_url = self::delivery_view_url($delivery_id, ['edit_delivery' => '1']);
+        $on_truck_count    = is_array($waybillsandItems) ? count($waybillsandItems) : 0;
+        $delivery_pdf_url  = add_query_arg(
+            [
+                'delivery_id'    => $delivery_id,
+                'delivery_nonce' => wp_create_nonce('delivery_truck_pdf'),
+            ],
+            plugin_dir_url(__FILE__) . '../../delivery-truck-pdf.php'
+        );
+        ?>
 
                 <div class="<?php echo KIT_Commons::container() ?>">
                     <div class="grid grid-cols-1 md:grid-cols-12 gap-3 md:gap-4">
-                        <div class="kit-truck-details-col md:col-span-4 min-w-0">
+                        <div class="kit-truck-details-col md:col-span-3 min-w-0">
                             <div class="bg-white rounded-lg shadow border border-gray-200 p-3 sm:p-4 md:p-6 space-y-3 md:space-y-6">
                                 <div class="flex items-center justify-between mb-4">
                                     <h2 class="text-base sm:text-lg md:text-md font-semibold text-gray-700">Truck Details</h2>
@@ -1835,17 +1816,17 @@ class KIT_Deliveries
                                                     <?php if ($on_truck_count > 0) : ?>
                                                         <p class="text-xs text-amber-800 mt-2">
                                                             <?php
-                                                            echo esc_html(sprintf(
-                                                                /* translators: %d: waybill count */
-                                                                _n(
-                                                                    'This truck has %d waybill. Changing the route may not match that load.',
-                                                                    'This truck has %d waybills. Changing the route may not match those loads.',
-                                                                    $on_truck_count,
-                                                                    '08600-services-quotations'
-                                                                ),
-                                                                $on_truck_count
-                                                            ));
-                                                            ?>
+                                                    echo esc_html(sprintf(
+                                                        /* translators: %d: waybill count */
+                                                        _n(
+                                                            'This truck has %d waybill. Changing the route may not match that load.',
+                                                            'This truck has %d waybills. Changing the route may not match those loads.',
+                                                            $on_truck_count,
+                                                            '08600-services-quotations'
+                                                        ),
+                                                        $on_truck_count
+                                                    ));
+                                                        ?>
                                                         </p>
                                                     <?php endif; ?>
                                                 <?php else : ?>
@@ -1918,8 +1899,8 @@ class KIT_Deliveries
                                             <td class="py-1.5 md:py-2">
                                                 <?php
                                                 $status_options = self::allowed_delivery_statuses();
-                                                $current_status = (string) ($delivery->status ?? 'scheduled');
-                                                ?>
+        $current_status = (string) ($delivery->status ?? 'scheduled');
+        ?>
                                                 <div class="kit-del-status"
                                                     data-delivery-id="<?php echo esc_attr((string) $delivery_id); ?>"
                                                     data-current="<?php echo esc_attr($current_status); ?>"
@@ -1927,14 +1908,14 @@ class KIT_Deliveries
                                                     data-nonce="<?php echo esc_attr(wp_create_nonce('kit_set_delivery_status')); ?>"
                                                     data-ajax="<?php echo esc_url(admin_url('admin-ajax.php')); ?>">
                                                     <?php
-                                                    KIT_Commons::simpleSelect(
-                                                        '',
-                                                        'delivery_status',
-                                                        'kit-del-status-select',
-                                                        $status_options,
-                                                        $current_status
-                                                    );
-                                                    ?>
+            KIT_Commons::simpleSelect(
+                '',
+                'delivery_status',
+                'kit-del-status-select',
+                $status_options,
+                $current_status
+            );
+        ?>
                                                     <p id="kit-del-status-hint" class="text-xs text-gray-500 mt-1"><?php esc_html_e('Applies to all waybills on this truck', '08600-services-quotations'); ?></p>
                                                 </div>
                                             </td>
@@ -1990,25 +1971,25 @@ class KIT_Deliveries
                                                 ]
                                             );
                                         }
-                                        ?>
+        ?>
                                     </div>
                                     <div class="">
                                         <?php
-                                        echo KIT_Commons::renderButton(
-                                            'PDF',
-                                            'primary',
-                                            'lg',
-                                            [
-                                                'href'        => esc_url($delivery_pdf_url),
-                                                'target'      => '_blank',
-                                                'rel'         => 'noopener noreferrer',
-                                                'classes'     => 'gap-2',
-                                                'icon'        => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />',
-                                                'iconPosition' => 'left',
-                                                'gradient'    => true,
-                                            ]
-                                        );
-                                        ?>
+        echo KIT_Commons::renderButton(
+            'PDF',
+            'primary',
+            'lg',
+            [
+                'href'        => esc_url($delivery_pdf_url),
+                'target'      => '_blank',
+                'rel'         => 'noopener noreferrer',
+                'classes'     => 'gap-2',
+                'icon'        => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />',
+                'iconPosition' => 'left',
+                'gradient'    => true,
+            ]
+        );
+        ?>
                                     </div>
                                 </div>
                                 <?php if ($show_edit_delivery) : ?>
@@ -2017,7 +1998,7 @@ class KIT_Deliveries
 
                             </div>
                         </div>
-                        <div class="md:col-span-8 min-w-0 bg-white rounded-lg shadow border border-gray-200 p-3 sm:p-4 md:p-6">
+                        <div class="md:col-span-9 min-w-0 bg-white rounded-lg shadow border border-gray-200 p-3 sm:p-4 md:p-6">
                             <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-3 md:mb-4">
                                 <h2 class="text-base sm:text-lg md:text-xl font-semibold text-gray-700"><?php esc_html_e('Waybills on Truck', '08600-services-quotations'); ?></h2>
                                 <div class="text-xs sm:text-sm text-gray-500">
@@ -2065,81 +2046,81 @@ class KIT_Deliveries
                                 'waybill_no',
                                 'description',
                             ]);
-                            // Description: biggest column for space
-                            $columns['description']['header_class'] = ($columns['description']['header_class'] ?? '') . ' whitespace-nowrap text-left min-w-[180px]';
-                            $columns['description']['cell_class']   = ($columns['description']['cell_class'] ?? '') . ' text-left text-sm min-w-[180px] max-w-none';
+        // Description: biggest column for space
+        $columns['description']['header_class'] = ($columns['description']['header_class'] ?? '') . ' whitespace-nowrap text-left min-w-[180px]';
+        $columns['description']['cell_class']   = ($columns['description']['cell_class'] ?? '') . ' text-left text-sm min-w-[180px] max-w-none';
 
-                            // Mass & Dims and Volume (m³) combined in one cell
-                            $columns['total_mass_kg'] = array(
-                                'label'        => 'Mass, Dims & Vol (m³)',
-                                'header_class' => 'whitespace-nowrap',
-                                'callback'     => function ($value, $row, $rowIndex) {
-                                    $mass = $value ?? 0;
-                                    $length = isset($row['item_length']) ? floatval($row['item_length']) : 0;
-                                    $width = isset($row['item_width']) ? floatval($row['item_width']) : 0;
-                                    $height = isset($row['item_height']) ? floatval($row['item_height']) : 0;
-                                    $volume = isset($row['total_volume']) ? floatval($row['total_volume']) : 0;
+        // Mass & Dims and Volume (m³) combined in one cell
+        $columns['total_mass_kg'] = array(
+            'label'        => 'Mass, Dims & Vol (m³)',
+            'header_class' => 'whitespace-nowrap',
+            'callback'     => function ($value, $row, $rowIndex) {
+                $mass = $value ?? 0;
+                $length = isset($row['item_length']) ? floatval($row['item_length']) : 0;
+                $width = isset($row['item_width']) ? floatval($row['item_width']) : 0;
+                $height = isset($row['item_height']) ? floatval($row['item_height']) : 0;
+                $volume = isset($row['total_volume']) ? floatval($row['total_volume']) : 0;
 
-                                    $mass_display = ($mass > 0) ? number_format($mass, 1) . ' kg' : '0 kg';
-                                    $dimensions_display = ($length > 0 && $width > 0 && $height > 0)
-                                        ? number_format($length, 0) . ' x ' . number_format($width, 0) . ' x ' . number_format($height, 0)
-                                        : '0 x 0 x 0';
-                                    $volume_display = ($volume > 0) ? number_format($volume, 3) . ' m³' : '0 m³';
+                $mass_display = ($mass > 0) ? number_format($mass, 1) . ' kg' : '0 kg';
+                $dimensions_display = ($length > 0 && $width > 0 && $height > 0)
+                    ? number_format($length, 0) . ' x ' . number_format($width, 0) . ' x ' . number_format($height, 0)
+                    : '0 x 0 x 0';
+                $volume_display = ($volume > 0) ? number_format($volume, 3) . ' m³' : '0 m³';
 
-                                    return '<div class="text-xs text-gray-500">' .
-                                        esc_html($mass_display) . ' <br> ' .
-                                        esc_html($dimensions_display) . ' <br> ' .
-                                        esc_html($volume_display) . '</div>';
-                                },
-                            );
-                            $columns['destination_city'] = array(
-                                'label'    => 'Destination City',
-                                'header_class' => 'whitespace-nowrap text-left',
-                                'cell_class'   => 'whitespace-nowrap text-left',
-                                'callback' => function ($value, $row, $rowIndex) {
-                                    $city_name = isset($row['customer_city']) ? trim($row['customer_city']) : '';
-                                    if (empty($city_name)) {
-                                        $city_id = $row['city_id'] ?? 0;
-                                        if ($city_id > 0) {
-                                            $city_name = KIT_Routes::get_city_name_by_id($city_id);
-                                        }
-                                    }
-                                    return !empty($city_name) ? esc_html($city_name) : '<span class="text-gray-400">N/A</span>';
-                                },
-                            );
+                return '<div class="text-xs text-gray-500">' .
+                    esc_html($mass_display) . ' <br> ' .
+                    esc_html($dimensions_display) . ' <br> ' .
+                    esc_html($volume_display) . '</div>';
+            },
+        );
+        $columns['destination_city'] = array(
+            'label'    => 'Destination City',
+            'header_class' => 'whitespace-nowrap text-left',
+            'cell_class'   => 'whitespace-nowrap text-left',
+            'callback' => function ($value, $row, $rowIndex) {
+                $city_name = isset($row['customer_city']) ? trim($row['customer_city']) : '';
+                if (empty($city_name)) {
+                    $city_id = $row['city_id'] ?? 0;
+                    if ($city_id > 0) {
+                        $city_name = KIT_Routes::get_city_name_by_id($city_id);
+                    }
+                }
+                return !empty($city_name) ? esc_html($city_name) : '<span class="text-gray-400">N/A</span>';
+            },
+        );
 
-                            // Conditionally add total column based on user permissions
-                            if (class_exists('KIT_User_Roles') && KIT_User_Roles::can_see_prices()) {
-                                $columns['total'] = array(
-                                    'label'        => 'Total',
-                                    'header_class' => 'whitespace-nowrap text-right',
-                                    'cell_class'   => 'whitespace-nowrap text-right',
-                                    'callback'     => function ($value, $row, $rowIndex) {
-                                        $total = $value ?? 0;
-                                        if (!is_numeric($total)) {
-                                            return $total;
-                                        }
-                                        return KIT_Commons::currency() . ' ' . number_format(floatval($total), 2);
-                                    },
-                                );
-                            }
-                            // Debug: Check how many waybills we have
-                            $waybill_count = is_array($waybillsandItems) ? count($waybillsandItems) : 0;
-                            ?>
+        // Conditionally add total column based on user permissions
+        if (class_exists('KIT_User_Roles') && KIT_User_Roles::can_see_prices()) {
+            $columns['total'] = array(
+                'label'        => 'Total',
+                'header_class' => 'whitespace-nowrap text-right',
+                'cell_class'   => 'whitespace-nowrap text-right',
+                'callback'     => function ($value, $row, $rowIndex) {
+                    $total = $value ?? 0;
+                    if (!is_numeric($total)) {
+                        return $total;
+                    }
+                    return KIT_Commons::currency() . ' ' . number_format(floatval($total), 2);
+                },
+            );
+        }
+        // Debug: Check how many waybills we have
+        $waybill_count = is_array($waybillsandItems) ? count($waybillsandItems) : 0;
+        ?>
                             <div class="">
                                 <?php
-                                //customer dropdown trigger truck waybills
-                                $dropdowns = true;
+            //customer dropdown trigger truck waybills
+            $dropdowns = true;
 
-                                echo KIT_Unified_Table::infinite($waybillsandItems, $columns, KIT_Unified_Table::optionsWithManageDefaults([
-                                    'title' => 'Waybills on Truck',
-                                    'subtitle' => 'Showing: ' . $waybill_count . ' waybills',
-                                    'empty_message' => 'No waybills assigned',
-                                ]));
-                                ?>
+        echo KIT_Unified_Table::infinite($waybillsandItems, $columns, KIT_Unified_Table::optionsWithManageDefaults([
+            'title' => 'Waybills on Truck',
+            'subtitle' => 'Showing: ' . $waybill_count . ' waybills',
+            'empty_message' => 'No waybills assigned',
+        ]));
+        ?>
                             </div>
                             <?php
-                            ?>
+        ?>
                         </div>
                     </div>
                 </div>
@@ -2149,29 +2130,29 @@ class KIT_Deliveries
                         <p id="kit-del-status-confirm-copy" class="kit-del-status-confirm__copy"></p>
                         <div class="kit-del-status-confirm__actions">
                             <?php
-                            echo KIT_Commons::renderButton(
-                                __('Cancel', '08600-services-quotations'),
-                                'secondary',
-                                'md',
-                                [
-                                    'type'      => 'button',
-                                    'id'        => 'kit-del-status-cancel',
-                                    'noLoading' => true,
-                                    'onclick'   => 'window.kitDeliveryStatusCancel && window.kitDeliveryStatusCancel();',
-                                ]
-                            );
-                            echo KIT_Commons::renderButton(
-                                __('Change status', '08600-services-quotations'),
-                                'primary',
-                                'md',
-                                [
-                                    'type'           => 'button',
-                                    'id'             => 'kit-del-status-ok',
-                                    'loadingOnClick' => true,
-                                    'onclick'        => 'return window.kitDeliveryStatusSave && window.kitDeliveryStatusSave(event, this);',
-                                ]
-                            );
-                            ?>
+        echo KIT_Commons::renderButton(
+            __('Cancel', '08600-services-quotations'),
+            'secondary',
+            'md',
+            [
+                'type'      => 'button',
+                'id'        => 'kit-del-status-cancel',
+                'noLoading' => true,
+                'onclick'   => 'window.kitDeliveryStatusCancel && window.kitDeliveryStatusCancel();',
+            ]
+        );
+        echo KIT_Commons::renderButton(
+            __('Change status', '08600-services-quotations'),
+            'primary',
+            'md',
+            [
+                'type'           => 'button',
+                'id'             => 'kit-del-status-ok',
+                'loadingOnClick' => true,
+                'onclick'        => 'return window.kitDeliveryStatusSave && window.kitDeliveryStatusSave(event, this);',
+            ]
+        );
+        ?>
                         </div>
                     </div>
                 </div>
@@ -2590,7 +2571,7 @@ class KIT_Deliveries
                         ),
                         $waybill_count
                     ));
-                    ?>
+                ?>
                 </p>
             <?php endif; ?>
 
@@ -2600,16 +2581,16 @@ class KIT_Deliveries
                 </label>
                 <?php
                 echo KIT_Commons::Ldate([
-                    'no_label' => true,
-                    'label'    => '',
-                    'name'     => 'dispatch_date',
-                    'id'       => 'dispatch_date' . ($is_modal ? '-m-' . (int) $delivery_id : ''),
-                    'value'    => $delivery->dispatch_date ? (string) $delivery->dispatch_date : '',
-                    'preset'   => '',
-                    'class'    => KIT_Commons::selectClass(),
-                    'special'  => 'required',
+                'no_label' => true,
+                'label'    => '',
+                'name'     => 'dispatch_date',
+                'id'       => 'dispatch_date' . ($is_modal ? '-m-' . (int) $delivery_id : ''),
+                'value'    => $delivery->dispatch_date ? (string) $delivery->dispatch_date : '',
+                'preset'   => '',
+                'class'    => KIT_Commons::selectClass(),
+                'special'  => 'required',
                 ]);
-                ?>
+        ?>
             </div>
 
             <div>
@@ -2630,39 +2611,39 @@ class KIT_Deliveries
 
             <div class="flex flex-col sm:flex-row gap-3 pt-2">
                 <?php
-                echo KIT_Commons::renderButton(
-                    __('Save truck', '08600-services-quotations'),
-                    'primary',
-                    'lg',
-                    [
-                        'type'         => 'submit',
-                        'classes'      => 'flex-1',
-                        'icon'         => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />',
-                        'iconPosition' => 'left',
-                    ]
-                );
-                if ($is_modal) {
-                    echo KIT_Commons::renderButton(
-                        __('Cancel', '08600-services-quotations'),
-                        'secondary',
-                        'lg',
-                        [
-                            'type'    => 'button',
-                            'classes' => 'flex-1 modal-close',
-                        ]
-                    );
-                } elseif ($cancel_url !== '') {
-                    echo KIT_Commons::renderButton(
-                        __('Cancel', '08600-services-quotations'),
-                        'secondary',
-                        'lg',
-                        [
-                            'href'    => esc_url($cancel_url),
-                            'classes' => 'flex-1',
-                        ]
-                    );
-                }
-                ?>
+        echo KIT_Commons::renderButton(
+            __('Save truck', '08600-services-quotations'),
+            'primary',
+            'lg',
+            [
+                'type'         => 'submit',
+                'classes'      => 'flex-1',
+                'icon'         => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />',
+                'iconPosition' => 'left',
+            ]
+        );
+        if ($is_modal) {
+            echo KIT_Commons::renderButton(
+                __('Cancel', '08600-services-quotations'),
+                'secondary',
+                'lg',
+                [
+                    'type'    => 'button',
+                    'classes' => 'flex-1 modal-close',
+                ]
+            );
+        } elseif ($cancel_url !== '') {
+            echo KIT_Commons::renderButton(
+                __('Cancel', '08600-services-quotations'),
+                'secondary',
+                'lg',
+                [
+                    'href'    => esc_url($cancel_url),
+                    'classes' => 'flex-1',
+                ]
+            );
+        }
+        ?>
             </div>
         </form>
         <script>
@@ -2730,7 +2711,7 @@ class KIT_Deliveries
         ob_start();
         ?>
         <?php if (! $is_modal) : ?>
-            <div class="kit-trip-create-shell max-w-4xl mx-auto">
+            <div class="kit-trip-create-shell">
         <?php endif; ?>
         <form id="<?php echo esc_attr($form_id); ?>"
             method="POST"
@@ -2782,7 +2763,7 @@ class KIT_Deliveries
                         'class'    => KIT_Commons::selectClass(),
                         'special'  => 'required',
                     ]);
-                    ?>
+        ?>
                 </div>
                 <div class="min-w-0">
                     <label for="driver_id<?php echo esc_attr($modal_dom_suffix); ?>" class="<?php echo esc_attr(KIT_Commons::labelClass()); ?>">
@@ -2843,18 +2824,18 @@ class KIT_Deliveries
                         ]
                     );
                 }
-                echo KIT_Commons::renderButton(
-                    __('Create Trip', '08600-services-quotations'),
-                    'primary',
-                    'lg',
-                    [
-                        'type'         => 'submit',
-                        'classes'      => 'w-full sm:flex-1',
-                        'icon'         => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />',
-                        'iconPosition' => 'left',
-                    ]
-                );
-                ?>
+        echo KIT_Commons::renderButton(
+            __('Create Trip', '08600-services-quotations'),
+            'primary',
+            'lg',
+            [
+                'type'         => 'submit',
+                'classes'      => 'w-full sm:flex-1',
+                'icon'         => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />',
+                'iconPosition' => 'left',
+            ]
+        );
+        ?>
             </div>
         </form>
         <style>
@@ -2950,6 +2931,13 @@ class KIT_Deliveries
         }
 
         if (class_exists('KIT_User_Roles') && ! KIT_User_Roles::can_create_delivery_truck()) {
+            if (class_exists('KIT_Trip_Requests')) {
+                KIT_Trip_Requests::render_script();
+                return '<div class="bg-amber-50 border border-amber-200 text-amber-900 px-4 py-3 rounded-lg flex flex-col sm:flex-row sm:items-center gap-3">'
+                    . '<p class="m-0 text-sm flex-1">' . esc_html__('No permission to create trips. Notify management if you need a delivery truck scheduled.', '08600-services-quotations') . '</p>'
+                    . KIT_Trip_Requests::render_request_button()
+                    . '</div>';
+            }
             $msg = __('Request management to create a delivery truck.', '08600-services-quotations');
             return '<div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg">' . esc_html($msg) . '</div>';
         }
@@ -3019,6 +3007,14 @@ class KIT_Deliveries
      */
     public static function render_create_trip_page()
     {
+        if (!class_exists('KIT_User_Roles') || !KIT_User_Roles::is_admin()) {
+            wp_die(
+                esc_html__('You don\'t have access to this page. Only administrators can create trips.', '08600-services-quotations'),
+                esc_html__('Access denied', '08600-services-quotations'),
+                array('response' => 403)
+            );
+        }
+
         if (isset($_GET['delivery_error']) || isset($_GET['delivery_success'])) {
             if (file_exists(plugin_dir_path(__FILE__) . '../components/toast.php')) {
                 require_once plugin_dir_path(__FILE__) . '../components/toast.php';
@@ -3062,6 +3058,10 @@ class KIT_Deliveries
                 ]
             ),
         ]);
+        if (class_exists('KIT_Trip_Requests')) {
+            KIT_Trip_Requests::render_script();
+            echo KIT_Trip_Requests::render_pending_banner();
+        }
         echo self::deliveryForm(null, false);
         echo '</div></div>';
     }
@@ -3112,8 +3112,6 @@ class KIT_Deliveries
             return;
         }
 
-        self::auto_update_past_deliveries();
-
         // No JavaScript needed - pure PHP form submission
 
         // Initialize variables for modal (in case it's shown in the main deliveries list)
@@ -3130,38 +3128,47 @@ class KIT_Deliveries
                 <?php
                 // Nonce for Edit Delivery modal AJAX (get_delivery) – required when #delivery-form / #edit-delivery-form not present (e.g. user cannot create)
                 $deliveries_ajax_nonce = wp_create_nonce('get_waybills_nonce');
-                ?>
+        ?>
                 <input type="hidden" id="deliveries-ajax-nonce" value="<?php echo esc_attr($deliveries_ajax_nonce); ?>" data-nonce-action="get_waybills_nonce" />
                 <?php
-                $can_create = class_exists('KIT_User_Roles') && KIT_User_Roles::can_create_delivery_truck();
-                if ($can_create) {
-                    $delivery_form_content = self::deliveryForm(null, true);
-                    $add_delivery_modal = KIT_Modal::render(
-                        'add-delivery-truck-modal',
-                        'Add Delivery Truck',
-                        $delivery_form_content,
-                        'lg',
-                        true,
-                        'Add Delivery Truck'
-                    );
-                    $header_content = $add_delivery_modal;
-                } else {
-                    $header_content = '<p class="text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 text-sm">' . esc_html__('Request management to create a delivery truck.', '08600-services-quotations') . '</p>';
-                }
-                echo KIT_Commons::showingHeader([
-                    'title'   => __('Trips', '08600-services-quotations'),
-                    'desc'    => __('Manage and track truck trips', '08600-services-quotations'),
-                    'icon'    => KIT_Commons::icon('truck'),
-                    'content' => $header_content,
-                ]);
-                ?>
+        $can_create = class_exists('KIT_User_Roles') && KIT_User_Roles::can_create_delivery_truck();
+        if ($can_create) {
+            $delivery_form_content = self::deliveryForm(null, true);
+            $add_delivery_modal = KIT_Modal::render(
+                'add-delivery-truck-modal',
+                'Add Delivery Truck',
+                $delivery_form_content,
+                'lg',
+                true,
+                'Add Delivery Truck'
+            );
+            $header_content = $add_delivery_modal;
+        } else {
+            if (class_exists('KIT_Trip_Requests')) {
+                KIT_Trip_Requests::render_script();
+                $header_content = KIT_Trip_Requests::render_request_button();
+            } else {
+                $header_content = '<p class="text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 text-sm">' . esc_html__('Request management to create a delivery truck.', '08600-services-quotations') . '</p>';
+            }
+        }
+        echo KIT_Commons::showingHeader([
+            'title'   => __('Trips', '08600-services-quotations'),
+            'desc'    => __('Manage and track truck trips', '08600-services-quotations'),
+            'icon'    => KIT_Commons::icon('truck'),
+            'content' => $header_content,
+        ]);
+        if (class_exists('KIT_Trip_Requests')) {
+            KIT_Trip_Requests::render_script();
+            echo KIT_Trip_Requests::render_pending_banner();
+        }
+        ?>
 
                 <!-- Statistics Cards -->
                 <?php
-                echo KIT_QuickStats::render_for_context(KIT_QuickStats::CONTEXT_DELIVERIES, [
-                    'deliveries' => $deliveries,
-                ]);
-                ?>
+        echo KIT_QuickStats::render_for_context(KIT_QuickStats::CONTEXT_DELIVERIES, [
+            'deliveries' => $deliveries,
+        ]);
+        ?>
 
                 <!-- Tabbed Interface -->
                 <div class="bg-white rounded-xl shadow-sm border border-gray-200">
@@ -3173,40 +3180,40 @@ class KIT_Deliveries
                         <!-- Table View -->
                         <div id="table-view">
                             <?php
-                            // Rows and row markup both come from the shared trip row
-                            // template in KIT_Commons so every deliveries list matches.
-                            $deliveries_data = array_map([KIT_Commons::class, 'tripRowData'], $deliveries);
+                    // Rows and row markup both come from the shared trip row
+                    // template in KIT_Commons so every deliveries list matches.
+                    $deliveries_data = array_map([KIT_Commons::class, 'tripRowData'], $deliveries);
 
-                            echo KIT_Commons::prettyHeading([
-                                'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>',
-                                'words' => 'All Deliveries',
-                                'size' => 'lg',
-                                'color' => 'blue',
-                                'classes' => 'mb-4'
-                            ]);
+        echo KIT_Commons::prettyHeading([
+            'icon' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>',
+            'words' => 'All Deliveries',
+            'size' => 'lg',
+            'color' => 'blue',
+            'classes' => 'mb-4'
+        ]);
 
-                            echo KIT_Unified_Table::infinite(
-                                $deliveries_data,
-                                KIT_Commons::tripRowColumns(),
-                                KIT_Unified_Table::optionsWithManageDefaults(KIT_Commons::tripRowTableOptions([
-                                    'title' => 'All Deliveries',
-                                    'sync_entity' => 'deliveries',
-                                    'bulk_actions_list' => ['delete', 'export', 'packing_list'],
-                                    'actions' => KIT_Commons::tripRowActions(),
-                                    'pagination' => true,
-                                    'items_per_page' => 20,
-                                    'empty_message' => 'No deliveries found.',
-                                    'search_placeholder' => 'Search deliveries...',
-                                    'search_filters' => [
-                                        ['value' => 'delivery_reference', 'label' => 'Reference', 'placeholder' => 'Search by reference...'],
-                                        ['value' => 'route', 'label' => 'Route', 'placeholder' => 'Search by route...'],
-                                        ['value' => 'truck_number', 'label' => 'Truck', 'placeholder' => 'Search by truck...'],
-                                        ['value' => 'driver_name', 'label' => 'Driver', 'placeholder' => 'Search by driver...']
-                                    ],
-                                    'search_default_filter' => 'delivery_reference',
-                                ]))
-                            );
-                            ?>
+        echo KIT_Unified_Table::infinite(
+            $deliveries_data,
+            KIT_Commons::tripRowColumns(),
+            KIT_Unified_Table::optionsWithManageDefaults(KIT_Commons::tripRowTableOptions([
+                'title' => 'All Deliveries',
+                'sync_entity' => 'deliveries',
+                'bulk_actions_list' => ['delete', 'export', 'packing_list'],
+                'actions' => KIT_Commons::tripRowActions(),
+                'pagination' => true,
+                'items_per_page' => 20,
+                'empty_message' => 'No deliveries found.',
+                'search_placeholder' => 'Search deliveries...',
+                'search_filters' => [
+                    ['value' => 'delivery_reference', 'label' => 'Reference', 'placeholder' => 'Search by reference...'],
+                    ['value' => 'route', 'label' => 'Route', 'placeholder' => 'Search by route...'],
+                    ['value' => 'truck_number', 'label' => 'Truck', 'placeholder' => 'Search by truck...'],
+                    ['value' => 'driver_name', 'label' => 'Driver', 'placeholder' => 'Search by driver...']
+                ],
+                'search_default_filter' => 'delivery_reference',
+            ]))
+        );
+        ?>
                         </div>
                     </div>
                 </div>
@@ -3331,7 +3338,7 @@ class KIT_Deliveries
                                     'data-bs-dismiss' => 'modal',
                                 ]
                             );
-                            ?>
+            ?>
                         </div>
                         <div class="modal-body">
                             <div id="modal-content" class="overflow-y-auto">
@@ -3364,7 +3371,7 @@ class KIT_Deliveries
                                 'ariaLabel'   => __('Close modal', 'courier-finance-plugin'),
                             ]
                         );
-                        ?>
+            ?>
                     </div>
                     <div class="p-6">
                         <div id="modal-content" class="overflow-y-auto">
@@ -4387,7 +4394,7 @@ class KIT_Deliveries
     /**
      * Get or create direction_id based on origin and destination country IDs
      * This is the main function to use when you have country IDs and need a direction_id
-     * 
+     *
      * @param int $origin_country_id
      * @param int $destination_country_id
      * @return int|false The direction_id or false if failed
@@ -4984,7 +4991,7 @@ class KIT_Deliveries
                             $destination_city_id > 0 ? $destination_city_id : 0,
                             'required'
                         );
-                        ?>
+        ?>
                     </div>
                 </div>
             </div>
@@ -5005,23 +5012,23 @@ class KIT_Deliveries
         }
 
         ob_start();
-    ?>
+        ?>
         <select
-            class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            class="<?php echo esc_attr(KIT_Commons::selectClass()); ?>"
             name="<?php echo esc_attr($name); ?>" id="<?php echo esc_attr($id); ?>" <?php echo $required; ?>
             onchange="handleCountryChange(this.value, '<?php echo $type; ?>')">
             <option value="">Select Country</option>
             <?php foreach ($countries as $country): ?>
                 <option value="<?php echo esc_attr($country->id); ?>"
                     <?php echo (intval($country_id) == intval($country->id)) ? 'selected' : ''; ?> <?php if (! empty($options['show_inactive_indicators']) && (! isset($country->is_active) || $country->is_active == 0)) {
-                                                                                                        echo ' style="color: #9ca3af;"';
-                                                                                                    }
-                                                                                                    ?>>
+                        echo ' style="color: #9ca3af;"';
+                    }
+                ?>>
                     <?php echo esc_html($country->country_name); ?>
                     <?php if (! empty($options['show_inactive_indicators']) && (! isset($country->is_active) || $country->is_active == 0)) {
                         echo ' (Inactive)';
                     }
-                    ?>
+                ?>
                 </option>
             <?php endforeach; ?>
         </select>
@@ -5041,9 +5048,9 @@ class KIT_Deliveries
         }
 
         // Remove debug output to avoid breaking markup/selection
-    ?>
+        ?>
         <select
-            class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            class="<?php echo esc_attr(KIT_Commons::selectClass()); ?>"
             name="<?php echo esc_attr($name); ?>" id="<?php echo esc_attr($id); ?>" <?php echo $required; ?>>
             <option value="">Select City</option>
             <?php if ($cities && is_array($cities)): ?>
@@ -5056,7 +5063,7 @@ class KIT_Deliveries
             <?php endif; ?>
         </select>
         <?php
-        return ob_get_clean();
+            return ob_get_clean();
     }
 
     public static function handle_get_cities_for_country_callback()
@@ -5143,7 +5150,7 @@ class KIT_Deliveries
         // Generate table rows HTML
         ob_start();
         foreach ($deliveries as $delivery):
-        ?>
+            ?>
             <tr class="hover:bg-gray-50">
                 <td class="px-6 py-4 whitespace-nowrap">
                     <div class="text-sm font-medium text-gray-900">
@@ -5153,21 +5160,21 @@ class KIT_Deliveries
                 <td class="px-6 py-4 whitespace-nowrap">
                     <div class="text-sm text-gray-900">
                         <?php
-                        $origin = $delivery->origin_country_name ?? 'N/A';
-                        $dest = $delivery->destination_country_name ?? 'N/A';
-                        echo esc_html("$origin → $dest");
-                        ?>
+                            $origin = $delivery->origin_country_name ?? 'N/A';
+            $dest = $delivery->destination_country_name ?? 'N/A';
+            echo esc_html("$origin → $dest");
+            ?>
                     </div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">
                     <div class="text-sm text-gray-900">
                         <?php
-                        if (!empty($delivery->dispatch_date) && $delivery->dispatch_date !== '0000-00-00') {
-                            echo esc_html(date('M j, Y', strtotime($delivery->dispatch_date)));
-                        } else {
-                            echo 'N/A';
-                        }
-                        ?>
+            if (!empty($delivery->dispatch_date) && $delivery->dispatch_date !== '0000-00-00') {
+                echo esc_html(date('M j, Y', strtotime($delivery->dispatch_date)));
+            } else {
+                echo 'N/A';
+            }
+            ?>
                     </div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">
@@ -5190,7 +5197,7 @@ class KIT_Deliveries
                         'cancelled'   => 'bg-red-100 text-red-800',
                         default       => 'bg-gray-100 text-gray-800'
                     };
-                    ?>
+            ?>
                     <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full <?php echo $status_class; ?>">
                         <?php echo esc_html(ucfirst(str_replace('_', ' ', (string) ($delivery->status ?? 'unknown')))); ?>
                     </span>
@@ -5203,37 +5210,37 @@ class KIT_Deliveries
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div class="flex space-x-2">
                         <?php
-                        echo KIT_Commons::renderButton(
-                            'View',
-                            'link',
-                            'lg',
-                            [
-                                'href'    => self::delivery_view_url($delivery->id),
-                                'classes' => 'view-delivery-btn bg-transparent shadow-none border-0 px-0 py-0 text-blue-600 hover:text-blue-900',
-                            ]
-                        );
+                echo KIT_Commons::renderButton(
+                    'View',
+                    'link',
+                    'lg',
+                    [
+                        'href'    => self::delivery_view_url($delivery->id),
+                        'classes' => 'view-delivery-btn bg-transparent shadow-none border-0 px-0 py-0 text-blue-600 hover:text-blue-900',
+                    ]
+                );
 
-                        echo KIT_Commons::renderButton(
-                            'Edit',
-                            'ghost',
-                            'lg',
-                            [
-                                'href'    => self::delivery_view_url($delivery->id, ['edit_delivery' => '1']),
-                                'classes' => 'bg-transparent shadow-none border-0 px-2 py-1 text-blue-600 hover:text-blue-900',
-                            ]
-                        );
+            echo KIT_Commons::renderButton(
+                'Edit',
+                'ghost',
+                'lg',
+                [
+                    'href'    => self::delivery_view_url($delivery->id, ['edit_delivery' => '1']),
+                    'classes' => 'bg-transparent shadow-none border-0 px-2 py-1 text-blue-600 hover:text-blue-900',
+                ]
+            );
 
-                        echo KIT_Commons::renderButton(
-                            'Delete',
-                            'ghost',
-                            'lg',
-                            [
-                                'type'    => 'button',
-                                'onclick' => sprintf("deleteDelivery(%d, event)", $delivery->id),
-                                'classes' => 'bg-transparent shadow-none border-0 px-2 py-1 text-red-600 hover:text-red-900',
-                            ]
-                        );
-                        ?>
+            echo KIT_Commons::renderButton(
+                'Delete',
+                'ghost',
+                'lg',
+                [
+                    'type'    => 'button',
+                    'onclick' => sprintf("deleteDelivery(%d, event)", $delivery->id),
+                    'classes' => 'bg-transparent shadow-none border-0 px-2 py-1 text-red-600 hover:text-red-900',
+                ]
+            );
+            ?>
                     </div>
                 </td>
             </tr>

@@ -165,14 +165,21 @@ class KIT_Delivery_Seeder
         }
 
         // replace_existing = sheet is source of truth: drop trips not on the sheet
-        // (keep the warehouse "pending" fallback row).
+        // (keep the warehouse "pending" fallback row). Never delete a delivery
+        // that still has waybills attached — the kit_deliveries sheet tab is a
+        // DB mirror and can lag behind the waybill data; deleting a live trip
+        // orphans its waybills and empties its "Waybills on Truck" page.
         if ($replace_existing && !empty($sheet_trip_ids)) {
             $ids = array_values(array_unique(array_map('intval', $sheet_trip_ids)));
             $in = implode(',', $ids);
+            $waybills_table = $wpdb->prefix . 'kit_waybills';
             $stats['deleted'] = (int) $wpdb->query(
                 "DELETE FROM {$table}
                  WHERE delivery_reference != 'pending'
-                   AND id NOT IN ({$in})"
+                   AND id NOT IN ({$in})
+                   AND NOT EXISTS (
+                       SELECT 1 FROM {$waybills_table} wb WHERE wb.delivery_id = {$table}.id
+                   )"
             );
         }
 
@@ -253,6 +260,19 @@ class KIT_Delivery_Seeder
     {
         $ref_idx = $col['delivery_reference'] ?? $col['delivery_ref'];
         $ref = trim((string) ($row[$ref_idx] ?? ''));
+        // The sheet's header row and data rows have disagreed about column
+        // order before (an extra del_id column shifted the data). If the
+        // mapped cell is not a valid reference, scan the row for one instead
+        // of silently skipping the delivery.
+        if (!preg_match('/^DEL-\d{8}-\d{3}$/i', $ref) && strcasecmp($ref, 'pending') !== 0) {
+            foreach ($row as $cell) {
+                $cell = trim((string) $cell);
+                if (preg_match('/^DEL-\d{8}-\d{3}$/i', $cell)) {
+                    $ref = $cell;
+                    break;
+                }
+            }
+        }
         // Sheet id 29 is the warehouse "pending" trip (referenced by waybills).
         // Accept it; only invent a pending row elsewhere when the sheet lacks one.
         $is_pending = (strcasecmp($ref, 'pending') === 0);

@@ -9,7 +9,7 @@ if (!defined('ABSPATH')) {
 }
 ?>
 <style type="text/css">
-/* No top navbar space on portal; theme can override with body { --kit-employee-header-height: 56px; } if needed */
+/* No public theme navbar on portal — staff “backend” uses sidebar only. */
 :root { --kit-employee-header-height: 0; }
 .kit-employee-dashboard-with-sidebar {
     display: flex !important;

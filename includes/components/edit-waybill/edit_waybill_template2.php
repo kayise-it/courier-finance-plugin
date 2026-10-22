@@ -13,6 +13,7 @@ if (file_exists($charge_basis_file)) {
 }
 
 $currency = class_exists('KIT_Commons') ? KIT_Commons::currency() : 'R';
+$can_see_prices = class_exists('KIT_User_Roles') && KIT_User_Roles::can_see_prices();
 $view_url = '?page=08600-Waybill-view&waybill_id=' . (int) $waybill_id;
 
 $approval_status = (string) ($waybill['approval'] ?? 'pending');
@@ -314,6 +315,7 @@ $fmt = static function (float $n) use ($currency): string {
                             'subtotal_id'      => 'waybill-subtotal',
                             'currency_symbol'  => $currency,
                             'show_invoices'    => false,
+                            'show_subtotal'    => $can_see_prices,
                             'waybill_no'       => $waybill['waybill_no'],
                         ]); ?>
                     </div>
@@ -339,7 +341,7 @@ $fmt = static function (float $n) use ($currency): string {
                             'description'     => 'Other billed lines',
                             'subtotal_id'     => 'misc-total',
                             'currency_symbol' => $currency,
-                            'show_subtotal'   => true,
+                            'show_subtotal'   => $can_see_prices,
                             'show_invoices'   => false,
                         ]); ?>
                     </div>
@@ -347,7 +349,8 @@ $fmt = static function (float $n) use ($currency): string {
             </div>
 
             <aside class="kit-t2-rail" aria-label="Waybill totals">
-                <h2>What we charge</h2>
+                <h2><?php echo $can_see_prices ? 'What we charge' : 'Charge basis'; ?></h2>
+                <?php if ($can_see_prices): ?>
                 <div class="kit-t2-row<?php echo $current_charge_basis === 'mass' ? ' is-active' : ''; ?>">
                     <span>Mass charge</span>
                     <span id="kit-t2-mass-charge"><?php echo esc_html($fmt($mass_charge_val)); ?></span>
@@ -356,6 +359,10 @@ $fmt = static function (float $n) use ($currency): string {
                     <span>Volume charge</span>
                     <span id="kit-t2-volume-charge"><?php echo esc_html($fmt($volume_charge_val)); ?></span>
                 </div>
+                <?php else: ?>
+                <div id="kit-t2-mass-charge" class="hidden" aria-hidden="true">***</div>
+                <div id="kit-t2-volume-charge" class="hidden" aria-hidden="true">***</div>
+                <?php endif; ?>
 
                 <div class="kit-t2-basis" role="radiogroup" aria-label="Charge basis">
                     <?php foreach ($charge_basis_options as $value => $label) :
@@ -368,6 +375,7 @@ $fmt = static function (float $n) use ($currency): string {
                 </div>
                 <p class="kit-t2-hint">Choose Mass or Volume. Higher uses whichever amount is more.</p>
 
+                <?php if ($can_see_prices): ?>
                 <div class="kit-t2-row">
                     <span>Billed freight</span>
                     <span id="kit-t2-billed-freight"><?php echo esc_html($fmt($billed_freight)); ?></span>
@@ -381,11 +389,19 @@ $fmt = static function (float $n) use ($currency): string {
                     <span>Total</span>
                     <strong><?php echo esc_html($currency); ?> <span id="waybilltotalMockup"><?php echo esc_html(number_format((float) ($waybill['product_invoice_amount'] ?? 0), 2)); ?></span></strong>
                 </div>
+                <?php else: ?>
+                <span id="kit-t2-billed-freight" class="hidden" aria-hidden="true">***</span>
+                <span id="waybilltotalMockup" class="hidden" aria-hidden="true">***</span>
+                <?php endif; ?>
             </aside>
         </div>
 
         <div class="kit-t2-foot">
+            <?php if ($can_see_prices): ?>
             <span class="kit-t2-foot-total"><?php echo esc_html($currency); ?> <span class="kit-t2-foot-mock"><?php echo esc_html(number_format((float) ($waybill['product_invoice_amount'] ?? 0), 2)); ?></span></span>
+            <?php else: ?>
+            <span class="kit-t2-foot-total"><span class="kit-t2-foot-mock">***</span></span>
+            <?php endif; ?>
             <?php echo KIT_Commons::renderButton('Save changes', 'primary', 'lg', ['type' => 'submit']); ?>
         </div>
     </form>
@@ -461,12 +477,16 @@ document.addEventListener('DOMContentLoaded', function () {
         return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
     const currency = <?php echo wp_json_encode($currency); ?>;
+    const canSeePrices = <?php echo $can_see_prices ? 'true' : 'false'; ?>;
     function billedFreight(mass, volume, basis) {
         if (basis === 'mass' || basis === 'weight') return mass;
         if (basis === 'volume') return volume;
         return Math.max(mass, volume);
     }
     function syncRail() {
+        if (!canSeePrices) {
+            return;
+        }
         const mass = parseFloat(String(document.getElementById('mass_charge')?.value || '0').replace(',', '.')) || 0;
         const volume = parseFloat(String(document.getElementById('volume_charge')?.value || '0').replace(',', '.')) || 0;
         const basis = document.querySelector('input[name="charge_basis"]:checked')?.value || 'auto';

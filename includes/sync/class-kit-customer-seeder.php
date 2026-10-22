@@ -183,7 +183,10 @@ class KIT_Customer_Seeder
             }
 
             // Resolve person → company link (sheet company_id, else company_name match).
-            if ($company_id > 0 && !isset($existing_companies[$company_id])) {
+            if ($company_id > 0 && class_exists('KIT_Company_Customers')) {
+                $co = KIT_Company_Customers::find_by_company_id($company_id);
+                $company_id = $co ? (int) $co['company_id'] : 0;
+            } elseif ($company_id > 0 && !isset($existing_companies[$company_id])) {
                 $company_id = 0;
             }
             if ($company_id <= 0 && $company !== '' && class_exists('KIT_Customers')) {
@@ -253,16 +256,37 @@ class KIT_Customer_Seeder
                 }
                 $counts['updated']++;
             } else {
-                $payload['created_at'] = $now;
-                $formats[] = '%s';
-                $done = $wpdb->insert($customers_table, $payload, $formats);
-                if (!$done) {
-                    $counts['errored']++;
-                    $report[] = ['cust_id' => $cust_id, 'source_row' => $r + 1, 'action' => 'error', 'why' => $wpdb->last_error];
-                    continue;
+                $keep_cust_id = 0;
+                if (class_exists('KIT_Customers') && ($name !== '' || $surname !== '')) {
+                    $similar = KIT_Customers::find_similar_person_customers($name, $surname, null, 8);
+                    if (!empty($similar)) {
+                        $ids = array_map(static fn($m) => (int) $m->cust_id, $similar);
+                        $keep_cust_id = min($ids);
+                    }
                 }
-                $existing[$cust_id] = (int) $wpdb->insert_id;
-                $counts['inserted']++;
+                if ($keep_cust_id > 0) {
+                    unset($payload['cust_id']);
+                    $name_formats = array_values(array_slice($formats, 1));
+                    $done = $wpdb->update($customers_table, $payload, ['cust_id' => $keep_cust_id], $name_formats, ['%d']);
+                    if ($done === false) {
+                        $counts['errored']++;
+                        $report[] = ['cust_id' => $cust_id, 'source_row' => $r + 1, 'action' => 'error', 'why' => $wpdb->last_error];
+                        continue;
+                    }
+                    $counts['updated']++;
+                    $report[] = ['cust_id' => $cust_id, 'source_row' => $r + 1, 'action' => 'collapsed', 'keep_cust_id' => $keep_cust_id];
+                } else {
+                    $payload['created_at'] = $now;
+                    $formats[] = '%s';
+                    $done = $wpdb->insert($customers_table, $payload, $formats);
+                    if (!$done) {
+                        $counts['errored']++;
+                        $report[] = ['cust_id' => $cust_id, 'source_row' => $r + 1, 'action' => 'error', 'why' => $wpdb->last_error];
+                        continue;
+                    }
+                    $existing[$cust_id] = (int) $wpdb->insert_id;
+                    $counts['inserted']++;
+                }
             }
             if ($company_id > 0) {
                 $counts['linked']++;
@@ -323,6 +347,13 @@ class KIT_Customer_Seeder
         $out['sheet_rows'] = (int) $stats['sheet_rows'];
         $out['companies'] = (int) $stats['inserted'] + (int) $stats['updated'];
         $out['errored'] = (int) $stats['errored'];
+
+        $companies_table = $wpdb->prefix . 'kit_company_customers';
+        foreach ((array) $wpdb->get_results("SELECT id, company_id FROM {$companies_table}", ARRAY_A) as $r) {
+            $existing_companies[(int) $r['company_id']] = (int) $r['id'];
+        }
+
+        return $out;
 
         $companies_table = $wpdb->prefix . 'kit_company_customers';
         foreach ((array) $wpdb->get_results("SELECT id, company_id FROM {$companies_table}", ARRAY_A) as $r) {

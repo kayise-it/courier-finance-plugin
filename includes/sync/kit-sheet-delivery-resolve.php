@@ -14,6 +14,9 @@ if (!defined('ABSPATH')) {
 
 class KIT_Sheet_Delivery_Resolve
 {
+    /** @var bool Whether ensure_africa_trips_in_db() already ran this request. */
+    private static $africa_trips_ensured = false;
+
     /**
      * Build lookup tables once per seed/sync pass.
      *
@@ -53,6 +56,21 @@ class KIT_Sheet_Delivery_Resolve
                 ['%s', '%d', '%d', '%s', '%d', '%s', '%d']
             );
             $warehouse_fallback_delivery_id = (int) $wpdb->insert_id;
+        }
+
+        // Auto-create any AfricaWaybills trips that have no kit_deliveries row
+        // yet. Waybills seeded from the sheet carry the workbook trip id as
+        // delivery_id; without a matching delivery row they join to nothing
+        // and vanish from "Waybills on Truck". Previously this only happened
+        // during a manual Settings seed, so trips added to the workbook after
+        // the last manual seed (e.g. trips 20-24) never appeared.
+        if (!self::$africa_trips_ensured) {
+            self::$africa_trips_ensured = true;
+            try {
+                self::ensure_africa_trips_in_db();
+            } catch (Throwable $e) {
+                error_log('KIT Sheet Delivery Resolve: ensure_africa_trips_in_db failed: ' . $e->getMessage());
+            }
         }
 
         $ref_to_delivery_id = [];

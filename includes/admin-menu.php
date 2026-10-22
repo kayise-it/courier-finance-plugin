@@ -137,12 +137,12 @@ function plugin_add_menu()
         'countries_management_page'
     );
 
-    // Create Trip
+    // Create Trip (administrators only)
     add_submenu_page(
         '08600-dashboard',
         'Create Trip',
         'Create Trip',
-        'kit_view_waybills',
+        'manage_options',
         '08600-trip-create',
         ['KIT_Deliveries', 'render_create_trip_page']
     );
@@ -674,9 +674,17 @@ function handle_add_customer_form() {
         $city_raw = $_POST['city_id'] ?? $_POST['origin_city'] ?? '';
         $client_type = sanitize_key((string) ($_POST['kit_customer_client_type'] ?? 'individual'));
         $company_name = sanitize_text_field($_POST['company_name'] ?? '');
+        $person_name = sanitize_text_field($_POST['name'] ?? '');
+        $person_surname = sanitize_text_field($_POST['surname'] ?? '');
 
-        // Business clients belong in kit_company_customers, not kit_customers.
+        // Company clients: create kit_company_customers, then attach the contact person.
         if ($client_type === 'business' && class_exists('KIT_Company_Customers')) {
+            if (trim($person_name) === '' || trim($person_surname) === '') {
+                $qs = 'error=1&msg=' . rawurlencode('Company customers need a contact first and last name.');
+                wp_redirect(admin_url('admin.php?page=08600-add-customer&' . $qs));
+                exit;
+            }
+
             $company_id = KIT_Company_Customers::save_company([
                 'company_name' => $company_name,
                 'cell' => sanitize_text_field($_POST['cell'] ?? ''),
@@ -687,7 +695,22 @@ function handle_add_customer_form() {
                 'vat_number' => sanitize_text_field($_POST['vat_number'] ?? ''),
             ]);
             if ($company_id) {
-                wp_redirect(admin_url('admin.php?page=08600-customers&company_added=1&edit_company=' . (int) $company_id));
+                $cust_id = KIT_Company_Customers::create_and_attach_customer((int) $company_id, [
+                    'name' => $person_name,
+                    'surname' => $person_surname,
+                    'cell' => sanitize_text_field($_POST['cell'] ?? ''),
+                    'email_address' => sanitize_text_field($_POST['email_address'] ?? ''),
+                ]);
+                if ($cust_id) {
+                    wp_redirect(admin_url('admin.php?page=08600-customers&company_added=1&edit_company=' . (int) $company_id));
+                    exit;
+                }
+                // Company exists but person failed — send to company edit to finish linking.
+                $hint = KIT_Company_Customers::get_validation_error() ?: 'Company saved; could not attach contact person.';
+                wp_redirect(admin_url(
+                    'admin.php?page=08600-customers&edit_company=' . (int) $company_id
+                    . '&link_error=1&msg=' . rawurlencode($hint)
+                ));
                 exit;
             }
             $hint = KIT_Company_Customers::get_validation_error() ?: '';
@@ -700,8 +723,8 @@ function handle_add_customer_form() {
         }
 
         $customer_data = [
-            'name' => sanitize_text_field($_POST['name'] ?? ''),
-            'surname' => sanitize_text_field($_POST['surname'] ?? ''),
+            'name' => $person_name,
+            'surname' => $person_surname,
             'cell' => sanitize_text_field($_POST['cell'] ?? ''),
             'email_address' => sanitize_text_field($_POST['email_address'] ?? ''),
             'address' => sanitize_textarea_field($_POST['address'] ?? ''),

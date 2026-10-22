@@ -37,3 +37,10 @@ composer.lock
 # Documentation (optional - remove if you want to keep them)
 *.md
 !readme.txt
+
+# Local WordPress config & database dumps (secrets / customer data — never commit)
+wp-config.php
+*.sql
+
+# Local AI assistant settings
+.claude/

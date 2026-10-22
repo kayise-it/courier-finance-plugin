@@ -1,0 +1,2874 @@
+/**
+ * Unified sync pipeline:
+ * 1) Waybills (IMPORTRANGE-fed) -> kit_waybills
+ * 2) Waybills Item Description → WordPress wp_kit_waybill_items (kit_parcels sheet bridge retired)
+ * 3) kit_waybills -> kit_customers (append-only)
+ * 4) Backfill missing kit_waybills.customer_id from newly created customers
+ * 5) Waybills driver / delivery columns -> kit_drivers, kit_deliveries (append/update).
+ *    kit_deliveries.dispatch_date MUST come from Waybills column C (Dispatch Date), never DATE RECEIVED.
+ *
+ * Deploy: Google Sheets runs the code in Extensions → Apps Script, not this repo file.
+ * After editing here, copy/paste this entire file into that project, Save, then run sync (or triggers).
+ * Otherwise the sheet/DB will keep old serialized miscellaneous (e.g. legacy "client Invoice" label).
+ *
+ * ## DEPRECATION NOTICE (2026-05-19)
+ *
+ * The Waybills → kit_waybills projection in this file is being superseded by
+ * KIT_Waybill_Seeder (PHP). The new pipeline reads kit_waybills sheet directly
+ * via the Sheets API, upserts on waybill_no, and writes an audit log per row
+ * (wp_kit_sync_runs / wp_kit_sync_run_rows). See:
+ *   - includes/sync/class-kit-waybill-seeder.php
+ *   - includes/admin-pages/sync-runs.php  (admin UI for run history)
+ *
+ * Cutover plan (mirrors the PHP-side notes in run_google_sheet_seed):
+ *   1. Stage 1 validator (runValidation) is live. Client uses sync_validation
+ *      sheet to fix red rows.
+ *   2. KIT_Waybill_Seeder runs in SHADOW mode (default). Compare runs against
+ *      run_google_sheet_seed output for a week.
+ *   3. Flip Sync Runs admin → Shadow OFF. Watch for clean production runs.
+ *   4. Disable Apps Script triggers that call syncAllWaybillData. Validator
+ *      keeps running (it's read-only and useful).
+ *   5. Delete the syncWaybillsStage_ / mapSourceRowToWaybillRecord_ chain.
+ *
+ * Cutover status: CFG.wpOwnsKitWaybills=true and CFG.enableOnEdit=false.
+ * WordPress Auto Sync owns kit_waybills; Waybills→kit_waybills projection is skipped.
+ * Validator (Stage 1) remains available and read-only.
+ */
+
+/** `miscellaneous.others` key only — customer's purchase invoice ref (no duplicate misc_items row). */
+var OTHERS_KEY_CLIENT_INVOICE_ = "client_invoice";
+
+var CFG = {
+  sourceSheetName: "Waybills",
+  targetSheetName: "kit_waybills",
+  customersSheetName: "kit_customers",
+  deliveriesSheetName: "kit_deliveries",
+  driversSheetName: "kit_drivers",
+  citiesSheetName: "kit_operating_cities",
+  dataStartRow: 2,
+  clearThroughRow: 0, // 0 = clear to current last row.
+  writeErrorSheet: true,
+  errorSheetName: "sync_errors",
+  // Off: IMPORTRANGE refreshes on Waybills must not fire syncAllWaybillData (loop/storm risk).
+  enableOnEdit: false,
+  enableOnChange: false,
+  /**
+   * When true, WordPress Auto Sync owns kit_waybills. Skip Waybills→kit_waybills projection
+   * so manual/menu runs do not clear+rewrite kit_waybills from the legacy mirror.
+   * Validator (runValidation) stays available; parcels/customers/drivers stages still run
+   * when parcelCtx/targetIndex are provided by a non-skipped path.
+   */
+  wpOwnsKitWaybills: true,
+  // Short timeout intentionally: when a change/edit trigger storm fires (e.g. IMPORTRANGE
+  // refreshing the source sheet repeatedly), we'd rather skip the overlapping run than
+  // queue it for 30s and crash with "Sync lock timeout" once the previous sync overruns.
+  lockTimeoutMs: 1000,
+  countryIdDefault: 2,
+  defaultDirectionId: 2,
+  customerSeedMinId: 8600,
+  /**
+   * When true, product_invoice_number may use Waybills "cl inv" / mapped column (e.g. IMPORTRANGE AA).
+   * When false (default), that column is ignored — only kit_waybills + allocator apply (see resolveProductInvoiceNumber_).
+   */
+  productInvoiceUseWaybillsSheet: false,
+  /**
+   * product_invoice_number resolution (see resolveProductInvoiceNumber_). If productInvoiceUseWaybillsSheet is true, clInv participates as noted; if false, Waybills invoice column is never read.
+   * "preserve" — (optional clInv) then existing kit_waybills row, else allocate INV13{waybill}
+   * "sheet_or_allocate" — with Waybills: clInv or allocate; without Waybills: allocate only (ignores stored kit invoice)
+   * "always_allocate" — INV13{waybill_no} every sync row
+   */
+  productInvoiceNumberMode: "always_allocate",
+  /** WP user id for created_by / last_updated_by when row has no prior created_by (e.g. 1597). */
+  waybillSyncUserId: "",
+  /**
+   * Stage 1 validator (see runValidation): writes a per-row pass/warn/error
+   * report to this sheet, non-destructive to the source. Used to surface
+   * dirty source rows (bad types, unknown customers, conflicting VAT enum +
+   * SAD500/SADC columns) BEFORE the normalizer/sync runs.
+   */
+  validationSheetName: "sync_validation",
+  /** Cap Waybills read width — IMPORTRANGE sheets can report huge getLastColumn(). */
+  waybillsMaxCols: 60,
+  kitWaybillsMaxCols: 50
+};
+
+var SRC = {
+  waybillNo: { required: true, aliases: ["waybill #", "waybill#", "waybill no", "waybill no.", "wb #", "wb no", "wb_no", "parcel_id", "parcel id", "parcel no", "parcel_no", "newwb", "new wb", "no", "no.", "number"] },
+  itemDesc: { required: false, aliases: ["item description", "item desc", "items description"] },
+  waybillDesc: { required: false, aliases: ["waybill description", "wb description"] },
+  directionId: { required: false, aliases: ["direction_id", "direction id", "direction"] },
+  cityId: { required: false, aliases: ["city_id", "city id", "destination_city_id"] },
+  cityName: { required: false, aliases: ["city", "city_name", "destination_city", "destination city", "city_name_ignore"] },
+  // Per client (Mel Ltd, 2026-05-19): source sheet column B is just labelled "Delivery" and
+  // holds the truck/delivery ID (one delivery_id == one truck trip). Accept that header alongside
+  // the more explicit "delivery_id" variants so the ID actually flows into kit_waybills.
+  deliveryId: { required: false, aliases: ["delivery_id", "delivery id", "del_id", "delivery"] },
+  driver: { required: false, aliases: ["driver", "driver_name", "driver name", "truck_driver", "truck driver"] },
+  customerId: { required: false, aliases: ["customer_id", "customer id", "cust_id"] },
+  approval: { required: false, aliases: ["approval"] },
+  approvalUserId: { required: false, aliases: ["approval_userid", "approval_user_id", "approval user id"] },
+  customer: { required: false, aliases: ["customer", "cust name", "client"] },
+  clInv: { required: false, aliases: ["cl inv #", "cl inv", "client invoice", "inv #", "inv no", "invoice #"] },
+  custInvR: { required: false, aliases: ["customer inv( r)", "customer inv", "customer inv r", "customer inv (r)", "cust inv"] },
+  sad500: { required: false, aliases: ["sad500", "sad 500"] },
+  sadc: { required: false, aliases: ["sadc"] },
+  length: { required: false, aliases: ["length", "item length", "len"] },
+  width: { required: false, aliases: ["width", "item width"] },
+  height: { required: false, aliases: ["height", "item height"] },
+  tMass: { required: false, aliases: ["t mass", "t-mass", "total mass", "total_mass_kg", "mass kg"] },
+  tVol: { required: false, aliases: ["t volume", "t-volume", "total volume", "total_volume", "volume"] },
+  massCost: { required: false, aliases: ["mass cost", "mass_charge", "mass charge"] },
+  volCost: { required: false, aliases: ["vol cost", "volume cost", "volume_charge", "vol charge"] },
+  basis: { required: false, aliases: ["basis", "charge basis", "charge_basis"] },
+  vat: { required: false, aliases: ["vat", "vat include", "vat_include", "vat included"] },
+  tracking: { required: false, aliases: ["tracking number", "tracking_number", "tracking", "track no", "new wb"] },
+  status: { required: false, aliases: ["status", "state"] },
+  parcelText: { required: false, aliases: ["parcel", "parcel #", "parcel number", "waybill label"] },
+  /** kit_waybills.created_at — Waybills column "Date Received" (also matches "Date Recieved"). */
+  dateReceived: { required: false, aliases: ["date received", "date recieved", "date_received", "received date"] },
+  /** kit_deliveries.dispatch_date — Waybills column C "Dispatch Date" (not DATE RECEIVED). */
+  dispatchDate: { required: false, aliases: ["dispatch date", "dispatch_date", "truck dispatch date", "truck_dispatch_date", "trip date", "trip_date"] },
+  /** Optional: customer's own invoice ref (same meaning as CL INV # / column AA) — not a rand charge. */
+  clientInvoiceAa: { required: false, aliases: ["client invoice aa", "waybills aa", "column aa", "misc client invoice"] }
+};
+
+var TGT = {
+  id: { required: true, aliases: ["id"] },
+  parcel_id: { required: true, aliases: ["parcel_id", "parcel id", "parcel_no", "parcel no", "parcel #", "parcel number", "parcelid", "pkg id", "package id"] },
+  waybill_no: { required: true, aliases: ["waybill_no", "waybill no", "waybill number"] },
+  description: { required: true, aliases: ["description"] },
+  direction_id: { required: false, aliases: ["direction_id", "direction id"] },
+  city_id: { required: false, aliases: ["city_id", "city id"] },
+  delivery_id: { required: false, aliases: ["delivery_id", "delivery id"] },
+  cust_name_ignore: { required: false, aliases: ["cust_name_ignore", "cust name", "customer name ignore"] },
+  customer_id: { required: false, aliases: ["customer_id", "customer id", "cust_id"] },
+  approval: { required: false, aliases: ["approval"] },
+  approval_userid: { required: false, aliases: ["approval_userid", "approval_user_id"] },
+  product_invoice_number: { required: false, aliases: ["product_invoice_number", "product invoice number", "cl inv"] },
+  product_invoice_amount: { required: false, aliases: ["product_invoice_amount", "product invoice amount"] },
+  sad500_amount: { required: false, aliases: ["sad500_amount", "sad500 amount"] },
+  sadc_amount: { required: false, aliases: ["sadc_amount", "sadc amount"] },
+  item_length: { required: false, aliases: ["item_length", "item length", "length"] },
+  item_width: { required: false, aliases: ["item_width", "item width", "width"] },
+  item_height: { required: false, aliases: ["item_height", "item height", "height"] },
+  total_mass_kg: { required: false, aliases: ["total_mass_kg", "total mass kg", "t mass"] },
+  total_volume: { required: false, aliases: ["total_volume", "total volume", "t volume"] },
+  mass_charge: { required: false, aliases: ["mass_charge", "mass charge"] },
+  volume_charge: { required: false, aliases: ["volume_charge", "volume charge"] },
+  charge_basis: { required: false, aliases: ["charge_basis", "charge basis", "basis"] },
+  vat_include: { required: false, aliases: ["vat_include", "vat include"] },
+  include_sad500: { required: false, aliases: ["include_sad500", "include sad500"] },
+  include_sadc: { required: false, aliases: ["include_sadc", "include sadc"] },
+  tracking_number: { required: false, aliases: ["tracking_number", "tracking number"] },
+  status: { required: false, aliases: ["status"] },
+  created_by: { required: false, aliases: ["created_by", "created by"] },
+  created_at: { required: false, aliases: ["created_at", "created at"] },
+  last_updated_by: { required: false, aliases: ["last_updated_by", "last updated by"] },
+  last_updated_at: { required: false, aliases: ["last_updated_at", "last updated at"] },
+  /** Serialized blob compatible with PHP serialize() / maybe_unserialize() (same shape as KIT_Waybills::prepareMiscCharges). */
+  miscellaneous: { required: false, aliases: ["miscellaneous", "misc", "misc_serialized"] },
+  misc_total: { required: false, aliases: ["misc_total", "misc total"] }
+};
+
+/** kit_parcels — one row per item split from Waybills ITEM DESCRIPTION (column M). */
+var PAR = {
+  id: { required: true, aliases: ["id"] },
+  waybill_id: { required: true, aliases: ["waybill_id", "waybill id"] },
+  waybill_no: { required: true, aliases: ["waybill_no", "waybill no", "waybill number"] },
+  item_index: { required: true, aliases: ["item_index", "item index", "parcel_index", "parcel index", "seq"] },
+  item_description: { required: true, aliases: ["item_description", "item description", "description", "parcel_description", "parcel description"] },
+  item_price: { required: false, aliases: ["item_price", "item price", "price", "parcel_price", "parcel price"] },
+  created_at: { required: false, aliases: ["created_at", "created at"] },
+  last_updated_at: { required: false, aliases: ["last_updated_at", "last updated at"] }
+};
+
+function syncAllWaybillData() {
+  var startedAt = new Date();
+  var summary = {
+    run_started_at: startedAt.toISOString(),
+    waybills: {},
+    parcels: {},
+    customers: {},
+    run_finished_at: "",
+    duration_ms: 0
+  };
+
+  withLock_(function () {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var waybillsResult = CFG.wpOwnsKitWaybills
+      ? { summary: { skipped: "wp owns kit_waybills", row_errors: [] }, targetIndex: null }
+      : syncWaybillsStage_();
+    summary.waybills = waybillsResult.summary;
+    // kit_parcels sheet bridge retired — WordPress seeds wp_kit_waybill_items from Item Description.
+    summary.parcels = { skipped: "wp owns kit_waybill_items (kit_parcels bridge retired)" };
+    if (!CFG.wpOwnsKitWaybills) {
+      summary.customers = syncCustomersFromKitWaybillsStage_(waybillsResult.targetIndex);
+      writeRowErrors_(ss, waybillsResult.summary.row_errors);
+    } else {
+      summary.customers = { skipped: "wp owns kit_waybills" };
+    }
+    summary.drivers_deliveries = syncDriversAndDeliveriesFromWaybillsStage_(ss);
+    var deliverySheet = ss.getSheetByName(CFG.deliveriesSheetName);
+    summary.deliveries_pruned = deliverySheet ? pruneEmptyKitDeliveryRowsCore_(deliverySheet) : 0;
+  });
+
+  summary.run_finished_at = new Date().toISOString();
+  summary.duration_ms = new Date().getTime() - startedAt.getTime();
+  logSummary_(summary);
+  return summary;
+}
+
+function syncKitWaybills() {
+  return syncAllWaybillData();
+}
+
+function syncKitWaybillsOnly() {
+  if (CFG.wpOwnsKitWaybills) {
+    Logger.log("syncKitWaybillsOnly: skipped — CFG.wpOwnsKitWaybills is true (WordPress owns kit_waybills).");
+    return { skipped: "wp owns kit_waybills" };
+  }
+  var out = {};
+  withLock_(function () {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var result = syncWaybillsStage_();
+    out = result.summary;
+    out.parcels = { skipped: "wp owns kit_waybill_items (kit_parcels bridge retired)" };
+    writeRowErrors_(ss, result.summary.row_errors);
+  });
+  return out;
+}
+
+function syncCustomersFromKitWaybills() {
+  var out = {};
+  withLock_(function () {
+    out = syncCustomersFromKitWaybillsStage_(null);
+  });
+  return out;
+}
+
+/** Harvest Waybills driver column -> kit_drivers only (menu: Run Drivers Only). */
+function syncKitDriversOnly() {
+  var out = {};
+  withLock_(function () {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    out = syncDriversFromWaybillsStage_(ss);
+  });
+  return out;
+}
+
+/** Harvest Waybills → kit_drivers + kit_deliveries (menu / full sync). dispatch_date = Waybills col C. */
+function syncKitDeliveriesOnly() {
+  var out = {};
+  withLock_(function () {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    out = syncDriversAndDeliveriesFromWaybillsStage_(ss);
+    var deliverySheet = ss.getSheetByName(CFG.deliveriesSheetName);
+    out.deliveries_pruned = deliverySheet ? pruneEmptyKitDeliveryRowsCore_(deliverySheet) : 0;
+  });
+  return out;
+}
+
+// Backward-compatibility alias for old trigger/function name.
+function syncNewCustomersFromWaybills() {
+  return syncCustomersFromKitWaybills();
+}
+
+function onEdit(e) {
+  if (!CFG.enableOnEdit || !e || !e.range || !e.range.getSheet()) {
+    return;
+  }
+  var sheetName = e.range.getSheet().getName();
+  if (sheetName === CFG.sourceSheetName) {
+    syncAllWaybillData();
+    return;
+  }
+  if (sheetName === CFG.customersSheetName) {
+    onKitCustomersEdit_(e);
+  }
+}
+
+/** When name/surname/combined is typed on kit_customers, assign the next id + cust_id. */
+function onKitCustomersEdit_(e) {
+  var row = e.range.getRow();
+  if (row < CFG.dataStartRow) {
+    return;
+  }
+
+  var sheet = e.range.getSheet();
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var cuIdx = buildCustomerTargetIndexes_(headers);
+  if (cuIdx.id < 0 || cuIdx.custId < 0) {
+    return;
+  }
+
+  var editedCol0 = e.range.getColumn() - 1;
+  var triggerCols = [cuIdx.name, cuIdx.surname, cuIdx.combined].filter(function (c) { return c >= 0; });
+  if (triggerCols.indexOf(editedCol0) < 0) {
+    return;
+  }
+
+  withLock_(function () {
+    var idx = buildCustomerTargetIndexes_(sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]);
+    backfillMissingCustomerIdsCore_(sheet, idx);
+    repairMissingCustomerFormulasCore_(sheet, idx);
+  });
+}
+
+function onChange(e) {
+  if (!CFG.enableOnChange) {
+    return;
+  }
+  syncAllWaybillData();
+}
+
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu("Waybill Sync")
+    .addItem("Run Full Sync Now", "syncAllWaybillData")
+    .addItem("Run Drivers Only", "syncKitDriversOnly")
+    .addItem("Run Drivers & Deliveries", "syncKitDeliveriesOnly")
+    .addItem("Run Waybills Only", "syncKitWaybillsOnly")
+    .addItem("Run Customers Only", "syncCustomersFromKitWaybills")
+    .addItem("Rebuild All Customers From Waybills", "rebuildKitCustomersFromWaybills")
+    .addItem("Repair Corrupted Customers", "repairKitCustomersFromKitWaybills")
+    .addItem("Repair Missing Customer Formulas", "repairMissingCustomerFormulas")
+    .addItem("Backfill Missing Customer IDs", "backfillMissingCustomerIds")
+    .addItem("Prune Empty Delivery Rows", "pruneEmptyKitDeliveryRows")
+    .addSeparator()
+    .addItem("Run Validation Now", "runValidation")
+    .addItem("Install Validation Trigger (5-min)", "installValidationTrigger")
+    .addItem("Uninstall Validation Trigger", "uninstallValidationTrigger")
+    .addToUi();
+}
+
+function syncWaybillsStage_() {
+  var startedAt = new Date();
+  var summary = {
+    run_started_at: startedAt.toISOString(),
+    source_rows_read: 0,
+    target_rows_read: 0,
+    output_rows: 0,
+    skipped_rows: 0,
+    missing_required_source_fields: [],
+    missing_required_target_fields: [],
+    row_errors: [],
+    run_finished_at: "",
+    duration_ms: 0
+  };
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sourceSheet = ss.getSheetByName(CFG.sourceSheetName);
+  var targetSheet = ss.getSheetByName(CFG.targetSheetName);
+  if (!sourceSheet || !targetSheet) {
+    throw new Error("Missing required sheet(s): " + CFG.sourceSheetName + " and/or " + CFG.targetSheetName);
+  }
+
+  var sourceData = readSheetValuesSmart_(sourceSheet, CFG.waybillsMaxCols);
+  var targetData = readSheetValuesSmart_(targetSheet, CFG.kitWaybillsMaxCols);
+  summary.source_rows_read = Math.max(0, sourceData.length - 1);
+  summary.target_rows_read = Math.max(0, targetData.length - 1);
+
+  if (!targetData || targetData.length < 1) {
+    throw new Error("Target sheet must have header row.");
+  }
+
+  var sourceHeaders = sourceData[0] || [];
+  var targetHeaders = targetData[0] || [];
+  var targetNumCols = targetHeaders.length;
+  var sourceIndex = buildResolvedMap_(sourceHeaders, SRC);
+  var targetIndex = buildResolvedMap_(targetHeaders, TGT);
+  var lookup = buildLookupContext_(ss);
+
+  var preflight = preflightValidation_(sourceIndex, targetIndex, sourceHeaders, targetHeaders);
+  summary.missing_required_source_fields = preflight.missingSource;
+  summary.missing_required_target_fields = preflight.missingTarget;
+  if (!preflight.ok) {
+    throw new Error(preflight.message);
+  }
+
+  // Built before the empty-source early return below — that branch also reads
+  // existing.idsByWaybill, and `var` hoisting left it undefined there, so an
+  // empty Waybills sheet crashed the sync instead of clearing the target.
+  var existing = buildExistingWaybillState_(targetData, targetIndex);
+
+  if (sourceData.length < 2) {
+    clearTargetData_(targetSheet, targetNumCols);
+    summary.run_finished_at = new Date().toISOString();
+    summary.duration_ms = new Date().getTime() - startedAt.getTime();
+    logSummary_(summary);
+    return {
+      summary: summary,
+      targetIndex: targetIndex
+    };
+  }
+
+  var output = [];
+
+  for (var r = 1; r < sourceData.length; r++) {
+    var srcRow = sourceData[r];
+    var sourceRowNum = r + 1;
+    var mapped = mapSourceRowToWaybillRecord_(srcRow, sourceRowNum, sourceIndex, targetIndex, targetHeaders, existing, lookup, summary);
+    if (mapped) {
+      output.push(mapped);
+    }
+  }
+
+  clearTargetData_(targetSheet, targetNumCols);
+  if (output.length > 0) {
+    targetSheet.getRange(CFG.dataStartRow, 1, output.length, targetNumCols).setValues(output);
+  }
+
+  summary.output_rows = output.length;
+  summary.run_finished_at = new Date().toISOString();
+  summary.duration_ms = new Date().getTime() - startedAt.getTime();
+  logSummary_(summary);
+
+  return {
+    summary: summary,
+    targetIndex: targetIndex
+  };
+}
+
+/** Like bounded read, but width follows last non-empty header cell (not sheet grid extent). */
+function readSheetValuesSmart_(sheet, maxColsCap) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 1) {
+    return [[]];
+  }
+  var sheetLastCol = sheet.getLastColumn();
+  if (sheetLastCol < 1) {
+    return [[]];
+  }
+  var headerScanCols = (maxColsCap && maxColsCap > 0)
+    ? Math.min(sheetLastCol, maxColsCap)
+    : sheetLastCol;
+  var headerRow = sheet.getRange(1, 1, 1, headerScanCols).getValues()[0];
+  var lastCol = 1;
+  for (var c = headerRow.length - 1; c >= 0; c--) {
+    if (cleanText_(headerRow[c]) !== "") {
+      lastCol = c + 1;
+      break;
+    }
+  }
+  return sheet.getRange(1, 1, lastRow, lastCol).getValues();
+}
+
+function syncCustomersFromKitWaybillsStage_(knownTargetIndex) {
+  var startedAt = new Date();
+  var summary = {
+    run_started_at: startedAt.toISOString(),
+    source_rows_read: 0,
+    existing_customers: 0,
+    appended_customers: 0,
+    skipped_no_name: 0,
+    skipped_suspicious_name: 0,
+    skipped_existing: 0,
+    unique_source_customers: 0,
+    unique_from_kit_waybills: 0,
+    unique_from_source_waybills: 0,
+    total_customers_after: 0,
+    backfilled_waybill_customer_ids: 0,
+    backfilled_customer_ids: 0,
+    repaired_formula_cells: 0,
+    resplit_customer_rows: 0,
+    cleared_stale_waybill_customer_ids: 0,
+    run_finished_at: "",
+    duration_ms: 0
+  };
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var waybillSheet = ss.getSheetByName(CFG.targetSheetName);
+  var waybillsSourceSheet = ss.getSheetByName(CFG.sourceSheetName);
+  var customerSheet = ss.getSheetByName(CFG.customersSheetName);
+  var citySheet = ss.getSheetByName(CFG.citiesSheetName);
+  if (!waybillSheet || !customerSheet) {
+    throw new Error("Missing required sheet(s): " + CFG.targetSheetName + " and/or " + CFG.customersSheetName);
+  }
+
+  var wb = waybillSheet.getDataRange().getValues();
+  var cu = customerSheet.getDataRange().getValues();
+  if (!wb || wb.length < 1 || !cu || cu.length < 1) {
+    return summary;
+  }
+
+  var wbHeaders = wb[0];
+  var wbIdx = knownTargetIndex || buildResolvedMap_(wbHeaders, TGT);
+  var cityRows = citySheet ? citySheet.getDataRange().getValues() : [];
+  var cityMap = buildCityNameMap_(cityRows);
+  var cuIdx = buildCustomerTargetIndexes_(cu[0]);
+
+  if (cuIdx.id < 0 || cuIdx.custId < 0 || cuIdx.name < 0 || cuIdx.surname < 0 || cuIdx.combined < 0 || cuIdx.company < 0) {
+    throw new Error("kit_customers missing required columns for append-only sync.");
+  }
+
+  var existing = buildExistingCustomerState_(cu, cuIdx);
+  summary.existing_customers = existing.count;
+  summary.source_rows_read = Math.max(0, wb.length - 1);
+
+  summary.cleared_stale_waybill_customer_ids = clearStaleWaybillCustomerIds_(waybillSheet, wb, wbIdx, existing.custIds);
+
+  var contactByCustomerName = buildWaybillsCustomerContactMap_(waybillsSourceSheet);
+  var collected = collectUniqueCustomerCandidates_(wb, wbIdx, waybillsSourceSheet, cityMap, contactByCustomerName);
+  summary.unique_source_customers = collected.stats.unique;
+  summary.unique_from_kit_waybills = collected.stats.from_kit_waybills;
+  summary.unique_from_source_waybills = collected.stats.from_source_waybills;
+  summary.skipped_no_name = collected.stats.skipped_no_name;
+  summary.skipped_suspicious_name = collected.stats.skipped_suspicious;
+
+  var pending = [];
+  var candidateKeys = Object.keys(collected.candidates);
+  for (var c = 0; c < candidateKeys.length; c++) {
+    var key = candidateKeys[c];
+    var candidate = collected.candidates[key];
+    var custName = candidate.custName;
+    var custNorm = normalizeName_(custName);
+
+    if (existing.keys[key] || existing.pendingKeys[key]) {
+      summary.skipped_existing++;
+      continue;
+    }
+    if (customerNameAlreadyLinkedOnWaybills_(wb, wbIdx, custName, existing.custIds)) {
+      summary.skipped_existing++;
+      continue;
+    }
+
+    var split = splitCustomerName_(custName);
+    var contact = candidate.contact || contactByCustomerName[custNorm] || {};
+
+    existing.maxId += 1;
+    existing.maxCustId = Math.max(existing.maxCustId + 1, CFG.customerSeedMinId);
+    var newCustId = existing.maxCustId;
+
+    var out = new Array(cu[0].length).fill("");
+    out[cuIdx.id] = existing.maxId;
+    out[cuIdx.custId] = newCustId;
+    out[cuIdx.name] = split.name;
+    out[cuIdx.surname] = split.surname;
+    out[cuIdx.combined] = custName;
+    if (cuIdx.country >= 0) out[cuIdx.country] = CFG.countryIdDefault;
+    if (cuIdx.city >= 0) out[cuIdx.city] = candidate.cityId || "";
+    if (cuIdx.vat >= 0) out[cuIdx.vat] = "N/A";
+    if (cuIdx.address >= 0) out[cuIdx.address] = cleanText_(contact.address);
+    if (cuIdx.cell >= 0) out[cuIdx.cell] = cleanText_(contact.cell);
+    if (cuIdx.telephone >= 0) out[cuIdx.telephone] = cleanText_(contact.telephone);
+    if (cuIdx.email >= 0) out[cuIdx.email] = cleanText_(contact.email);
+    if (cuIdx.company >= 0) out[cuIdx.company] = split.company_name;
+    if (cuIdx.created >= 0) out[cuIdx.created] = new Date();
+
+    pending.push(out);
+    existing.pendingKeys[key] = true;
+    existing.newIdsByKey[key] = newCustId;
+  }
+
+  if (pending.length > 0) {
+    var appendStartRow = customerSheet.getLastRow() + 1;
+    var preserveCols = buildCustomerNamePreserveCols_(cuIdx);
+    var templateFormulasR1C1 = resolveTemplateFormulasR1C1_(customerSheet, appendStartRow, cu[0].length, preserveCols);
+
+    customerSheet.getRange(appendStartRow, 1, pending.length, cu[0].length).setValues(pending);
+    applyTemplateFormulasToAppendedRows_(customerSheet, appendStartRow, pending.length, templateFormulasR1C1, preserveCols);
+    summary.appended_customers = pending.length;
+  }
+
+  summary.backfilled_waybill_customer_ids = backfillWaybillCustomerIds_(waybillSheet, wb, wbIdx, existing.newIdsByKey);
+  summary.backfilled_customer_ids = backfillMissingCustomerIdsCore_(customerSheet, cuIdx);
+  summary.resplit_customer_rows = resplitCustomerRowsFromCombinedCore_(customerSheet, cuIdx);
+  summary.repaired_formula_cells = repairMissingCustomerFormulasCore_(customerSheet, cuIdx);
+  summary.total_customers_after = customerSheet.getLastRow() - 1;
+  summary.run_finished_at = new Date().toISOString();
+  summary.duration_ms = new Date().getTime() - startedAt.getTime();
+  logSummary_(summary);
+  return summary;
+}
+
+function backfillWaybillCustomerIds_(sheet, wbData, wbIdx, newIdsByKey) {
+  var customerColIdx = wbIdx.customer_id;
+  var nameColIdx = wbIdx.cust_name_ignore;
+  if (customerColIdx === undefined || customerColIdx < 0 || nameColIdx === undefined || nameColIdx < 0) {
+    return 0;
+  }
+
+  var changed = 0;
+  var outCol = [];
+  for (var i = 1; i < wbData.length; i++) {
+    var existingId = toPositiveId_(wbData[i][customerColIdx]);
+    var name = cleanText_(wbData[i][nameColIdx]);
+    var key = dedupeKey_(name);
+    var resolved = key ? (newIdsByKey[key] || "") : "";
+    if (existingId === "" && resolved !== "") {
+      outCol.push([resolved]);
+      changed++;
+    } else {
+      outCol.push([wbData[i][customerColIdx]]);
+    }
+  }
+
+  if (outCol.length > 0 && changed > 0) {
+    sheet.getRange(CFG.dataStartRow, customerColIdx + 1, outCol.length, 1).setValues(outCol);
+  }
+  return changed;
+}
+
+function mapSourceRowToWaybillRecord_(row, sourceRowNum, sourceIdx, targetIdx, targetHeaders, existing, lookup, summary) {
+  var colAText = valueFromWaybillsColumnA_(row);
+  if (shouldSkipWaybillByWaybillsColumnA_(colAText)) {
+    summary.skipped_rows++;
+    return null;
+  }
+
+  var waybillNo = extractWaybillNo_(cleanText_(valueByField_(row, sourceIdx, "waybillNo"))) || extractWaybillNo_(cleanText_(valueByField_(row, sourceIdx, "parcelText")));
+  if (!waybillNo) {
+    summary.skipped_rows++;
+    pushRowError_(summary, sourceRowNum, "Missing parseable waybill number.");
+    return null;
+  }
+
+  var id = existing.idsByWaybill[waybillNo];
+  if (!id) {
+    existing.maxId++;
+    id = existing.maxId;
+    existing.idsByWaybill[waybillNo] = id;
+  }
+
+  var link = existing.linksByWaybill[waybillNo] || {};
+  // Per client (Mel Ltd, 2026-05-19): the waybill MUST always pull "Waybill description",
+  // never "Item description". Prioritise waybillDesc; fall back to itemDesc only when the
+  // waybill description column is empty so we don't leave the field blank for legacy rows.
+  var description = cleanText_(valueByField_(row, sourceIdx, "waybillDesc")) || cleanText_(valueByField_(row, sourceIdx, "itemDesc"));
+  var customerName = cleanText_(valueByField_(row, sourceIdx, "customer"));
+  // Driver / col A "Warehouse" must not keep a prior truck delivery_id from kit_waybills.
+  var isWarehouseRow = isWarehouseFromWaybillsColumnA_(colAText);
+  var deliveryId = isWarehouseRow
+    ? 0
+    : pickPositiveId_(valueByField_(row, sourceIdx, "deliveryId"), link.delivery_id);
+  var directionId = pickPositiveId_(valueByField_(row, sourceIdx, "directionId"), link.direction_id, deliveryId > 0 ? lookup.deliveryDirectionById[deliveryId] : "", CFG.defaultDirectionId);
+  var cityName = cleanText_(valueByField_(row, sourceIdx, "cityName"));
+  var cityId = pickPositiveId_(valueByField_(row, sourceIdx, "cityId"), link.city_id, deliveryId > 0 ? lookup.deliveryCityById[deliveryId] : "", lookupCityIdByName_(lookup.cityIdByName, cityName));
+  var customerId = pickPositiveId_(valueByField_(row, sourceIdx, "customerId"), link.customer_id, lookupCustomerIdByName_(lookup.customerIdByName, customerName));
+
+  var record = new Array(targetHeaders.length).fill("");
+  setByField_(record, targetIdx, "id", id);
+  setByField_(record, targetIdx, "waybill_no", waybillNo);
+  setByField_(record, targetIdx, "description", description);
+  setParcelId_(record, targetHeaders, targetIdx, waybillNo);
+  setByField_(record, targetIdx, "delivery_id", deliveryId > 0 ? deliveryId : "");
+  setByField_(record, targetIdx, "direction_id", directionId > 0 ? directionId : CFG.defaultDirectionId);
+  setByField_(record, targetIdx, "city_id", cityId > 0 ? cityId : "");
+  setByField_(record, targetIdx, "customer_id", customerId > 0 ? customerId : "");
+  setByField_(record, targetIdx, "approval", firstNonEmpty_(cleanText_(valueByField_(row, sourceIdx, "approval")), link.approval));
+  setByField_(record, targetIdx, "approval_userid", firstNonEmpty_(toPositiveId_(valueByField_(row, sourceIdx, "approvalUserId")), link.approval_userid));
+  setByField_(record, targetIdx, "cust_name_ignore", customerName);
+  setByField_(record, targetIdx, "product_invoice_number", resolveProductInvoiceNumber_(row, sourceIdx, link, existing, waybillNo));
+  setByField_(record, targetIdx, "product_invoice_amount", parseNumber_(valueByField_(row, sourceIdx, "custInvR")));
+  setByField_(record, targetIdx, "sad500_amount", parseNumber_(valueByField_(row, sourceIdx, "sad500")));
+  setByField_(record, targetIdx, "sadc_amount", parseNumber_(valueByField_(row, sourceIdx, "sadc")));
+  setByField_(record, targetIdx, "item_length", parseNumber_(valueByField_(row, sourceIdx, "length")));
+  setByField_(record, targetIdx, "item_width", parseNumber_(valueByField_(row, sourceIdx, "width")));
+  setByField_(record, targetIdx, "item_height", parseNumber_(valueByField_(row, sourceIdx, "height")));
+  setByField_(record, targetIdx, "total_mass_kg", parseNumber_(valueByField_(row, sourceIdx, "tMass")));
+  setByField_(record, targetIdx, "total_volume", parseNumber_(valueByField_(row, sourceIdx, "tVol")));
+  setByField_(record, targetIdx, "mass_charge", parseNumber_(valueByField_(row, sourceIdx, "massCost")));
+  setByField_(record, targetIdx, "volume_charge", parseNumber_(valueByField_(row, sourceIdx, "volCost")));
+  setByField_(record, targetIdx, "charge_basis", cleanText_(valueByField_(row, sourceIdx, "basis")));
+
+  // VAT / SAD500 / SADC flag resolution. See parseBooleanFlexible_ for the full
+  // set of accepted truth markers (text booleans, Sheets checkboxes, positive
+  // amounts). The legacy VAT='SAD500'/'SADC' enum still short-circuits so
+  // historic rows that only used the VAT column keep mapping the same way.
+  // Once Stage 1 validator (sync_validation sheet) is locked in with the
+  // client, the legacy enum branches can be deleted — but until then they are
+  // load-bearing for older source rows that pre-date the dedicated columns.
+  var vatRaw = valueByField_(row, sourceIdx, "vat");
+  var legacyVat = String(vatRaw).trim().toUpperCase();
+  var vatInclude = (legacyVat === "SAD500" || legacyVat === "SADC") ? false : parseBooleanFlexible_(vatRaw);
+  setByField_(record, targetIdx, "vat_include", vatInclude);
+  setByField_(record, targetIdx, "include_sad500", legacyVat === "SAD500" ? true : parseBooleanFlexible_(valueByField_(row, sourceIdx, "sad500")));
+  setByField_(record, targetIdx, "include_sadc", legacyVat === "SADC" ? true : parseBooleanFlexible_(valueByField_(row, sourceIdx, "sadc")));
+  var trackingFromSheet = cleanText_(valueByField_(row, sourceIdx, "tracking"));
+  var trackingMerged = firstNonEmpty_(trackingFromSheet, cleanText_(link.tracking_number));
+  setByField_(record, targetIdx, "tracking_number", trackingMerged || generateTrackingNumber_());
+  setByField_(record, targetIdx, "status", cleanText_(valueByField_(row, sourceIdx, "status")));
+
+  // CL INV # / Waybills:AA = customer's own purchase invoice ref (not our charge). Stored only in miscellaneous.others.client_invoice.
+  var custInvRef = resolveCustomerPurchaseInvoiceRef_(row, sourceIdx);
+  var miscSerialized = buildSerializedMiscellaneousCustomerInvoiceRef_(custInvRef);
+  if (miscSerialized) {
+    setByField_(record, targetIdx, "miscellaneous", miscSerialized);
+    setByField_(record, targetIdx, "misc_total", 0);
+  }
+
+  var nowTs = currentMysqlTimestamp_();
+  var auditUid = pickWaybillAuditUserId_(row, sourceIdx, link);
+  var createdFromWaybills = normalizeSheetDateTime_(valueByField_(row, sourceIdx, "dateReceived"));
+  var createdAtExisting = normalizeSheetDateTime_(link.created_at);
+  var createdByExisting = toPositiveId_(link.created_by);
+  setByField_(record, targetIdx, "created_at", createdFromWaybills || createdAtExisting || nowTs);
+  setByField_(record, targetIdx, "created_by", createdByExisting !== "" ? createdByExisting : auditUid);
+  setByField_(record, targetIdx, "last_updated_at", nowTs);
+  setByField_(record, targetIdx, "last_updated_by", auditUid !== "" ? auditUid : createdByExisting);
+
+  setKitWaybillWarehouseColumnAc_(record, isWarehouseRow);
+
+  if (cityId <= 0) {
+    pushRowError_(summary, sourceRowNum, "Could not resolve city_id for waybill " + waybillNo + (cityName ? (" (city: " + cityName + ")") : "") + " — add city to kit_operating_cities or set city_id on the Waybills row.");
+  }
+  return record;
+}
+
+function buildExistingWaybillState_(targetData, targetIdx) {
+  var state = { idsByWaybill: {}, linksByWaybill: {}, maxId: 0 };
+  for (var i = 1; i < targetData.length; i++) {
+    var row = targetData[i];
+    var wb = extractWaybillNo_(cleanText_(valueByField_(row, targetIdx, "waybill_no")));
+    var id = Number(valueByField_(row, targetIdx, "id"));
+    id = isNaN(id) ? 0 : id;
+    if (wb) {
+      state.idsByWaybill[wb] = id;
+      state.linksByWaybill[wb] = {
+        direction_id: valueByField_(row, targetIdx, "direction_id"),
+        city_id: valueByField_(row, targetIdx, "city_id"),
+        delivery_id: valueByField_(row, targetIdx, "delivery_id"),
+        customer_id: valueByField_(row, targetIdx, "customer_id"),
+        approval: valueByField_(row, targetIdx, "approval"),
+        approval_userid: valueByField_(row, targetIdx, "approval_userid"),
+        tracking_number: valueByField_(row, targetIdx, "tracking_number"),
+        product_invoice_number: valueByField_(row, targetIdx, "product_invoice_number"),
+        created_by: valueByField_(row, targetIdx, "created_by"),
+        created_at: valueByField_(row, targetIdx, "created_at"),
+        last_updated_by: valueByField_(row, targetIdx, "last_updated_by"),
+        last_updated_at: valueByField_(row, targetIdx, "last_updated_at")
+      };
+    }
+    if (id > state.maxId) {
+      state.maxId = id;
+    }
+  }
+  // Legacy date-seq fields left unused; invoice numbers are INV13{waybill_no}.
+  state.invoicePattern = "INV13";
+  state.invoiceNextSeq = 1;
+  return state;
+}
+
+function buildExistingCustomerState_(cuData, cuIdx) {
+  var out = { keys: {}, pendingKeys: {}, newIdsByKey: {}, custIds: {}, maxId: 0, maxCustId: 0, count: 0 };
+  for (var i = 1; i < cuData.length; i++) {
+    var row = cuData[i];
+    if (!rowHasCustomerContent_(row, cuIdx)) {
+      continue;
+    }
+    out.count++;
+    var id = Number(row[cuIdx.id]) || 0;
+    var custId = Number(row[cuIdx.custId]) || 0;
+    if (id > 0 && !isOutlierSheetCustomerId_(id, i)) {
+      if (id > out.maxId) out.maxId = id;
+    }
+    if (custId > 0 && !isOutlierSheetCustId_(custId, i)) {
+      out.custIds[custId] = true;
+      if (custId > out.maxCustId) out.maxCustId = custId;
+    }
+    registerCustomerDedupeKey_(out.keys, row[cuIdx.combined]);
+    if (cuIdx.company >= 0) {
+      registerCustomerDedupeKey_(out.keys, row[cuIdx.company]);
+    }
+    var person = cleanText_((cleanText_(row[cuIdx.name]) + " " + cleanText_(row[cuIdx.surname])).trim());
+    registerCustomerDedupeKey_(out.keys, person);
+  }
+  out.maxCustId = Math.max(out.maxCustId, CFG.customerSeedMinId);
+  return out;
+}
+
+/** Count distinct valid customer names from kit_waybills + source Waybills sheet. */
+function collectUniqueCustomerCandidates_(wb, wbIdx, waybillsSourceSheet, cityMap, contactByCustomerName) {
+  var candidates = {};
+  var stats = {
+    unique: 0,
+    skipped_no_name: 0,
+    skipped_suspicious: 0,
+    from_kit_waybills: 0,
+    from_source_waybills: 0
+  };
+
+  function register(custName, cityId) {
+    var custNorm = normalizeName_(custName);
+    if (!custNorm || isPlaceholderName_(custNorm)) {
+      stats.skipped_no_name++;
+      return false;
+    }
+    if (isSuspiciousCustomerName_(custName)) {
+      stats.skipped_suspicious++;
+      return false;
+    }
+    var key = dedupeKey_(custName);
+    if (!key) return false;
+
+    var isNew = !candidates[key];
+    if (isNew) {
+      candidates[key] = {
+        custName: custName,
+        cityId: cityId || "",
+        contact: contactByCustomerName[custNorm] || {}
+      };
+      stats.unique++;
+    } else if (cityId && !candidates[key].cityId) {
+      candidates[key].cityId = cityId;
+    }
+    return isNew;
+  }
+
+  for (var i = 1; i < wb.length; i++) {
+    var custName = cleanText_(valueByField_(wb[i], wbIdx, "cust_name_ignore"));
+    var cityId = toPositiveId_(valueByField_(wb[i], wbIdx, "city_id"));
+    if (register(custName, cityId)) {
+      stats.from_kit_waybills++;
+    }
+  }
+
+  if (waybillsSourceSheet) {
+    var srcData = waybillsSourceSheet.getDataRange().getValues();
+    if (srcData && srcData.length > 1) {
+      var srcIdx = buildResolvedMap_(srcData[0], SRC);
+      for (var r = 1; r < srcData.length; r++) {
+        var srcRow = srcData[r];
+        var srcName = cleanText_(valueByField_(srcRow, srcIdx, "customer"));
+        var srcCityId = toPositiveId_(valueByField_(srcRow, srcIdx, "cityId"));
+        var srcCityName = cleanText_(valueByField_(srcRow, srcIdx, "cityName"));
+        var cityId = srcCityId !== "" ? srcCityId : lookupCityIdByName_(cityMap, srcCityName);
+        if (register(srcName, cityId)) {
+          stats.from_source_waybills++;
+        }
+      }
+    }
+  }
+
+  return { candidates: candidates, stats: stats };
+}
+
+/** True when a kit_waybills row for this name already has a valid customer_id. */
+function customerNameAlreadyLinkedOnWaybills_(wb, wbIdx, custName, validCustIds) {
+  var key = dedupeKey_(custName);
+  if (!key) return false;
+  for (var i = 1; i < wb.length; i++) {
+    if (dedupeKey_(cleanText_(valueByField_(wb[i], wbIdx, "cust_name_ignore"))) !== key) {
+      continue;
+    }
+    var cid = toPositiveId_(valueByField_(wb[i], wbIdx, "customer_id"));
+    if (cid !== "" && validCustIds[cid]) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function registerCustomerDedupeKey_(keys, label) {
+  var key = dedupeKey_(label);
+  if (!key) return;
+  var companyNorm = normalizeName_(cleanText_(label));
+  if (companyNorm === "private") return;
+  keys[key] = true;
+}
+
+/** Clear kit_waybills.customer_id when it points at a cust_id missing from kit_customers. */
+function clearStaleWaybillCustomerIds_(sheet, wbData, wbIdx, validCustIds) {
+  var customerColIdx = wbIdx.customer_id;
+  if (customerColIdx === undefined || customerColIdx < 0 || !wbData || wbData.length < 2) {
+    return 0;
+  }
+
+  var changed = 0;
+  var outCol = [];
+  for (var i = 1; i < wbData.length; i++) {
+    var cid = toPositiveId_(wbData[i][customerColIdx]);
+    if (cid !== "" && !validCustIds[cid]) {
+      wbData[i][customerColIdx] = "";
+      outCol.push([""]);
+      changed++;
+    } else {
+      outCol.push([wbData[i][customerColIdx]]);
+    }
+  }
+
+  if (changed > 0) {
+    sheet.getRange(CFG.dataStartRow, customerColIdx + 1, outCol.length, 1).setValues(outCol);
+  }
+  return changed;
+}
+
+/** Blank every kit_waybills.customer_id (used before a full customer rebuild). */
+function clearAllWaybillCustomerIds_(sheet) {
+  var wb = sheet.getDataRange().getValues();
+  if (!wb || wb.length < 2) return 0;
+
+  var wbIdx = buildResolvedMap_(wb[0], TGT);
+  var customerColIdx = wbIdx.customer_id;
+  if (customerColIdx === undefined || customerColIdx < 0) {
+    return 0;
+  }
+
+  var rowCount = wb.length - 1;
+  var cleared = 0;
+  var outCol = [];
+  for (var i = 1; i < wb.length; i++) {
+    if (toPositiveId_(wb[i][customerColIdx]) !== "") {
+      cleared++;
+    }
+    outCol.push([""]);
+  }
+
+  if (rowCount > 0) {
+    sheet.getRange(CFG.dataStartRow, customerColIdx + 1, rowCount, 1).setValues(outCol);
+  }
+  return cleared;
+}
+
+function buildCustomerTargetIndexes_(headers) {
+  var idx = {
+    id: colIndexExact_(headers, ["id"]),
+    custId: colIndexExact_(headers, ["cust_id"]),
+    name: colIndexExact_(headers, ["name"]),
+    surname: colIndexExact_(headers, ["surname"]),
+    combined: colIndexExact_(headers, ["combined_name_ignore"]),
+    country: colIndexExact_(headers, ["country_id"]),
+    city: colIndexExact_(headers, ["city_id"]),
+    vat: colIndexExact_(headers, ["vat_number"]),
+    address: colIndexExact_(headers, ["address"]),
+    cell: colIndexExact_(headers, ["cell", "cellphone", "mobile", "mobile_number", "mobile number"]),
+    telephone: colIndexExact_(headers, ["telephone", "tel", "tel_number", "tel number", "phone", "phone_number", "phone number"]),
+    email: colIndexExact_(headers, ["email_address", "email", "e-mail"]),
+    company: colIndexExact_(headers, ["company_name"]),
+    created: colIndexExact_(headers, ["created_at"])
+  };
+
+  // Fallback to alias matching only if strict exact fails.
+  if (idx.id >= 0 && idx.custId >= 0 && idx.name >= 0 && idx.surname >= 0 && idx.combined >= 0 && idx.company >= 0) {
+    return idx;
+  }
+  return {
+    id: colIndex_(headers, ["id"]),
+    custId: colIndex_(headers, ["cust_id"]),
+    name: colIndex_(headers, ["name"]),
+    surname: colIndex_(headers, ["surname"]),
+    combined: colIndex_(headers, ["combined_name_ignore"]),
+    country: colIndex_(headers, ["country_id"]),
+    city: colIndex_(headers, ["city_id"]),
+    vat: colIndex_(headers, ["vat_number"]),
+    address: colIndex_(headers, ["address"]),
+    cell: colIndex_(headers, ["cell", "cellphone", "mobile", "mobile_number", "mobile number"]),
+    telephone: colIndex_(headers, ["telephone", "tel", "tel_number", "tel number", "phone", "phone_number", "phone number"]),
+    email: colIndex_(headers, ["email_address", "email", "e-mail"]),
+    company: colIndex_(headers, ["company_name"]),
+    created: colIndex_(headers, ["created_at"])
+  };
+}
+
+function buildWaybillsCustomerContactMap_(waybillsSourceSheet) {
+  var out = {};
+  if (!waybillsSourceSheet) return out;
+  var data = waybillsSourceSheet.getDataRange().getValues();
+  if (!data || data.length < 2) return out;
+
+  var headers = data[0] || [];
+  var idxCustomer = colIndex_(headers, ["customer", "cust name", "client", "customer name"]);
+  var idxCell = colIndex_(headers, ["cell", "cellphone", "mobile", "mobile number", "mobile_number"]);
+  var idxTelephone = colIndex_(headers, ["telephone", "tel", "phone", "phone number", "phone_number"]);
+  var idxEmail = colIndex_(headers, ["email", "email address", "email_address", "e-mail"]);
+  var idxAddress = colIndex_(headers, ["address", "physical address", "postal address"]);
+
+  if (idxCustomer < 0) return out;
+
+  for (var r = 1; r < data.length; r++) {
+    var row = data[r];
+    var nameRaw = cleanText_(row[idxCustomer]);
+    var nameKey = normalizeName_(nameRaw);
+    if (!nameKey) continue;
+
+    var existing = out[nameKey] || {};
+    var cell = idxCell >= 0 ? cleanText_(row[idxCell]) : "";
+    var tel = idxTelephone >= 0 ? cleanText_(row[idxTelephone]) : "";
+    var email = idxEmail >= 0 ? cleanText_(row[idxEmail]) : "";
+    var addr = idxAddress >= 0 ? cleanText_(row[idxAddress]) : "";
+
+    if (cell) existing.cell = cell;
+    if (tel) existing.telephone = tel;
+    if (email) existing.email = email;
+    if (addr) existing.address = addr;
+
+    out[nameKey] = existing;
+  }
+  return out;
+}
+
+function rebuildKitCustomersFromWaybills() {
+  var result = {};
+  withLock_(function () {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var customerSheet = ss.getSheetByName(CFG.customersSheetName);
+    var waybillSheet = ss.getSheetByName(CFG.targetSheetName);
+    if (!customerSheet || !waybillSheet) {
+      throw new Error("Missing required sheet(s): " + CFG.customersSheetName + " and/or " + CFG.targetSheetName);
+    }
+
+    var headers = customerSheet.getRange(1, 1, 1, customerSheet.getLastColumn()).getValues()[0];
+    var colCount = headers.length;
+    var lastRow = customerSheet.getLastRow();
+    if (lastRow >= CFG.dataStartRow) {
+      customerSheet.getRange(CFG.dataStartRow, 1, lastRow - CFG.dataStartRow + 1, colCount).clearContent();
+    }
+
+    var clearedRows = Math.max(0, lastRow - 1);
+    var clearedWaybillIds = clearAllWaybillCustomerIds_(waybillSheet);
+    result = syncCustomersFromKitWaybillsStage_(null);
+    result.cleared_customer_rows = clearedRows;
+    result.cleared_waybill_customer_ids = clearedWaybillIds;
+  });
+  return result;
+}
+
+function repairKitCustomersFromKitWaybills() {
+  var result = {};
+  withLock_(function () {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName(CFG.customersSheetName);
+    if (!sh) {
+      throw new Error("Missing required sheet: " + CFG.customersSheetName);
+    }
+    var data = sh.getDataRange().getValues();
+    if (!data || data.length < 2) {
+      result = syncCustomersFromKitWaybillsStage_(null);
+      return;
+    }
+
+    var headers = data[0];
+    var idx = buildCustomerTargetIndexes_(headers);
+    if (idx.id < 0 || idx.custId < 0 || idx.name < 0 || idx.surname < 0 || idx.combined < 0) {
+      throw new Error("kit_customers headers are invalid; cannot run repair safely.");
+    }
+
+    var kept = [headers];
+    var removed = 0;
+    for (var i = 1; i < data.length; i++) {
+      if (isLikelyCorruptedCustomerRow_(data[i], idx)) {
+        removed++;
+        continue;
+      }
+      kept.push(data[i]);
+    }
+
+    if (removed > 0) {
+      sh.clearContents();
+      sh.getRange(1, 1, kept.length, headers.length).setValues(kept);
+    }
+
+    result = syncCustomersFromKitWaybillsStage_(null);
+    result.repair_removed_rows = removed;
+  });
+  return result;
+}
+
+function repairMissingCustomerFormulas() {
+  var result = { repaired_formula_cells: 0, backfilled_customer_ids: 0 };
+  withLock_(function () {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var customerSheet = ss.getSheetByName(CFG.customersSheetName);
+    if (!customerSheet) {
+      throw new Error("Missing required sheet: " + CFG.customersSheetName);
+    }
+    var data = customerSheet.getDataRange().getValues();
+    if (!data || data.length < 2) {
+      return;
+    }
+    var cuIdx = buildCustomerTargetIndexes_(data[0]);
+    result.backfilled_customer_ids = backfillMissingCustomerIdsCore_(customerSheet, cuIdx);
+    result.repaired_formula_cells = repairMissingCustomerFormulasCore_(customerSheet, cuIdx);
+  });
+  return result;
+}
+
+function backfillMissingCustomerIds() {
+  var result = { backfilled_customer_ids: 0 };
+  withLock_(function () {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var customerSheet = ss.getSheetByName(CFG.customersSheetName);
+    if (!customerSheet) {
+      throw new Error("Missing required sheet: " + CFG.customersSheetName);
+    }
+    var data = customerSheet.getDataRange().getValues();
+    if (!data || data.length < 2) {
+      return;
+    }
+    var cuIdx = buildCustomerTargetIndexes_(data[0]);
+    if (cuIdx.id < 0 || cuIdx.custId < 0) {
+      throw new Error("kit_customers missing id and/or cust_id columns.");
+    }
+    result.backfilled_customer_ids = backfillMissingCustomerIdsCore_(customerSheet, cuIdx);
+  });
+  return result;
+}
+
+function pruneEmptyKitDeliveryRows() {
+  var result = { deliveries_pruned: 0 };
+  withLock_(function () {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var deliverySheet = ss.getSheetByName(CFG.deliveriesSheetName);
+    if (!deliverySheet) {
+      throw new Error("Missing required sheet: " + CFG.deliveriesSheetName);
+    }
+    result.deliveries_pruned = pruneEmptyKitDeliveryRowsCore_(deliverySheet);
+  });
+  return result;
+}
+
+function withLock_(fn) {
+  var lock = LockService.getDocumentLock();
+  if (!lock.tryLock(CFG.lockTimeoutMs)) {
+    // Another sync is already in progress. Skip silently instead of throwing — the
+    // next trigger (or manual run) will pick up where this one left off. Throwing
+    // here just spams the Apps Script failure log with "Sync lock timeout" errors
+    // every time a change/edit trigger fires while the previous sync is still running
+    // (very common with IMPORTRANGE-fed source sheets that refresh frequently).
+    Logger.log("withLock_: skipped — another sync is in progress.");
+    return;
+  }
+  try {
+    fn();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function preflightValidation_(sourceIndex, targetIndex, sourceHeaders, targetHeaders) {
+  var missingSource = [];
+  var missingTarget = [];
+  Object.keys(SRC).forEach(function (k) { if (SRC[k].required && sourceIndex[k] < 0) missingSource.push(k); });
+  Object.keys(TGT).forEach(function (k) { if (TGT[k].required && targetIndex[k] < 0) missingTarget.push(k); });
+  if (missingSource.length || missingTarget.length) {
+    var msg = "Preflight failed. Missing required mappings. Source: [" + missingSource.join(", ") + "] Target: [" + missingTarget.join(", ") + "]";
+    if (missingTarget.length && targetHeaders) {
+      msg += " | Target row-1 headers read: [" + targetHeaders.slice(0, 15).map(function (h) { return String(h); }).join(" | ") + "]";
+    }
+    if (missingSource.length && sourceHeaders) {
+      msg += " | Source row-1 headers read: [" + sourceHeaders.slice(0, 15).map(function (h) { return String(h); }).join(" | ") + "]";
+    }
+    return { ok: false, missingSource: missingSource, missingTarget: missingTarget, message: msg };
+  }
+  return { ok: true, missingSource: [], missingTarget: [], message: "" };
+}
+
+function buildResolvedMap_(headers, schema) {
+  var out = {};
+  Object.keys(schema).forEach(function (key) { out[key] = colIndex_(headers, schema[key].aliases); });
+  return out;
+}
+
+function valueByField_(row, indexMap, field) {
+  var idx = indexMap[field];
+  if (idx === undefined || idx < 0) return "";
+  return row[idx];
+}
+
+function setByField_(row, indexMap, field, value) {
+  var idx = indexMap[field];
+  if (idx === undefined || idx < 0) return;
+  row[idx] = (value === null || value === undefined) ? "" : value;
+}
+
+function setParcelId_(record, targetHeaders, targetIndex, waybillNo) {
+  var idx = targetIndex.parcel_id;
+  if (idx !== undefined && idx >= 0) {
+    record[idx] = waybillNo;
+    return;
+  }
+  for (var i = 0; i < targetHeaders.length; i++) {
+    var h = normHeader_(targetHeaders[i]);
+    if (h.indexOf("parcel") !== -1 && h.indexOf("id") !== -1) {
+      record[i] = waybillNo;
+      return;
+    }
+  }
+  if (targetHeaders.length > 1) {
+    record[1] = waybillNo;
+  }
+}
+
+function clearTargetData_(sheet, numCols) {
+  var clearRows = 0;
+  if (CFG.clearThroughRow > 0) {
+    clearRows = Math.max(0, CFG.clearThroughRow - CFG.dataStartRow + 1);
+  } else {
+    clearRows = Math.max(0, sheet.getLastRow() - CFG.dataStartRow + 1);
+  }
+  if (clearRows > 0 && numCols > 0) {
+    sheet.getRange(CFG.dataStartRow, 1, clearRows, numCols).clearContent();
+  }
+}
+
+function pushRowError_(summary, sourceRowNum, message) {
+  summary.row_errors.push({ when: new Date().toISOString(), source_row: sourceRowNum, message: message });
+}
+
+function writeRowErrors_(ss, errors) {
+  if (!CFG.writeErrorSheet) return;
+  var sh = ss.getSheetByName(CFG.errorSheetName);
+  if (!sh) {
+    sh = ss.insertSheet(CFG.errorSheetName);
+  }
+  sh.clearContents();
+  var header = [["timestamp", "source_row", "message"]];
+  if (!errors || errors.length === 0) {
+    sh.getRange(1, 1, 1, 3).setValues(header);
+    return;
+  }
+  var rows = errors.map(function (e) { return [e.when, e.source_row, e.message]; });
+  sh.getRange(1, 1, rows.length + 1, 3).setValues(header.concat(rows));
+}
+
+function logSummary_(summary) {
+  Logger.log(JSON.stringify(summary));
+}
+
+// =============================================================================
+// STAGE 1: VALIDATOR
+// -----------------------------------------------------------------------------
+// Non-destructive. Reads the Waybills source sheet, validates every row against
+// the documented column contract, and writes a per-row pass/warn/error report
+// to CFG.validationSheetName. The normalizer/sync code paths are NOT touched
+// here — Stage 1 is purely an observability layer used to surface dirty source
+// rows before they reach kit_waybills (and the WP DB).
+//
+// Status values:
+//   ok      — row is clean, sync will pick it up
+//   warn    — row has soft issues (auto-creatable customer, unmatched city
+//             name, conflicting VAT/SAD500 enum) but sync will still run
+//   error   — row has hard issues (missing waybill number, malformed numeric)
+//             and normalizer/seeder should skip it once Stage 3/4 wires this in
+//   skipped — Waybills column A flags this row as duplicate/cancelled; sync
+//             already ignores it (this is informational, not a problem)
+// =============================================================================
+
+function runValidation() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sourceSheet = ss.getSheetByName(CFG.sourceSheetName);
+  if (!sourceSheet) {
+    throw new Error("Missing source sheet: " + CFG.sourceSheetName);
+  }
+
+  var data = sourceSheet.getDataRange().getValues();
+  if (!data || data.length < 2) {
+    writeValidationReport_(ss, [], { ok: 0, warn: 0, error: 0, skipped: 0 });
+    return { rows_checked: 0, ok: 0, warn: 0, error: 0, skipped: 0 };
+  }
+
+  var headers = data[0];
+  var sourceIdx = buildResolvedMap_(headers, SRC);
+  var lookup = buildLookupContext_(ss);
+
+  var counts = { ok: 0, warn: 0, error: 0, skipped: 0 };
+  var report = [];
+  for (var r = 1; r < data.length; r++) {
+    var rowResult = validateSourceRow_(data[r], r + 1, sourceIdx, lookup);
+    counts[rowResult.status] = (counts[rowResult.status] || 0) + 1;
+    report.push(rowResult);
+  }
+  writeValidationReport_(ss, report, counts);
+
+  var summary = {
+    run_started_at: new Date().toISOString(),
+    rows_checked: report.length,
+    ok: counts.ok,
+    warn: counts.warn,
+    error: counts.error,
+    skipped: counts.skipped
+  };
+  Logger.log("Validation: " + JSON.stringify(summary));
+  return summary;
+}
+
+function validateSourceRow_(row, sourceRowNum, sourceIdx, lookup) {
+  var errors = [];
+  var warnings = [];
+
+  var colAText = valueFromWaybillsColumnA_(row);
+  var skipped = shouldSkipWaybillByWaybillsColumnA_(colAText);
+
+  var rawWb = cleanText_(valueByField_(row, sourceIdx, "waybillNo"));
+  var rawPx = cleanText_(valueByField_(row, sourceIdx, "parcelText"));
+  var waybillNo = extractWaybillNo_(rawWb) || extractWaybillNo_(rawPx);
+  if (!waybillNo && !skipped) {
+    errors.push("Missing or unparseable waybill number (got: '" + rawWb + "')");
+  }
+
+  var customerName = cleanText_(valueByField_(row, sourceIdx, "customer"));
+  if (customerName === "" && !skipped) {
+    warnings.push("Customer name empty");
+  } else if (customerName !== "" && !lookupCustomerIdByName_(lookup.customerIdByName, customerName)) {
+    warnings.push("Customer '" + customerName + "' not in kit_customers; will be auto-created on sync");
+  }
+
+  var cityName = cleanText_(valueByField_(row, sourceIdx, "cityName"));
+  var cityIdRaw = cleanText_(valueByField_(row, sourceIdx, "cityId"));
+  if (cityName === "" && cityIdRaw === "" && !skipped) {
+    warnings.push("Neither city name nor city_id provided");
+  } else if (cityName !== "" && cityIdRaw === "" && !lookupCityIdByName_(lookup.cityIdByName, cityName)) {
+    warnings.push("City '" + cityName + "' not in kit_operating_cities");
+  }
+
+  var vatRaw = valueByField_(row, sourceIdx, "vat");
+  if (!isValidVatValue_(vatRaw)) {
+    errors.push("VAT column value '" + cleanText_(vatRaw) + "' is not recognised (allowed: empty, true/false, yes/no, 1/0, SAD500, SADC)");
+  }
+
+  var sad500Raw = valueByField_(row, sourceIdx, "sad500");
+  if (!isValidFlagOrAmount_(sad500Raw)) {
+    errors.push("SAD500 column value '" + cleanText_(sad500Raw) + "' is not empty, a boolean, or a non-negative number");
+  }
+  var sadcRaw = valueByField_(row, sourceIdx, "sadc");
+  if (!isValidFlagOrAmount_(sadcRaw)) {
+    errors.push("SADC column value '" + cleanText_(sadcRaw) + "' is not empty, a boolean, or a non-negative number");
+  }
+
+  var legacyVat = String(vatRaw == null ? "" : vatRaw).trim().toUpperCase();
+  if (legacyVat === "SAD500" && parseBooleanFlexible_(sad500Raw) && parseBooleanFlexible_(vatRaw)) {
+    // Impossible — short-circuits never both true — but guards against future logic drift.
+  }
+  if (legacyVat === "SAD500" && !parseBooleanFlexible_(sad500Raw) && (parseNumber_(sad500Raw) === "" || parseNumber_(sad500Raw) === 0)) {
+    warnings.push("VAT='SAD500' but the dedicated SAD500 column is empty/false; legacy fallback will set include_sad500=true");
+  }
+  if (legacyVat === "SADC" && !parseBooleanFlexible_(sadcRaw) && (parseNumber_(sadcRaw) === "" || parseNumber_(sadcRaw) === 0)) {
+    warnings.push("VAT='SADC' but the dedicated SADC column is empty/false; legacy fallback will set include_sadc=true");
+  }
+
+  var numericFields = [
+    ["length", "item_length"],
+    ["width", "item_width"],
+    ["height", "item_height"],
+    ["tMass", "total_mass_kg"],
+    ["tVol", "total_volume"],
+    ["massCost", "mass_charge"],
+    ["volCost", "volume_charge"]
+  ];
+  for (var i = 0; i < numericFields.length; i++) {
+    var field = numericFields[i][0];
+    var label = numericFields[i][1];
+    var v = valueByField_(row, sourceIdx, field);
+    if (!isOptionalNonNegativeNumber_(v)) {
+      warnings.push(label + " value '" + cleanText_(v) + "' is not empty or a non-negative number");
+    }
+  }
+
+  var dateRaw = valueByField_(row, sourceIdx, "dateReceived");
+  if (!isOptionalParseableDate_(dateRaw)) {
+    warnings.push("date_received value '" + cleanText_(dateRaw) + "' is not empty or a parseable date");
+  }
+
+  var status;
+  if (errors.length > 0) {
+    status = "error";
+  } else if (skipped) {
+    status = "skipped";
+  } else if (warnings.length > 0) {
+    status = "warn";
+  } else {
+    status = "ok";
+  }
+
+  return {
+    sourceRowNum: sourceRowNum,
+    waybillNo: waybillNo || "",
+    customerName: customerName,
+    colAText: cleanText_(colAText),
+    status: status,
+    errors: errors,
+    warnings: warnings
+  };
+}
+
+function writeValidationReport_(ss, report, counts) {
+  var sh = ss.getSheetByName(CFG.validationSheetName);
+  if (!sh) {
+    sh = ss.insertSheet(CFG.validationSheetName);
+  } else {
+    sh.clearContents();
+    sh.clearConditionalFormatRules();
+  }
+
+  var now = new Date().toISOString();
+  var summaryLine = [
+    "Validated at: " + now,
+    "Total: " + report.length,
+    "OK: " + (counts.ok || 0),
+    "Warn: " + (counts.warn || 0),
+    "Error: " + (counts.error || 0),
+    "Skipped: " + (counts.skipped || 0)
+  ].join("   |   ");
+
+  var header = ["validated_at", "source_row", "waybill_no", "customer", "col_a", "status", "errors", "warnings"];
+  var rows = [[summaryLine, "", "", "", "", "", "", ""], header];
+  for (var i = 0; i < report.length; i++) {
+    var r = report[i];
+    rows.push([
+      now,
+      r.sourceRowNum,
+      r.waybillNo,
+      r.customerName,
+      r.colAText,
+      r.status,
+      r.errors.join("; "),
+      r.warnings.join("; ")
+    ]);
+  }
+
+  sh.getRange(1, 1, rows.length, header.length).setValues(rows);
+  sh.setFrozenRows(2);
+
+  // Status-column colour banding so the client can see red rows at a glance.
+  // Apply only when we have data rows beyond the header.
+  if (report.length > 0) {
+    var statusRange = sh.getRange(3, 6, report.length, 1);
+    var ruleError = SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo("error")
+      .setBackground("#f8d7da")
+      .setFontColor("#842029")
+      .setRanges([statusRange])
+      .build();
+    var ruleWarn = SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo("warn")
+      .setBackground("#fff3cd")
+      .setFontColor("#664d03")
+      .setRanges([statusRange])
+      .build();
+    var ruleOk = SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo("ok")
+      .setBackground("#d1e7dd")
+      .setFontColor("#0f5132")
+      .setRanges([statusRange])
+      .build();
+    var ruleSkipped = SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo("skipped")
+      .setBackground("#e2e3e5")
+      .setFontColor("#41464b")
+      .setRanges([statusRange])
+      .build();
+    sh.setConditionalFormatRules([ruleError, ruleWarn, ruleOk, ruleSkipped]);
+  }
+}
+
+function isValidVatValue_(raw) {
+  if (raw === null || raw === undefined || raw === "") return true;
+  if (raw === true || raw === false) return true;
+  var s = String(raw).trim().toUpperCase();
+  if (s === "") return true;
+  return ["TRUE", "FALSE", "YES", "NO", "Y", "N", "1", "0", "SAD500", "SADC"].indexOf(s) !== -1;
+}
+
+function isValidFlagOrAmount_(raw) {
+  if (raw === null || raw === undefined || raw === "") return true;
+  if (raw === true || raw === false) return true;
+  var s = String(raw).trim().toUpperCase();
+  if (s === "") return true;
+  if (["TRUE", "FALSE", "YES", "NO", "Y", "N"].indexOf(s) !== -1) return true;
+  var n = parseNumber_(raw);
+  return n !== "" && n >= 0;
+}
+
+function isOptionalNonNegativeNumber_(raw) {
+  if (raw === null || raw === undefined || raw === "") return true;
+  var s = String(raw).trim();
+  if (s === "") return true;
+  var n = parseNumber_(raw);
+  return n !== "" && n >= 0;
+}
+
+function isOptionalParseableDate_(raw) {
+  if (raw === null || raw === undefined || raw === "") return true;
+  if (Object.prototype.toString.call(raw) === "[object Date]") {
+    return !isNaN(raw.getTime());
+  }
+  var s = String(raw).trim();
+  if (s === "") return true;
+  var d = new Date(s);
+  return !isNaN(d.getTime());
+}
+
+/**
+ * Installs a 5-minute time-based trigger for runValidation. Idempotent —
+ * removes any pre-existing runValidation trigger before installing the new one
+ * so re-running this from the menu doesn't pile up duplicate triggers.
+ */
+function installValidationTrigger() {
+  uninstallValidationTrigger();
+  ScriptApp.newTrigger("runValidation").timeBased().everyMinutes(5).create();
+  Logger.log("Validation trigger installed (every 5 minutes).");
+}
+
+function uninstallValidationTrigger() {
+  var triggers = ScriptApp.getProjectTriggers();
+  var removed = 0;
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === "runValidation") {
+      ScriptApp.deleteTrigger(triggers[i]);
+      removed++;
+    }
+  }
+  if (removed > 0) {
+    Logger.log("Removed " + removed + " runValidation trigger(s).");
+  }
+}
+
+/**
+ * Normalises a sheet header cell so it can be compared against an alias list.
+ * Coerces non-strings to string, converts non-breaking spaces to regular spaces,
+ * trims, lowercases, and collapses any run of whitespace to a single space — same
+ * shape the SRC/TGT alias lists are written in (e.g. "waybill no.", "cl inv #",
+ * "t mass"). Restored after a runtime "normHeader_ is not defined" ReferenceError:
+ * the previous declaration was misspelled (normHeafder_) so the real identifier
+ * was never bound even though colIndex_/setParcelId_ called it everywhere.
+ */
+function normHeader_(h) {
+  return String(h || "")
+    .replace(/[\u200b-\u200d\ufeff]/g, "") // zero-width chars / BOM from copy-paste
+    .replace(/\u00a0/g, " ")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function colIndex_(headers, aliases) {
+  var normalized = headers.map(function (h) { return normHeader_(h); });
+  var a, i, n;
+  for (a = 0; a < aliases.length; a++) {
+    n = normHeader_(aliases[a]);
+    if (!n) continue;
+    for (i = 0; i < normalized.length; i++) {
+      if (normalized[i] === n) return i;
+    }
+  }
+  for (a = 0; a < aliases.length; a++) {
+    n = normHeader_(aliases[a]);
+    if (n.length < 3) continue;
+    for (i = 0; i < normalized.length; i++) {
+      if (normalized[i] && (normalized[i].indexOf(n) !== -1 || n.indexOf(normalized[i]) !== -1)) return i;
+    }
+  }
+  return -1;
+}
+
+function colIndexExact_(headers, aliases) {
+  var normalized = headers.map(function (h) { return normHeader_(h); });
+  for (var a = 0; a < aliases.length; a++) {
+    var n = normHeader_(aliases[a]);
+    if (!n) continue;
+    for (var i = 0; i < normalized.length; i++) {
+      if (normalized[i] === n) return i;
+    }
+  }
+  return -1;
+}
+
+function extractWaybillNo_(raw) {
+  var s = cleanText_(raw);
+  if (!s) return "";
+  var m1 = s.match(/wb[:\s-]*(\d+)/i);
+  if (m1) return m1[1];
+  var m2 = s.match(/^(\d{4,})\b/);
+  if (m2) return m2[1];
+  var digits = s.replace(/\D/g, "");
+  return digits.length >= 3 ? digits : "";
+}
+
+/**
+ * Matches PHP: 'TRK-' . strtoupper(wp_generate_password(8, false, false))
+ * (8 uppercase alphanumeric characters after TRK-).
+ */
+function generateTrackingNumber_() {
+  var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  var suffix = "";
+  for (var i = 0; i < 8; i++) {
+    suffix += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return "TRK-" + suffix;
+}
+
+/**
+ * Matches KIT_Waybills::generate_product_invoice_number() for rows on this sheet:
+ * INV13{waybill_no} (e.g. waybill 5652 → INV135652).
+ */
+function allocateProductInvoiceNumber_(existing, waybillNo) {
+  var wb = cleanText_(waybillNo);
+  if (!wb) {
+    wb = "0";
+  }
+  return "INV13" + wb;
+}
+
+/**
+ * Resolves product_invoice_number from CFG.productInvoiceNumberMode and productInvoiceUseWaybillsSheet.
+ */
+function resolveProductInvoiceNumber_(row, sourceIdx, link, existing, waybillNo) {
+  var mode = String(CFG.productInvoiceNumberMode || "preserve").toLowerCase();
+  var useWaybills = CFG.productInvoiceUseWaybillsSheet === true;
+  var invFromSheet = useWaybills ? cleanText_(valueByField_(row, sourceIdx, "clInv")) : "";
+  if (mode === "always_allocate") {
+    return allocateProductInvoiceNumber_(existing, waybillNo);
+  }
+  if (mode === "sheet_or_allocate") {
+    if (useWaybills) {
+      return invFromSheet || allocateProductInvoiceNumber_(existing, waybillNo);
+    }
+    return allocateProductInvoiceNumber_(existing, waybillNo);
+  }
+  // preserve: optional Waybills clInv → existing kit row → allocate
+  var invMerged = useWaybills
+    ? firstNonEmpty_(invFromSheet, cleanText_(link.product_invoice_number))
+    : cleanText_(link.product_invoice_number);
+  return invMerged || allocateProductInvoiceNumber_(existing, waybillNo);
+}
+
+function cleanText_(value) {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+}
+
+/** MySQL-style datetime string in the script timezone (matches WP current_time('mysql') shape). */
+function currentMysqlTimestamp_() {
+  return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
+}
+
+/** Normalize Date or string from Sheets into yyyy-MM-dd HH:mm:ss for kit_waybills.created_at. */
+function normalizeSheetDateTime_(value) {
+  if (value === null || value === undefined || value === "") return "";
+  if (Object.prototype.toString.call(value) === "[object Date]" && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
+  }
+  return cleanText_(value);
+}
+
+/** Numeric WP user id for audit columns when syncing from Apps Script. */
+function pickWaybillAuditUserId_(row, sourceIdx, link) {
+  var cfgUid = toPositiveId_(CFG.waybillSyncUserId);
+  if (cfgUid !== "") return cfgUid;
+  var rowUid = toPositiveId_(valueByField_(row, sourceIdx, "approvalUserId"));
+  if (rowUid !== "") return rowUid;
+  var linkAppr = toPositiveId_(link.approval_userid);
+  if (linkAppr !== "") return linkAppr;
+  return toPositiveId_(link.created_by);
+}
+
+/**
+ * Separator-aware number parse. Mirrors kit_parse_sheet_number() in
+ * includes/sync/kit-seed-number-parse.php — keep the two in step.
+ *
+ * The old implementation stripped every non-digit, so a currency-formatted cell
+ * ("R 1 200,50") became 120050 — a hundred times the real amount. Sheets cells
+ * read through getValues() are usually native numbers, but IMPORTRANGE and
+ * text-formatted columns deliver display strings, and those must parse correctly.
+ *
+ * Rules: both separators present → the last one is the decimal separator;
+ * comma only → decimal comma when it is a lone comma with 1-2 trailing digits,
+ * else a thousands separator; dot only → decimal point unless there are several.
+ * Negative is recognised only at the front, so "12-34" is not read as negative.
+ */
+function parseNumber_(value) {
+  if (value === null || value === undefined || value === "") return "";
+  if (typeof value === "number") return isNaN(value) ? "" : value;
+  if (typeof value === "boolean") return "";
+
+  var s = String(value).trim();
+  if (s === "" || !/\d/.test(s)) return "";
+
+  var negative = /^\(.*\)$/.test(s) || /^[^\d]*-/.test(s);
+  s = s.replace(/[^\d.,]/g, "");
+  if (s === "") return "";
+
+  var lastDot = s.lastIndexOf(".");
+  var lastComma = s.lastIndexOf(",");
+
+  if (lastDot >= 0 && lastComma >= 0) {
+    if (lastComma > lastDot) {
+      s = s.replace(/\./g, "").replace(",", ".");
+    } else {
+      s = s.replace(/,/g, "");
+    }
+  } else if (lastComma >= 0) {
+    var decimals = s.length - lastComma - 1;
+    if (s.split(",").length - 1 === 1 && decimals >= 1 && decimals <= 2) {
+      s = s.replace(",", ".");
+    } else {
+      s = s.replace(/,/g, "");
+    }
+  } else if (lastDot >= 0 && (s.split(".").length - 1) > 1) {
+    s = s.replace(/\./g, "");
+  }
+
+  var num = Number(s);
+  if (isNaN(num)) return "";
+  return negative ? -Math.abs(num) : num;
+}
+
+/**
+ * Accepts the full range of truth markers that show up in the Waybills source
+ * sheet:
+ *   - native booleans (e.g. Sheets checkbox cells return JS true/false)
+ *   - case-insensitive text: "true"/"false", "yes"/"no", "y"/"n", "1"/"0"
+ *   - positive numeric amounts (e.g. SAD500 rand amount > 0 means flag on)
+ * Empty cells and explicit falsey strings/numbers map to false.
+ *
+ * Used by VAT / SAD500 / SADC flag mapping AND by the Stage 1 validator
+ * (validateSourceRow_) so the validator and the projector agree on what
+ * counts as a "true" cell. The retired amount-only parser honoured positive
+ * numbers alone, so a sheet cell holding the text "TRUE" was silently treated
+ * as false during sync — the SAD500/SADC mapping bug Mel reported 2026-05-19.
+ */
+function parseBooleanFlexible_(value) {
+  if (value === true) return true;
+  if (value === false) return false;
+  if (value === null || value === undefined) return false;
+  var s = String(value).trim().toLowerCase();
+  if (s === "") return false;
+  if (s === "true" || s === "yes" || s === "y") return true;
+  if (s === "false" || s === "no" || s === "n") return false;
+  var num = parseNumber_(value);
+  return num !== "" && num > 0;
+}
+
+/** Waybills column A (0): status / flags — "warehouse" text → kit_waybills column AC = 1; duplicate/cancelled → skip row. */
+var SOURCE_COL_A_INDEX_ = 0;
+
+/** kit_waybills column AC (1-based 29) = warehouse 1/0 — matches user sheet layout (Apps Script 0-based index 28). */
+var KIT_WAYBILLS_WAREHOUSE_COL_AC_INDEX_ = 28;
+
+/** 0-based column index for Google Sheets column AA (27th column). */
+var SOURCE_COL_AA_INDEX_ = 26;
+
+/** Waybills column C (0-based index 2) — Dispatch Date (authoritative for kit_deliveries.dispatch_date). */
+var SOURCE_COL_DISPATCH_DATE_INDEX_ = 2;
+
+/**
+ * Raw cell at Waybills column A (first column) — e.g. "drive warehouse", "Duplicate", "[Duplicate,Cancelled]".
+ */
+function valueFromWaybillsColumnA_(row) {
+  if (!row || row.length <= SOURCE_COL_A_INDEX_) {
+    return "";
+  }
+  return row[SOURCE_COL_A_INDEX_];
+}
+
+/**
+ * Dispatch date from Waybills column C (preferred), then header aliases.
+ * Never use DATE RECEIVED (column D) — that is created_at only.
+ */
+function valueFromWaybillsDispatchDate_(row, sourceIdx) {
+  if (row && row.length > SOURCE_COL_DISPATCH_DATE_INDEX_) {
+    var fromColC = normalizeDispatchDateOnly_(row[SOURCE_COL_DISPATCH_DATE_INDEX_]);
+    if (fromColC !== "") {
+      return fromColC;
+    }
+  }
+  if (sourceIdx) {
+    return normalizeDispatchDateOnly_(valueByField_(row, sourceIdx, "dispatchDate"));
+  }
+  return "";
+}
+
+/** True if Waybills column A marks row as duplicate or cancelled (do not sync to kit_waybills). */
+function shouldSkipWaybillByWaybillsColumnA_(colAText) {
+  var s = cleanText_(colAText);
+  if (s === "") {
+    return false;
+  }
+  var low = s.toLowerCase();
+  if (low.indexOf("duplicate") !== -1) {
+    return true;
+  }
+  if (low.indexOf("cancelled") !== -1 || low.indexOf("canceled") !== -1) {
+    return true;
+  }
+  return false;
+}
+
+/** True if column A indicates warehouse routing (e.g. "Warehouse", "drive warehouse"). */
+function isWarehouseFromWaybillsColumnA_(colAText) {
+  return /\bwarehouse\b/i.test(cleanText_(colAText));
+}
+
+/** Write warehouse flag to kit_waybills column AC (index 28) when the row is wide enough. */
+function setKitWaybillWarehouseColumnAc_(record, isWarehouse) {
+  if (!record || record.length <= KIT_WAYBILLS_WAREHOUSE_COL_AC_INDEX_) {
+    return;
+  }
+  record[KIT_WAYBILLS_WAREHOUSE_COL_AC_INDEX_] = isWarehouse ? 1 : 0;
+}
+
+/**
+ * Raw cell at Waybills column AA when the row array is wide enough (matches "Waybills!AA" style sources).
+ */
+function valueFromWaybillsColumnAa_(row) {
+  if (!row || row.length <= SOURCE_COL_AA_INDEX_) {
+    return "";
+  }
+  return row[SOURCE_COL_AA_INDEX_];
+}
+
+/**
+ * Customer's own invoice / PO reference (Waybills "CL INV #" = column AA). Not a monetary line item.
+ * Prefer header-mapped clInv, then physical column AA, then optional clientInvoiceAa alias.
+ */
+function resolveCustomerPurchaseInvoiceRef_(row, sourceIdx) {
+  return firstNonEmpty_(
+    cleanText_(valueByField_(row, sourceIdx, "clInv")),
+    cleanText_(valueFromWaybillsColumnAa_(row)),
+    cleanText_(valueByField_(row, sourceIdx, "clientInvoiceAa"))
+  );
+}
+
+/** Sheet placeholders — not a real customer invoice reference. */
+function isCustomerInvoiceRefPlaceholder_(ref) {
+  var s = cleanText_(ref).toLowerCase();
+  if (s === "") return true;
+  if (s === "p" || s === "n/a" || s === "na" || s === "none" || s === "null" || s === "-" || s === "--") return true;
+  return false;
+}
+
+/**
+ * PHP serialize() subset for kit_waybills.miscellaneous:
+ * a:3:{ misc_items[], misc_total float, others[] }
+ * Each misc row matches KIT_Waybills::getMiscCharges: misc_item, misc_price, misc_quantity, realized.
+ * Uses UTF-8 byte lengths for string payloads (PHP strlen semantics).
+ */
+function phpSerializeString_(str) {
+  str = String(str);
+  var escaped = str.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  var byteLen = Utilities.newBlob(str).getBytes().length;
+  return "s:" + byteLen + ':"' + escaped + '";';
+}
+
+function phpSerializeDouble_(n) {
+  var x = typeof n === "number" ? n : parseFloat(n);
+  if (isNaN(x)) {
+    x = 0;
+  }
+  var s = String(x);
+  if (s.indexOf("e") >= 0 || s.indexOf("E") >= 0) {
+    s = x.toFixed(6).replace(/\.?0+$/, "");
+    if (s === "" || s === "-") {
+      s = "0";
+    }
+  }
+  return "d:" + s + ";";
+}
+
+/**
+ * @param {string} invoiceRef — customer's purchase invoice / ref (not our billing amount)
+ * @return {string} PHP serialized miscellaneous or "" if empty/placeholder
+ */
+function buildSerializedMiscellaneousCustomerInvoiceRef_(invoiceRef) {
+  var ref = cleanText_(invoiceRef);
+  if (ref === "" || isCustomerInvoiceRefPlaceholder_(ref)) {
+    return "";
+  }
+  if (ref.length > 255) {
+    ref = ref.substring(0, 255);
+  }
+  var miscItems = "a:0:{}";
+  var others = "a:1:{" + phpSerializeString_(OTHERS_KEY_CLIENT_INVOICE_) + phpSerializeString_(ref) + "}";
+  return "a:3:{" +
+    phpSerializeString_("misc_items") + miscItems +
+    phpSerializeString_("misc_total") + phpSerializeDouble_(0) +
+    phpSerializeString_("others") + others +
+    "}";
+}
+
+function firstNonEmpty_(preferred, fallback) {
+  if (preferred !== null && preferred !== undefined && String(preferred) !== "") return preferred;
+  if (fallback !== null && fallback !== undefined && String(fallback) !== "") return fallback;
+  return "";
+}
+
+function toPositiveId_(value) {
+  if (value === null || value === undefined || value === "") return "";
+  var cleaned = String(value).replace(/[^\d\-]/g, "");
+  if (cleaned === "" || cleaned === "-") return "";
+  var n = parseInt(cleaned, 10);
+  return isNaN(n) || n <= 0 ? "" : n;
+}
+
+function pickPositiveId_() {
+  for (var i = 0; i < arguments.length; i++) {
+    var v = toPositiveId_(arguments[i]);
+    if (v !== "") return v;
+  }
+  return 0;
+}
+
+function buildLookupContext_(ss) {
+  return {
+    deliveryDirectionById: buildDeliveryFieldMap_(ss, "direction_id"),
+    deliveryCityById: buildDeliveryFieldMap_(ss, "destination_city_id"),
+    customerIdByName: buildCustomerNameToIdMap_(ss),
+    cityIdByName: buildCityNameToIdMap_(ss)
+  };
+}
+
+function buildDeliveryFieldMap_(ss, wantedField) {
+  var out = {};
+  var sh = ss.getSheetByName(CFG.deliveriesSheetName);
+  if (!sh) return out;
+  var rows = sh.getDataRange().getValues();
+  if (!rows || rows.length < 2) return out;
+  var headers = rows[0];
+  var idx = buildDeliveryTargetIndexes_(headers);
+  if (idx.id < 0 || idx.ref < 0) return out;
+  var fieldIdx = -1;
+  if (wantedField === "direction_id") {
+    fieldIdx = idx.direction;
+  } else if (wantedField === "destination_city_id") {
+    fieldIdx = idx.city;
+  } else {
+    fieldIdx = colIndex_(headers, [wantedField, wantedField.replace(/_/g, " ")]);
+  }
+  if (fieldIdx < 0) return out;
+  for (var i = 1; i < rows.length; i++) {
+    if (!isValidKitDeliveryRow_(rows[i], idx)) {
+      continue;
+    }
+    var id = toPositiveId_(rows[i][idx.id]);
+    var val = toPositiveId_(rows[i][fieldIdx]);
+    if (id !== "" && val !== "") out[id] = val;
+  }
+  return out;
+}
+
+function buildDeliveryTargetIndexes_(headers) {
+  return {
+    id: colIndex_(headers, ["id"]),
+    delId: colIndex_(headers, ["del_id"]),
+    ref: colIndex_(headers, ["delivery_reference", "delivery reference", "delivery_ref"]),
+    direction: colIndex_(headers, ["direction_id", "direction id", "direction"]),
+    city: colIndex_(headers, ["destination_city_id", "destination city id", "city_id", "city id"]),
+    dispatch: colIndex_(headers, ["dispatch_date", "dispatch date"]),
+    truck: colIndex_(headers, ["truck_number", "truck number"]),
+    driver: colIndex_(headers, ["driver_id", "driver id"]),
+    status: colIndex_(headers, ["status"])
+  };
+}
+
+function isValidDeliveryReference_(ref) {
+  return /^DEL-\d{8}-\d{3,}$/i.test(cleanText_(ref));
+}
+
+function isValidKitDeliveryRow_(row, idx) {
+  var ref = idx.ref >= 0 ? cleanText_(row[idx.ref]) : "";
+  return isValidDeliveryReference_(ref);
+}
+
+function isEmptyKitDeliveryShellRow_(row, idx) {
+  if (isValidKitDeliveryRow_(row, idx)) {
+    return false;
+  }
+  var dispatch = idx.dispatch >= 0 ? cleanText_(row[idx.dispatch]) : "";
+  var driver = idx.driver >= 0 ? toPositiveId_(row[idx.driver]) : "";
+  var city = idx.city >= 0 ? toPositiveId_(row[idx.city]) : "";
+  var truck = idx.truck >= 0 ? cleanText_(row[idx.truck]) : "";
+  var status = idx.status >= 0 ? cleanText_(row[idx.status]) : "";
+  return dispatch === "" && driver === "" && city === "" && truck === "" && status === "";
+}
+
+function pruneEmptyKitDeliveryRowsCore_(sheet) {
+  var range = sheet.getDataRange();
+  if (!range || range.getNumRows() < 2) {
+    return 0;
+  }
+  var data = range.getValues();
+  var idx = buildDeliveryTargetIndexes_(data[0]);
+  var firstRow = range.getRow();
+  var removed = 0;
+  for (var i = data.length - 1; i >= 1; i--) {
+    if (isEmptyKitDeliveryShellRow_(data[i], idx)) {
+      sheet.deleteRow(firstRow + i);
+      removed++;
+    }
+  }
+  return removed;
+}
+
+/** kit_drivers column layout indexes. */
+function buildDriverTargetIndexes_(headers) {
+  return {
+    id: colIndex_(headers, ["id"]),
+    name: colIndex_(headers, ["name"]),
+    phone: colIndex_(headers, ["phone"]),
+    email: colIndex_(headers, ["email"]),
+    license: colIndex_(headers, ["license_number", "license number"]),
+    isActive: colIndex_(headers, ["is_active", "is active"]),
+    createdAt: colIndex_(headers, ["created_at", "created at"]),
+    updatedAt: colIndex_(headers, ["updated_at", "updated at"])
+  };
+}
+
+/** Status tokens from Waybills column A / driver cells that are not real driver names. */
+function isNonDriverName_(candidate) {
+  var needle = normalizeName_(candidate);
+  if (needle === "") return true;
+  var blocked = ["import driver", "cancel", "cancelled", "canceled", "collected", "duplicate", "warehouse"];
+  for (var i = 0; i < blocked.length; i++) {
+    if (needle === blocked[i]) return true;
+  }
+  var fragments = ["duplicate", "cancelled", "canceled", "cancel", "warehouse"];
+  for (var f = 0; f < fragments.length; f++) {
+    if (needle.indexOf(fragments[f]) >= 0) return true;
+  }
+  return false;
+}
+
+/** Parse dispatch date from Waybills (supports MM/DD/YYYY and native Date cells). */
+function normalizeDispatchDateOnly_(value) {
+  if (value === null || value === undefined || value === "") return "";
+  if (Object.prototype.toString.call(value) === "[object Date]" && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), "yyyy-MM-dd");
+  }
+  var text = cleanText_(value);
+  if (text === "") return "";
+  if (/^(warehouse|cancelled|canceled|cancel|duplicate)$/i.test(text)) return "";
+  // Waybills sheet + PHP seed use MM/DD/YYYY (e.g. 10/31/2025 = 31 Oct).
+  var m = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) {
+    return m[3] + "-" + ("0" + m[1]).slice(-2) + "-" + ("0" + m[2]).slice(-2);
+  }
+  var parsed = new Date(text);
+  if (!isNaN(parsed.getTime())) {
+    return Utilities.formatDate(parsed, Session.getScriptTimeZone(), "yyyy-MM-dd");
+  }
+  return "";
+}
+
+function parseSourceDeliveryNo_(value) {
+  var digits = String(value === null || value === undefined ? "" : value).replace(/[^0-9]/g, "");
+  var num = parseInt(digits, 10);
+  return isNaN(num) || num <= 0 ? 0 : num;
+}
+
+function buildExistingDriverState_(rows, idx) {
+  var state = { names: {}, maxId: 0, count: 0 };
+  if (!rows || rows.length < 2 || idx.name < 0) return state;
+  for (var i = 1; i < rows.length; i++) {
+    var name = cleanText_(rows[i][idx.name]);
+    if (name === "") continue;
+    var id = toPositiveId_(rows[i][idx.id]);
+    if (id !== "" && id > state.maxId) state.maxId = id;
+    state.names[normalizeName_(name)] = { id: id, rowIndex: i, name: name };
+    state.count++;
+  }
+  return state;
+}
+
+function buildExistingDeliveryState_(rows, idx) {
+  var state = {
+    byId: {},
+    byDriverDate: {},
+    refs: {},
+    maxId: 0,
+    count: 0,
+    refCountersByDate: {}
+  };
+  if (!rows || rows.length < 2) return state;
+  for (var i = 1; i < rows.length; i++) {
+    var row = rows[i];
+    var id = toPositiveId_(idx.id >= 0 ? row[idx.id] : "");
+    var ref = idx.ref >= 0 ? cleanText_(row[idx.ref]) : "";
+    var driverId = idx.driver >= 0 ? toPositiveId_(row[idx.driver]) : "";
+    var dispatch = idx.dispatch >= 0 ? cleanText_(row[idx.dispatch]) : "";
+    if (id !== "" && id > state.maxId) state.maxId = id;
+    if (id !== "") state.byId[id] = i;
+    if (ref !== "") {
+      state.refs[normalizeName_(ref)] = true;
+      var refMatch = ref.match(/^DEL-(\d{8})-(\d+)$/i);
+      if (refMatch) {
+        var ymd = refMatch[1];
+        var seq = parseInt(refMatch[2], 10);
+        if (!state.refCountersByDate[ymd] || seq > state.refCountersByDate[ymd]) {
+          state.refCountersByDate[ymd] = seq;
+        }
+      }
+    }
+    if (driverId !== "" && dispatch !== "") {
+      state.byDriverDate[driverId + "|" + dispatch] = true;
+    }
+    if (isValidKitDeliveryRow_(row, idx)) {
+      state.count++;
+    }
+  }
+  return state;
+}
+
+function allocateDeliveryReference_(dispatchDate, deliveryState) {
+  var ymd = String(dispatchDate || "").replace(/-/g, "");
+  if (ymd.length !== 8) {
+    ymd = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyyMMdd");
+  }
+  var next = (deliveryState.refCountersByDate[ymd] || 0) + 1;
+  deliveryState.refCountersByDate[ymd] = next;
+  var ref = "DEL-" + ymd + "-" + ("00" + next).slice(-3);
+  while (deliveryState.refs[normalizeName_(ref)]) {
+    next++;
+    deliveryState.refCountersByDate[ymd] = next;
+    ref = "DEL-" + ymd + "-" + ("00" + next).slice(-3);
+  }
+  deliveryState.refs[normalizeName_(ref)] = true;
+  return ref;
+}
+
+/**
+ * Read Waybills source tab; append/update kit_drivers and kit_deliveries.
+ * Delivery id uses the source "Delivery" trip number so kit_waybills.delivery_id joins work.
+ * dispatch_date always comes from Waybills column C (Dispatch Date) — never DATE RECEIVED.
+ */
+function syncDriversAndDeliveriesFromWaybillsStage_(ss) {
+  var summary = {
+    source_rows_read: 0,
+    appended_drivers: 0,
+    skipped_drivers: 0,
+    appended_deliveries: 0,
+    updated_deliveries: 0,
+    skipped_deliveries: 0,
+    existing_drivers: 0,
+    existing_deliveries: 0
+  };
+
+  var sourceSheet = ss.getSheetByName(CFG.sourceSheetName);
+  var driverSheet = ss.getSheetByName(CFG.driversSheetName);
+  var deliverySheet = ss.getSheetByName(CFG.deliveriesSheetName);
+  if (!sourceSheet) {
+    throw new Error("Missing required sheet: " + CFG.sourceSheetName);
+  }
+  if (!driverSheet) {
+    throw new Error("Missing required sheet: " + CFG.driversSheetName);
+  }
+  if (!deliverySheet) {
+    throw new Error("Missing required sheet: " + CFG.deliveriesSheetName);
+  }
+
+  var sourceData = readSheetValuesSmart_(sourceSheet, CFG.waybillsMaxCols);
+  if (!sourceData || sourceData.length < 2) {
+    return summary;
+  }
+  summary.source_rows_read = sourceData.length - 1;
+
+  var sourceIdx = buildResolvedMap_(sourceData[0], SRC);
+  var driverData = driverSheet.getDataRange().getValues();
+  var deliveryData = deliverySheet.getDataRange().getValues();
+  if (!driverData || driverData.length < 1 || !deliveryData || deliveryData.length < 1) {
+    throw new Error("kit_drivers and kit_deliveries must have header rows.");
+  }
+
+  var driverIdx = buildDriverTargetIndexes_(driverData[0]);
+  var deliveryIdx = buildDeliveryTargetIndexes_(deliveryData[0]);
+  if (driverIdx.name < 0) {
+    throw new Error("kit_drivers missing required column: name");
+  }
+  if (deliveryIdx.ref < 0) {
+    throw new Error("kit_deliveries missing required column: delivery_reference");
+  }
+
+  var driverState = buildExistingDriverState_(driverData, driverIdx);
+  var deliveryState = buildExistingDeliveryState_(deliveryData, deliveryIdx);
+  summary.existing_drivers = driverState.count;
+  summary.existing_deliveries = deliveryState.count;
+
+  var driverNames = {};
+  var deliveryGroups = {};
+  var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
+
+  for (var r = 1; r < sourceData.length; r++) {
+    var row = sourceData[r];
+    var colAText = valueFromWaybillsColumnA_(row);
+    if (shouldSkipWaybillByWaybillsColumnA_(colAText)) {
+      continue;
+    }
+    var waybillNo = extractWaybillNo_(valueByField_(row, sourceIdx, "waybillNo"));
+    if (waybillNo === "") {
+      continue;
+    }
+
+    var driverName = cleanText_(valueByField_(row, sourceIdx, "driver"));
+    if (driverName !== "" && !/^\d+$/.test(driverName) && !isNonDriverName_(driverName)) {
+      driverNames[normalizeName_(driverName)] = driverName;
+    } else {
+      summary.skipped_drivers++;
+    }
+
+    // Waybills column C = Dispatch Date (NOT column D DATE RECEIVED).
+    var dispatchDate = valueFromWaybillsDispatchDate_(row, sourceIdx);
+    if (dispatchDate === "") dispatchDate = today;
+
+    var sourceDeliveryNo = parseSourceDeliveryNo_(valueByField_(row, sourceIdx, "deliveryId"));
+    if (sourceDeliveryNo > 0 && driverName !== "" && !isNonDriverName_(driverName)) {
+      if (!deliveryGroups[sourceDeliveryNo]) {
+        deliveryGroups[sourceDeliveryNo] = { driverName: driverName, dispatchDate: dispatchDate };
+      } else if (deliveryGroups[sourceDeliveryNo].dispatchDate === today && dispatchDate !== today) {
+        deliveryGroups[sourceDeliveryNo].dispatchDate = dispatchDate;
+      }
+    }
+  }
+
+  var newDriverRows = [];
+  var driverNameKeys = Object.keys(driverNames);
+  for (var d = 0; d < driverNameKeys.length; d++) {
+    var norm = driverNameKeys[d];
+    if (driverState.names[norm]) continue;
+    driverState.maxId += 1;
+    var ts = currentMysqlTimestamp_();
+    var out = new Array(driverData[0].length).fill("");
+    if (driverIdx.id >= 0) out[driverIdx.id] = driverState.maxId;
+    out[driverIdx.name] = driverNames[norm];
+    if (driverIdx.isActive >= 0) out[driverIdx.isActive] = 1;
+    if (driverIdx.createdAt >= 0) out[driverIdx.createdAt] = ts;
+    if (driverIdx.updatedAt >= 0) out[driverIdx.updatedAt] = ts;
+    driverState.names[norm] = { id: driverState.maxId, name: driverNames[norm] };
+    newDriverRows.push(out);
+    summary.appended_drivers++;
+  }
+
+  if (newDriverRows.length > 0) {
+    var driverStart = driverSheet.getLastRow() + 1;
+    driverSheet.getRange(driverStart, 1, newDriverRows.length, driverData[0].length).setValues(newDriverRows);
+    driverData = driverSheet.getDataRange().getValues();
+  }
+
+  var newDeliveryRows = [];
+  var deliveryNos = Object.keys(deliveryGroups).map(function (k) { return parseInt(k, 10); }).sort(function (a, b) { return a - b; });
+  for (var n = 0; n < deliveryNos.length; n++) {
+    var tripNo = deliveryNos[n];
+    var group = deliveryGroups[tripNo];
+    var driverEntry = driverState.names[normalizeName_(group.driverName)];
+    if (!driverEntry || driverEntry.id === "") {
+      summary.skipped_deliveries++;
+      continue;
+    }
+    var driverId = driverEntry.id;
+    var dispatch = group.dispatchDate;
+    var driverDateKey = driverId + "|" + dispatch;
+
+    // Existing trip: repair dispatch_date / DEL- date from Waybills col C when stale.
+    if (deliveryState.byId[tripNo]) {
+      var existingIdx = deliveryState.byId[tripNo];
+      if (existingIdx > 0 && deliveryIdx.dispatch >= 0) {
+        var existingRow = deliveryData[existingIdx];
+        var oldDispatch = normalizeDispatchDateOnly_(existingRow[deliveryIdx.dispatch]);
+        var oldRef = deliveryIdx.ref >= 0 ? cleanText_(existingRow[deliveryIdx.ref]) : "";
+        if (oldDispatch !== dispatch || (oldRef && oldRef.indexOf("DEL-" + dispatch.replace(/-/g, "")) !== 0)) {
+          var sheetRowNum = existingIdx + 1;
+          deliverySheet.getRange(sheetRowNum, deliveryIdx.dispatch + 1).setValue(dispatch);
+          existingRow[deliveryIdx.dispatch] = dispatch;
+
+          if (deliveryIdx.ref >= 0 && isValidDeliveryReference_(oldRef)) {
+            var ymd = String(dispatch).replace(/-/g, "");
+            var refMatch = oldRef.match(/^(DEL-)\d{8}(-\d+)$/i);
+            if (refMatch && ymd.length === 8) {
+              var candidateRef = "DEL-" + ymd + refMatch[2];
+              if (normalizeName_(candidateRef) === normalizeName_(oldRef) || !deliveryState.refs[normalizeName_(candidateRef)]) {
+                if (normalizeName_(candidateRef) !== normalizeName_(oldRef)) {
+                  delete deliveryState.refs[normalizeName_(oldRef)];
+                  deliveryState.refs[normalizeName_(candidateRef)] = true;
+                }
+                deliverySheet.getRange(sheetRowNum, deliveryIdx.ref + 1).setValue(candidateRef);
+                existingRow[deliveryIdx.ref] = candidateRef;
+              }
+            }
+          }
+
+          if (deliveryIdx.driver >= 0 && driverId !== "") {
+            deliverySheet.getRange(sheetRowNum, deliveryIdx.driver + 1).setValue(driverId);
+            existingRow[deliveryIdx.driver] = driverId;
+          }
+          if (oldDispatch !== "" && deliveryState.byDriverDate[driverId + "|" + oldDispatch]) {
+            delete deliveryState.byDriverDate[driverId + "|" + oldDispatch];
+          }
+          deliveryState.byDriverDate[driverDateKey] = true;
+          summary.updated_deliveries++;
+          continue;
+        }
+      }
+      summary.skipped_deliveries++;
+      continue;
+    }
+    if (deliveryState.byDriverDate[driverDateKey]) {
+      if (!deliveryState.byId[tripNo]) {
+        deliveryState.byId[tripNo] = -1;
+      }
+      summary.skipped_deliveries++;
+      continue;
+    }
+
+    var ref = allocateDeliveryReference_(dispatch, deliveryState);
+    var createdAt = currentMysqlTimestamp_();
+    var delOut = new Array(deliveryData[0].length).fill("");
+    if (deliveryIdx.id >= 0) delOut[deliveryIdx.id] = tripNo;
+    if (deliveryIdx.delId >= 0) delOut[deliveryIdx.delId] = tripNo;
+    delOut[deliveryIdx.ref] = ref;
+    if (deliveryIdx.direction >= 0) delOut[deliveryIdx.direction] = CFG.defaultDirectionId;
+    if (deliveryIdx.city >= 0) delOut[deliveryIdx.city] = 1;
+    if (deliveryIdx.dispatch >= 0) delOut[deliveryIdx.dispatch] = dispatch;
+    if (deliveryIdx.driver >= 0) delOut[deliveryIdx.driver] = driverId;
+    if (deliveryIdx.status >= 0) delOut[deliveryIdx.status] = "scheduled";
+    if (deliveryIdx.truck >= 0) delOut[deliveryIdx.truck] = "";
+    var createdByIdx = colIndex_(deliveryData[0], ["created_by", "created by"]);
+    if (createdByIdx >= 0) delOut[createdByIdx] = pickWaybillAuditUserId_([], sourceIdx, {});
+    var createdAtIdx = colIndex_(deliveryData[0], ["created_at", "created at"]);
+    if (createdAtIdx >= 0) delOut[createdAtIdx] = createdAt;
+
+    deliveryState.byId[tripNo] = -1;
+    deliveryState.byDriverDate[driverDateKey] = true;
+    if (tripNo > deliveryState.maxId) deliveryState.maxId = tripNo;
+    newDeliveryRows.push(delOut);
+    summary.appended_deliveries++;
+  }
+
+  if (newDeliveryRows.length > 0) {
+    var deliveryStart = deliverySheet.getLastRow() + 1;
+    deliverySheet.getRange(deliveryStart, 1, newDeliveryRows.length, deliveryData[0].length).setValues(newDeliveryRows);
+  }
+
+  return summary;
+}
+
+/** Drivers-only harvest (menu: Run Drivers Only). */
+function syncDriversFromWaybillsStage_(ss) {
+  var summary = {
+    source_rows_read: 0,
+    appended_drivers: 0,
+    skipped_drivers: 0,
+    appended_deliveries: 0,
+    skipped_deliveries: 0,
+    existing_drivers: 0,
+    existing_deliveries: 0
+  };
+
+  var sourceSheet = ss.getSheetByName(CFG.sourceSheetName);
+  var driverSheet = ss.getSheetByName(CFG.driversSheetName);
+  if (!sourceSheet) {
+    throw new Error("Missing required sheet: " + CFG.sourceSheetName);
+  }
+  if (!driverSheet) {
+    throw new Error("Missing required sheet: " + CFG.driversSheetName);
+  }
+
+  var sourceData = readSheetValuesSmart_(sourceSheet, CFG.waybillsMaxCols);
+  if (!sourceData || sourceData.length < 2) {
+    return summary;
+  }
+  summary.source_rows_read = sourceData.length - 1;
+
+  var sourceIdx = buildResolvedMap_(sourceData[0], SRC);
+  var driverData = driverSheet.getDataRange().getValues();
+  if (!driverData || driverData.length < 1) {
+    throw new Error("kit_drivers must have a header row.");
+  }
+
+  var driverIdx = buildDriverTargetIndexes_(driverData[0]);
+  if (driverIdx.name < 0) {
+    throw new Error("kit_drivers missing required column: name");
+  }
+
+  var driverState = buildExistingDriverState_(driverData, driverIdx);
+  summary.existing_drivers = driverState.count;
+
+  var driverNames = {};
+  for (var r = 1; r < sourceData.length; r++) {
+    var row = sourceData[r];
+    var colAText = valueFromWaybillsColumnA_(row);
+    if (shouldSkipWaybillByWaybillsColumnA_(colAText)) {
+      continue;
+    }
+    var waybillNo = extractWaybillNo_(valueByField_(row, sourceIdx, "waybillNo"));
+    if (waybillNo === "") {
+      continue;
+    }
+    var driverName = cleanText_(valueByField_(row, sourceIdx, "driver"));
+    if (driverName !== "" && !/^\d+$/.test(driverName) && !isNonDriverName_(driverName)) {
+      driverNames[normalizeName_(driverName)] = driverName;
+    } else {
+      summary.skipped_drivers++;
+    }
+  }
+
+  var newDriverRows = [];
+  var driverNameKeys = Object.keys(driverNames);
+  for (var d = 0; d < driverNameKeys.length; d++) {
+    var norm = driverNameKeys[d];
+    if (driverState.names[norm]) continue;
+    driverState.maxId += 1;
+    var ts = currentMysqlTimestamp_();
+    var out = new Array(driverData[0].length).fill("");
+    if (driverIdx.id >= 0) out[driverIdx.id] = driverState.maxId;
+    out[driverIdx.name] = driverNames[norm];
+    if (driverIdx.isActive >= 0) out[driverIdx.isActive] = 1;
+    if (driverIdx.createdAt >= 0) out[driverIdx.createdAt] = ts;
+    if (driverIdx.updatedAt >= 0) out[driverIdx.updatedAt] = ts;
+    driverState.names[norm] = { id: driverState.maxId, name: driverNames[norm] };
+    newDriverRows.push(out);
+    summary.appended_drivers++;
+  }
+
+  if (newDriverRows.length > 0) {
+    var driverStart = driverSheet.getLastRow() + 1;
+    driverSheet.getRange(driverStart, 1, newDriverRows.length, driverData[0].length).setValues(newDriverRows);
+  }
+
+  return summary;
+}
+
+function rowHasCustomerContent_(row, cuIdx) {
+  if (cleanText_(row[cuIdx.name]) || cleanText_(row[cuIdx.surname])) return true;
+  if (cuIdx.combined >= 0 && cleanText_(row[cuIdx.combined])) return true;
+  if (cuIdx.company >= 0) {
+    var company = cleanText_(row[cuIdx.company]);
+    if (company && normalizeName_(company) !== "private") return true;
+  }
+  return false;
+}
+
+function buildCustomerNameToIdMap_(ss) {
+  var out = {};
+  var sh = ss.getSheetByName(CFG.customersSheetName);
+  if (!sh) return out;
+  var rows = sh.getDataRange().getValues();
+  if (!rows || rows.length < 2) return out;
+  var headers = rows[0];
+  var idIdx = colIndex_(headers, ["cust_id", "customer_id", "customer id"]);
+  if (idIdx < 0) return out;
+  var companyIdx = colIndex_(headers, ["company_name", "company name"]);
+  var nameIdx = colIndex_(headers, ["name", "first_name", "first name"]);
+  var surnameIdx = colIndex_(headers, ["surname", "last_name", "last name"]);
+  for (var i = 1; i < rows.length; i++) {
+    var cid = toPositiveId_(rows[i][idIdx]);
+    if (cid === "") continue;
+    var company = companyIdx >= 0 ? normalizeName_(rows[i][companyIdx]) : "";
+    var first = nameIdx >= 0 ? cleanText_(rows[i][nameIdx]) : "";
+    var last = surnameIdx >= 0 ? cleanText_(rows[i][surnameIdx]) : "";
+    var full = normalizeName_((first + " " + last).trim());
+    if (company) out[company] = cid;
+    if (full) out[full] = cid;
+  }
+  return out;
+}
+
+function buildCityNameToIdMap_(ss) {
+  var out = {};
+  var sh = ss.getSheetByName(CFG.citiesSheetName);
+  if (!sh) return out;
+  var rows = sh.getDataRange().getValues();
+  if (!rows || rows.length < 2) return out;
+  return buildCityNameMap_(rows);
+}
+
+function lookupCustomerIdByName_(map, name) {
+  var key = normalizeName_(name);
+  return key ? (map[key] || "") : "";
+}
+
+function lookupCityIdByName_(map, cityName) {
+  var key = normalizeName_(cityName);
+  if (!key) return "";
+  if (map[key]) return map[key];
+  // Partial match: "Arusha" vs "Arusha City", or trailing punctuation differences.
+  var keys = Object.keys(map);
+  for (var i = 0; i < keys.length; i++) {
+    if (keys[i].indexOf(key) !== -1 || key.indexOf(keys[i]) !== -1) {
+      return map[keys[i]];
+    }
+  }
+  return "";
+}
+
+function normalizeName_(value) {
+  return cleanText_(value).toLowerCase().replace(/\s+/g, " ");
+}
+
+function dedupeKey_(combined) {
+  var c = normalizeName_(combined);
+  return c ? ("person:" + c) : "";
+}
+
+function buildCustomerNamePreserveCols_(cuIdx) {
+  return {
+    id: cuIdx.id,
+    custId: cuIdx.custId,
+    combined: cuIdx.combined,
+    name: cuIdx.name,
+    surname: cuIdx.surname,
+    company: cuIdx.company
+  };
+}
+
+/**
+ * Re-apply splitCustomerName_ from combined_name_ignore for every customer row.
+ * Writes plain values (clears any legacy split formulas on name/surname/company_name).
+ */
+function resplitCustomerRowsFromCombinedCore_(sheet, cuIdx) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < CFG.dataStartRow || cuIdx.name < 0 || cuIdx.surname < 0 || cuIdx.combined < 0) {
+    return 0;
+  }
+
+  var colCount = sheet.getLastColumn();
+  var data = sheet.getRange(1, 1, lastRow, colCount).getValues();
+  if (!data || data.length < 2) {
+    return 0;
+  }
+
+  var updated = 0;
+  var nameValues = [];
+  var surnameValues = [];
+  var companyValues = [];
+  var rowCount = data.length - 1;
+
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    if (isLikelyCorruptedCustomerRow_(row, cuIdx)) {
+      nameValues.push([row[cuIdx.name]]);
+      surnameValues.push([row[cuIdx.surname]]);
+      if (cuIdx.company >= 0) companyValues.push([row[cuIdx.company]]);
+      continue;
+    }
+
+    var combined = resolveCustomerLabelForSplit_(row, cuIdx);
+    if (!combined) {
+      nameValues.push([row[cuIdx.name]]);
+      surnameValues.push([row[cuIdx.surname]]);
+      if (cuIdx.company >= 0) companyValues.push([row[cuIdx.company]]);
+      continue;
+    }
+
+    var split = splitCustomerName_(combined);
+    var curCompany = cuIdx.company >= 0 ? cleanText_(row[cuIdx.company]) : "";
+    var changed = cleanText_(row[cuIdx.name]) !== split.name
+      || cleanText_(row[cuIdx.surname]) !== split.surname
+      || (cuIdx.company >= 0 && normalizeName_(curCompany) !== normalizeName_(split.company_name));
+    if (changed) {
+      updated++;
+    }
+
+    nameValues.push([split.name]);
+    surnameValues.push([split.surname]);
+    if (cuIdx.company >= 0) companyValues.push([split.company_name]);
+  }
+
+  if (updated > 0) {
+    sheet.getRange(CFG.dataStartRow, cuIdx.name + 1, rowCount, 1).setValues(nameValues);
+    sheet.getRange(CFG.dataStartRow, cuIdx.surname + 1, rowCount, 1).setValues(surnameValues);
+    if (cuIdx.company >= 0) {
+      sheet.getRange(CFG.dataStartRow, cuIdx.company + 1, rowCount, 1).setValues(companyValues);
+    }
+  }
+
+  return updated;
+}
+
+function resolveCustomerLabelForSplit_(row, cuIdx) {
+  var combined = cleanText_(row[cuIdx.combined]);
+  var company = cuIdx.company >= 0 ? cleanText_(row[cuIdx.company]) : "";
+  var person = cleanText_((cleanText_(row[cuIdx.name]) + " " + cleanText_(row[cuIdx.surname])).trim());
+
+  var candidates = [];
+  [combined, company, person].forEach(function (c) {
+    c = cleanText_(c);
+    if (!c || normalizeName_(c) === "private") return;
+    if (candidates.indexOf(c) < 0) candidates.push(c);
+  });
+
+  if (candidates.length === 0) return "";
+
+  candidates.sort(function (a, b) {
+    var aBiz = isLikelyBusinessName_(a) ? 1 : 0;
+    var bBiz = isLikelyBusinessName_(b) ? 1 : 0;
+    if (aBiz !== bBiz) return bBiz - aBiz;
+    return b.length - a.length;
+  });
+  return candidates[0];
+}
+
+/** Whole-word tokens that indicate a business/company name (safari, lodge, emporium, etc.). */
+var BUSINESS_NAME_WORDS_ = "ltd|limited|pty|inc|corp|llc|plc|group|traders|logistics|camp|camps|safari|safaris|lodge|lodges|hotel|hotels|tours|tour|investments|technologies|industries|works|expeditions|foods|laundry|creations|holdings|company|brewing|brewery|breweries|adventure|adventures|emporium|emporiums|destinations|destination|enterprise|enterprises|wilderness|tanzania|kenya|zambia|africa|suppliers|supplier|imports|import|exports|export|motors|motor|furniture|hardware|wholesale|retail|construction|engineering|solutions|services|station|garage|builders|pharmacy|medical|clinic|restaurant|restaurants|cafe|resort|resorts|university|school|schools|bank|finance|financial|insurance|transport|shipping|freight|warehouse|store|stores|shop|shops|market|markets|properties|property|estate|estates|outfitters|outfitter|conservation|foundation|trust|partners|partner|associates|associate|consulting|consultants|consultant|agency|agencies|communications|communication|media|design|designs|studio|studios|trading|manufacturing|manufacturers|distributors|distribution|wholesalers";
+
+function businessNameWordPattern_() {
+  return new RegExp("\\b(" + BUSINESS_NAME_WORDS_ + ")\\b", "i");
+}
+
+function isBusinessKeywordToken_(token) {
+  var t = cleanText_(token).toLowerCase().replace(/^[\s.()]+|[\s.()]+$/g, "");
+  if (!t) return false;
+  if (isCompanySuffixOnly_(t)) return true;
+  return new RegExp("^(" + BUSINESS_NAME_WORDS_ + ")$", "i").test(t);
+}
+
+/** Tokens that are company suffixes/fragments — never a person's name (e.g. "Ltd", "Creations"). */
+function isCompanySuffixOnly_(text) {
+  var t = cleanText_(text).toLowerCase().replace(/^[\s.()]+|[\s.()]+$/g, "");
+  var suffixes = [
+    "ltd", "limited", "pty", "inc", "corp", "llc", "plc", "sa", "cc", "gmbh",
+    "investments", "technologies", "industries", "works", "expeditions",
+    "tours", "safaris", "lodge", "lodges", "hotels", "foods", "laundry", "creations",
+    "holdings", "ltd.", "company", "adventures", "adventure",
+    "emporium", "emporiums", "destinations", "destination", "enterprise", "enterprises",
+    "tanzania", "kenya", "zambia", "africa", "wilderness", "emporium"
+  ];
+  return suffixes.indexOf(t) >= 0;
+}
+
+/** True when the whole label reads as a business/company (Ltd, Lodge, brackets, etc.). */
+function isLikelyBusinessName_(text) {
+  var t = cleanText_(text);
+  if (!t) return false;
+  if (t.indexOf("=") >= 0) return true;
+  // Repeated brand tokens ("Laba Laba") are companies — do not person-split them.
+  if (/^(\S+)\s+\1(?:\s|$)/.test(t)) return true;
+  if (businessNameWordPattern_().test(t)) {
+    return true;
+  }
+  // Parentheses: business unless it looks like a person nickname "Jane Doe (Jenny)".
+  if (/[()]/.test(t)) {
+    var isPersonNickname = /^[A-Za-z][A-Za-z\'\-]*(?:\s+[A-Za-z][A-Za-z\'\-]*){0,2}\s*\(\s*[A-Za-z][A-Za-z\'\-\s]{0,24}\s*\)\s*$/.test(t);
+    if (!isPersonNickname) return true;
+  }
+  return false;
+}
+
+function splitCustomerName_(combined) {
+  var s = cleanText_(combined);
+  if (!s) return { name: "", surname: "", company_name: "" };
+  if (isLikelyBusinessName_(s)) {
+    return { name: s, surname: "", company_name: s };
+  }
+  var parts = s.split(/\s+/);
+  if (parts.length === 1) {
+    return { name: parts[0], surname: "", company_name: "Private" };
+  }
+  if (isBusinessKeywordToken_(parts[parts.length - 1])) {
+    return { name: s, surname: "", company_name: s };
+  }
+  return {
+    name: parts.slice(0, -1).join(" "),
+    surname: parts[parts.length - 1],
+    company_name: "Private"
+  };
+}
+
+function buildCityNameMap_(rows) {
+  var out = {};
+  if (!rows || rows.length < 2) return out;
+  var headers = rows[0];
+  var idIdx = colIndex_(headers, ["id", "city_id", "city id"]);
+  var nameIdx = colIndex_(headers, ["city_name", "city name", "name", "city"]);
+  if (idIdx < 0 || nameIdx < 0) return out;
+  for (var i = 1; i < rows.length; i++) {
+    var id = toPositiveId_(rows[i][idIdx]);
+    var nm = normalizeName_(rows[i][nameIdx]);
+    if (id !== "" && nm) out[nm] = id;
+  }
+  return out;
+}
+
+function isPlaceholderName_(nameNorm) {
+  return nameNorm === "n/a" || nameNorm === "na" || nameNorm === "none" || nameNorm === "-";
+}
+
+function isSuspiciousCustomerName_(name) {
+  var n = cleanText_(name);
+  if (!n) return true;
+  // Require at least one alphabetical character to avoid numeric/date corruption.
+  if (!/[a-z]/i.test(n)) return true;
+  return false;
+}
+
+function isLikelyCorruptedCustomerRow_(row, idx) {
+  var id = toPositiveId_(row[idx.id]);
+  var custId = toPositiveId_(row[idx.custId]);
+  var name = cleanText_(row[idx.name]);
+  var surname = cleanText_(row[idx.surname]);
+  var combined = cleanText_(row[idx.combined]);
+  var company = idx.company >= 0 ? cleanText_(row[idx.company]) : "";
+
+  if (id === "" || custId === "") return false;
+  if (combined !== "") return false;
+  if (company !== "" && normalizeName_(company) !== "private") return false;
+
+  var nameHasLetters = /[a-z]/i.test(name);
+  var surnameLooksTimestamp = /^\d{4}-\d{2}-\d{2}/.test(surname);
+  var nameIsTinyNumeric = /^\d+$/.test(name) && String(name).length <= 3;
+
+  return (!nameHasLetters && surnameLooksTimestamp) || nameIsTinyNumeric;
+}
+
+function applyTemplateFormulasToAppendedRows_(sheet, startRow, rowCount, templateFormulasR1C1, preserveCols) {
+  if (!templateFormulasR1C1 || templateFormulasR1C1.length === 0 || rowCount <= 0) {
+    return;
+  }
+
+  var preserveIndex = {};
+  Object.keys(preserveCols || {}).forEach(function (k) {
+    var idx = preserveCols[k];
+    if (idx !== undefined && idx >= 0) {
+      preserveIndex[idx] = true;
+    }
+  });
+
+  for (var c = 0; c < templateFormulasR1C1.length; c++) {
+    if (preserveIndex[c]) {
+      continue;
+    }
+    var f = templateFormulasR1C1[c];
+    if (!f) {
+      continue;
+    }
+    var colRange = sheet.getRange(startRow, c + 1, rowCount, 1);
+    var formulas = [];
+    for (var r = 0; r < rowCount; r++) {
+      formulas.push([f]);
+    }
+    colRange.setFormulasR1C1(formulas);
+  }
+}
+
+function resolveTemplateFormulasR1C1_(sheet, startRow, colCount, preserveCols) {
+  var resolved = new Array(colCount).fill("");
+  var preserveIndex = {};
+  Object.keys(preserveCols || {}).forEach(function (k) {
+    var idx = preserveCols[k];
+    if (idx !== undefined && idx >= 0) {
+      preserveIndex[idx] = true;
+    }
+  });
+
+  var scanRows = startRow - CFG.dataStartRow;
+  if (scanRows <= 0) {
+    return resolved;
+  }
+
+  var formulasGrid = sheet.getRange(CFG.dataStartRow, 1, scanRows, colCount).getFormulasR1C1();
+  for (var c = 0; c < colCount; c++) {
+    if (preserveIndex[c]) {
+      continue;
+    }
+    for (var r = formulasGrid.length - 1; r >= 0; r--) {
+      if (formulasGrid[r][c]) {
+        resolved[c] = formulasGrid[r][c];
+        break;
+      }
+    }
+  }
+  return resolved;
+}
+
+function isOutlierSheetCustomerId_(id, dataRowIndex) {
+  // id should track row order (row 2 => id 1). Ignore pasted/sync glitches far above row index.
+  return id > dataRowIndex + 50;
+}
+
+function isOutlierSheetCustId_(custId, dataRowIndex) {
+  return custId > CFG.customerSeedMinId + dataRowIndex + 50;
+}
+
+/**
+ * Assign sequential id / cust_id to kit_customers rows that have a name but blank IDs.
+ * Manual rows (typed or pasted without IDs) are not handled by the waybill append path.
+ */
+function backfillMissingCustomerIdsCore_(sheet, cuIdx) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < CFG.dataStartRow || cuIdx.id < 0 || cuIdx.custId < 0) {
+    return 0;
+  }
+
+  var colCount = sheet.getLastColumn();
+  var data = sheet.getRange(1, 1, lastRow, colCount).getValues();
+  var maxId = 0;
+  var maxCustId = CFG.customerSeedMinId;
+  var filled = 0;
+
+  for (var i = 1; i < data.length; i++) {
+    var id = toPositiveId_(data[i][cuIdx.id]);
+    var custId = toPositiveId_(data[i][cuIdx.custId]);
+    if (id !== "" && !isOutlierSheetCustomerId_(id, i) && id > maxId) maxId = id;
+    if (custId !== "" && !isOutlierSheetCustId_(custId, i) && custId > maxCustId) maxCustId = custId;
+  }
+
+  for (var r = 1; r < data.length; r++) {
+    var row = data[r];
+    if (isLikelyCorruptedCustomerRow_(row, cuIdx)) {
+      continue;
+    }
+
+    var hasName = cleanText_(row[cuIdx.name]) || cleanText_(row[cuIdx.surname]) || cleanText_(row[cuIdx.combined]);
+    if (!hasName) {
+      continue;
+    }
+
+    var existingId = toPositiveId_(row[cuIdx.id]);
+    var existingCustId = toPositiveId_(row[cuIdx.custId]);
+    if (existingId !== "" && isOutlierSheetCustomerId_(existingId, r)) {
+      existingId = "";
+    }
+    if (existingCustId !== "" && isOutlierSheetCustId_(existingCustId, r)) {
+      existingCustId = "";
+    }
+    if (existingId !== "" && existingCustId !== "") {
+      continue;
+    }
+
+    var sheetRow = CFG.dataStartRow + r - 1;
+    if (existingId === "") {
+      maxId += 1;
+      row[cuIdx.id] = maxId;
+      sheet.getRange(sheetRow, cuIdx.id + 1).setValue(maxId);
+      filled++;
+    }
+    if (existingCustId === "") {
+      maxCustId = Math.max(maxCustId + 1, CFG.customerSeedMinId);
+      row[cuIdx.custId] = maxCustId;
+      sheet.getRange(sheetRow, cuIdx.custId + 1).setValue(maxCustId);
+      if (existingId !== "") {
+        filled++;
+      }
+    }
+  }
+
+  return filled;
+}
+
+function repairMissingCustomerFormulasCore_(sheet, cuIdx) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < CFG.dataStartRow) {
+    return 0;
+  }
+
+  var colCount = sheet.getLastColumn();
+  var preserveCols = buildCustomerNamePreserveCols_(cuIdx);
+  var templateFormulas = resolveTemplateFormulasR1C1_(sheet, lastRow + 1, colCount, preserveCols);
+
+  var repaired = 0;
+  var preserveIndex = {};
+  Object.keys(preserveCols).forEach(function (k) {
+    var idx = preserveCols[k];
+    if (idx !== undefined && idx >= 0) {
+      preserveIndex[idx] = true;
+    }
+  });
+
+  var rowCount = lastRow - CFG.dataStartRow + 1;
+  var allData = sheet.getRange(CFG.dataStartRow, 1, rowCount, colCount).getValues();
+  for (var c = 0; c < colCount; c++) {
+    if (preserveIndex[c] || !templateFormulas[c]) {
+      continue;
+    }
+    var rng = sheet.getRange(CFG.dataStartRow, c + 1, rowCount, 1);
+    var values = rng.getValues();
+    var formulas = rng.getFormulasR1C1();
+    for (var r = 0; r < rowCount; r++) {
+      if (!rowHasCustomerContent_(allData[r], cuIdx)) {
+        continue;
+      }
+      if (!formulas[r][0] && cleanText_(values[r][0]) === "") {
+        sheet.getRange(CFG.dataStartRow + r, c + 1).setFormulaR1C1(templateFormulas[c]);
+        repaired++;
+      }
+    }
+  }
+  return repaired;
+}

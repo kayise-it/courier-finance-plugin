@@ -501,7 +501,8 @@ function plugin_Waybill_list_page()
                     ];
                     // Use standardized column definitions from KIT_Commons
                     // Waybill # automatically includes status badge below
-                    $columns = KIT_Commons::getColumns([
+                    // Total is admin/price-visible only (same policy as Trips).
+                    $column_keys = [
                         'waybill_no',
                         'mass_and_dimensions',
                         'destination' => [
@@ -535,8 +536,11 @@ function plugin_Waybill_list_page()
                                 return $html;
                             }
                         ],
-                        'total' => ['cell_class' => 'text-right text-xs whitespace-nowrap']
-                    ]);
+                    ];
+                    if (class_exists('KIT_User_Roles') && KIT_User_Roles::can_see_prices()) {
+                        $column_keys['total'] = ['cell_class' => 'text-right text-xs whitespace-nowrap'];
+                    }
+                    $columns = KIT_Commons::getColumns($column_keys);
                     // Insert Description column after Waybill # (so it appears as second data column)
                     $description_col = [
                         'label' => 'Description',

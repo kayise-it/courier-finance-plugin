@@ -110,7 +110,7 @@ function customStyling()
             );
         }
         if ($is_dashboard) {
-            wp_enqueue_style('kit-dashboard-css', plugin_dir_url(__FILE__) . 'assets/css/dashboard.css', array('kit-tailwindcss'), '1.13');
+            wp_enqueue_style('kit-dashboard-css', plugin_dir_url(__FILE__) . 'assets/css/dashboard.css', array('kit-tailwindcss'), '1.15');
             wp_enqueue_style('leaflet-css', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', array(), '1.9.4');
             wp_enqueue_script('leaflet-js', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', array(), '1.9.4', true);
             wp_enqueue_script('kit-dashboard-map', plugin_dir_url(__FILE__) . 'assets/js/dashboard-map.js', array('jquery', 'leaflet-js'), '1.1', true);
@@ -237,6 +237,7 @@ require_once plugin_dir_path(__FILE__) . 'includes/admin-menu.php';
 require_once plugin_dir_path(__FILE__) . 'includes/waybillmultiform.php';
 require_once plugin_dir_path(__FILE__) . 'includes/frontend/employee-portal.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-kit-booking-requests.php';
+require_once plugin_dir_path(__FILE__) . 'includes/class-kit-trip-requests.php';
 require_once plugin_dir_path(__FILE__) . 'includes/frontend/customer-portal-init.php';
 require_once plugin_dir_path(__FILE__) . 'includes/api/class-kit-rest-api.php';
 
@@ -245,6 +246,16 @@ require_once plugin_dir_path(__FILE__) . 'includes/api/class-kit-rest-api.php';
  */
 function kit_maintenance_mode_enabled() {
     return (bool) get_option('kit_maintenance_mode', 0);
+}
+
+/**
+ * Whether admin notification emails are enabled (Settings → Setup Seed).
+ * Off by default for offline / local testing.
+ */
+function kit_email_admin_notifications_enabled() {
+    return class_exists('KIT_Trip_Requests')
+        ? KIT_Trip_Requests::email_admin_enabled()
+        : (bool) get_option('kit_email_admin_notifications', 0);
 }
 
 /**
@@ -345,6 +356,9 @@ add_action('init', function() {
     if (class_exists('KIT_Deliveries')) {
         KIT_Deliveries::init();
     }
+    if (class_exists('KIT_Trip_Requests')) {
+        KIT_Trip_Requests::init();
+    }
     if (class_exists('KIT_Dashboard')) {
         KIT_Dashboard::init();
     }
@@ -378,9 +392,10 @@ register_activation_hook(__FILE__, function() {
     try {
         Database::activate();
         
-        // Schedule daily delivery status update cron job
+        // Deliveries are confirmed manually; make sure no legacy daily
+        // auto-"delivered" cron event is scheduled.
         if (class_exists('KIT_Deliveries')) {
-            KIT_Deliveries::schedule_daily_delivery_status_update();
+            KIT_Deliveries::unschedule_daily_delivery_status_update();
         }
 
         // Create employee portal pages (login + dashboard)
@@ -851,8 +866,8 @@ function my_plugin_enqueue_scripts()
         return;
     }
 
-    wp_enqueue_script('components', plugin_dir_url(__FILE__) . 'js/components.js', ['jquery'], '1.1.2', true);
-    wp_enqueue_script('kitscript', plugin_dir_url(__FILE__) . 'js/kitscript.js', ['jquery', 'components'], '1.0.8', true);
+    wp_enqueue_script('components', plugin_dir_url(__FILE__) . 'js/components.js', ['jquery'], '1.1.4', true);
+    wp_enqueue_script('kitscript', plugin_dir_url(__FILE__) . 'js/kitscript.js', ['jquery', 'components'], '1.0.12', true);
     wp_enqueue_script('waybill-pagination', plugin_dir_url(__FILE__) . '/js/waybill-pagination.js', ['jquery', 'components'], null, true);
 
     // Preload cities map for instant city dropdown updates without AJAX

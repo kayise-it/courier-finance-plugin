@@ -1234,6 +1234,9 @@ class KIT_Waybills
 
         // Process the form data
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            // No truck selected → warehouse. Lets staff capture waybills with an empty schedule.
+            self::apply_warehouse_when_no_truck($_POST);
+
             // Debug: Log the POST data (only in development)
             if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
                 error_log('Waybill form submission: ' . print_r($_POST, true));
@@ -2427,6 +2430,48 @@ class KIT_Waybills
     }
 
     /**
+     * Store a new waybill in the warehouse when no truck delivery is selected.
+     *
+     * Explicit warehouse (pending=1) always wins. If no truck is posted and
+     * nothing is scheduled, warehouse is applied so empty calendars do not
+     * block capture.
+     *
+     * @param array $data Posted form data (mutated: sets pending=1 when warehousing).
+     * @return bool True when the waybill should be warehoused.
+     */
+    public static function apply_warehouse_when_no_truck(array &$data)
+    {
+        if (isset($data['pending']) && (string) $data['pending'] === '1') {
+            return true;
+        }
+
+        $delivery_id = isset($data['delivery_id']) ? (int) $data['delivery_id'] : 0;
+        if ($delivery_id > 0) {
+            global $wpdb;
+            $ref = (string) $wpdb->get_var($wpdb->prepare(
+                "SELECT delivery_reference FROM {$wpdb->prefix}kit_deliveries WHERE id = %d",
+                $delivery_id
+            ));
+            if (strcasecmp(trim($ref), 'pending') !== 0) {
+                return false;
+            }
+            $data['pending'] = '1';
+            return true;
+        }
+
+        $scheduled = [];
+        if (class_exists('KIT_Deliveries') && method_exists('KIT_Deliveries', 'getScheduledDeliveries')) {
+            $scheduled = KIT_Deliveries::getScheduledDeliveries();
+        }
+        if (empty($scheduled)) {
+            $data['pending'] = '1';
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * Unified function to save or update a waybill
      * 
      * @param array $data Form data (typically $_POST)
@@ -2477,7 +2522,12 @@ class KIT_Waybills
         // ============================================
         // CREATE MODE: Warehouse handling
         // ============================================
-        $is_warehouse = isset($data['pending']) && $data['pending'] == 1;
+        $is_warehouse = false;
+        if ($is_create_mode) {
+            $is_warehouse = self::apply_warehouse_when_no_truck($data);
+        } else {
+            $is_warehouse = isset($data['pending']) && $data['pending'] == 1;
+        }
         if ($is_create_mode && $is_warehouse) {
             $warehouse_delivery_id = $wpdb->get_var("SELECT id FROM {$wpdb->prefix}kit_deliveries WHERE delivery_reference = 'pending' LIMIT 1");
             $warehouse_direction_id = $wpdb->get_var("SELECT id FROM {$wpdb->prefix}kit_shipping_directions WHERE origin_country_id = 1 AND destination_country_id = 1 LIMIT 1");
@@ -5631,6 +5681,9 @@ class KIT_Waybills
 
             case 'amount':
             case 'product_invoice_amount':
+                if (class_exists('KIT_User_Roles') && !KIT_User_Roles::can_see_prices()) {
+                    return '***';
+                }
                 return 'R' . ($value ? number_format($value, 2) : '0');
 
             case 'items':

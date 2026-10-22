@@ -3,6 +3,7 @@
 }
 // Access waybill items from global scope
 global $waybill_items;
+$can_see_prices = class_exists('KIT_User_Roles') && KIT_User_Roles::can_see_prices();
 ?>
 <div class="bg-white p-6">
     <?= KIT_Commons::prettyHeading([
@@ -19,7 +20,9 @@ global $waybill_items;
     <div id="kit-waybill-review" class="mb-6 border border-slate-200 bg-white">
         <div class="border-b border-slate-200 px-4 py-3">
             <h3 class="text-sm font-semibold text-slate-900">Review before create</h3>
-            <p class="mt-1 text-xs text-gray-500">Confirm customer, route, and billed freight before submitting.</p>
+            <p class="mt-1 text-xs text-gray-500"><?php echo $can_see_prices
+                ? 'Confirm customer, route, and billed freight before submitting.'
+                : 'Confirm customer and route before submitting.'; ?></p>
         </div>
 
         <div class="px-4 py-4 space-y-4">
@@ -57,6 +60,7 @@ global $waybill_items;
                 </div>
             </dl>
 
+            <?php if ($can_see_prices): ?>
             <div class="rounded border border-slate-200 bg-slate-50 px-3 py-3">
                 <div class="flex items-start justify-between gap-4">
                     <div class="min-w-0">
@@ -75,6 +79,20 @@ global $waybill_items;
                     </div>
                 </div>
             </div>
+            <?php else: ?>
+            <div class="rounded border border-slate-200 bg-slate-50 px-3 py-3">
+                <div class="text-right text-xs text-gray-500 space-y-1">
+                    <div>
+                        Parcels
+                        <span id="kit-review-parcels" class="ml-1 font-medium text-slate-900 tabular-nums">0</span>
+                    </div>
+                    <div>
+                        Misc items
+                        <span id="kit-review-misc" class="ml-1 font-medium text-slate-900 tabular-nums">0</span>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -118,6 +136,7 @@ global $waybill_items;
                 'title' => 'Items',
                 'subtotal_id' => 'waybill-subtotal-0',
                 'show_invoices' => true,
+                'show_subtotal' => $can_see_prices,
                 'waybill_no' => '' // Will be set dynamically from form via JavaScript
             ]);
             ?>

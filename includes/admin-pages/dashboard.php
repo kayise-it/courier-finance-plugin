@@ -10,6 +10,7 @@ require_once plugin_dir_path(__FILE__) . '../warehouse/warehouse-functions.php';
 
 $upcoming         = KIT_Dashboard::get_upcoming_deliveries(7);
 $recent_waybills  = KIT_Dashboard::get_recent_waybills(10);
+$can_see_prices   = class_exists('KIT_User_Roles') && KIT_User_Roles::can_see_prices();
 
 $deliveries_url = admin_url('admin.php?page=kit-deliveries');
 $waybills_url   = admin_url('admin.php?page=08600-waybill-manage');
@@ -19,7 +20,9 @@ $create_url     = admin_url('admin.php?page=08600-waybill-create');
     <?php
     echo KIT_Commons::showingHeader([
         'title' => 'Dashboard',
-        'desc'  => 'Overview of waybills, warehouse, deliveries and revenue',
+        'desc'  => $can_see_prices
+            ? 'Overview of waybills, warehouse, deliveries and revenue'
+            : 'Overview of waybills, warehouse and deliveries',
         'icon'  => KIT_Commons::icon('truck'),
         'content' => KIT_Commons::kitButton([
             'href' => $create_url,
@@ -37,7 +40,7 @@ $create_url     = admin_url('admin.php?page=08600-waybill-create');
                 echo KIT_QuickStats::render_for_context(KIT_QuickStats::CONTEXT_ADMIN_DASHBOARD, []);
                 ?>
             </div>
-            <?php echo KIT_Dashboard::render_month_band([]); ?>
+            <?php echo KIT_Dashboard::render_month_band(['include_revenue' => $can_see_prices]); ?>
         </section>
 
         <?php echo KIT_Dashboard::render_delivery_pipeline_strip([]); ?>

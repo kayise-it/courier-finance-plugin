@@ -1036,6 +1036,9 @@ class Courier_Google_Sheets_Sync {
                             $exists = $wpdb->get_var($wpdb->prepare("SELECT cust_id FROM {$prefix}kit_customers WHERE name = %s AND surname = %s", $name, $surname));
                         }
                         if ($exists) continue;
+                        if (class_exists('KIT_Customers') && KIT_Customers::customer_name_surname_exists($name, $surname, null)) {
+                            continue;
+                        }
                         // Sheet columns: A=id, B=cust_id, C=name, D=surname, E=cell, F=telephone, G=email_address, H=country_id, I=city_id, J=vat_number, K=address, L=company_id
                         $company_id_raw = trim((string) ($row[11] ?? ''));
                         $company_id = is_numeric($company_id_raw) ? (int) $company_id_raw : 0;

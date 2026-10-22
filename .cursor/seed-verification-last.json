@@ -1,0 +1,130 @@
+{
+    "generated_at": "2026-10-22T07:41:49+00:00",
+    "expected": {
+        "totals": {
+            "waybills": 1180,
+            "individuals": 246,
+            "companies": 57,
+            "unassigned": 1
+        },
+        "by_waybill_count": 1180,
+        "by_party_count": 303
+    },
+    "actual": {
+        "totals": {
+            "waybills": 1180,
+            "individuals": 249,
+            "companies": 50,
+            "unassigned": 1
+        },
+        "by_waybill_count": 1180,
+        "by_party_count": 299,
+        "blank_individuals": []
+    },
+    "diff": {
+        "ok": false,
+        "mismatch_count": 5,
+        "mismatches": [
+            {
+                "waybill_no": "",
+                "reason": "totals_mismatch_individuals",
+                "expected": {
+                    "waybills": 1180,
+                    "individuals": 246,
+                    "companies": 57,
+                    "unassigned": 1
+                },
+                "actual": {
+                    "waybills": 1180,
+                    "individuals": 249,
+                    "companies": 50,
+                    "unassigned": 1
+                }
+            }
+        ],
+        "missing": [],
+        "extra": [],
+        "party_count_mismatches": [
+            {
+                "party_key": "person:grumeti reserves limited",
+                "label": "Grumeti Reserves_Limited",
+                "expected_count": 1,
+                "actual_count": 0,
+                "expected_waybill_nos": [
+                    "5517"
+                ],
+                "actual_waybill_nos": [],
+                "merged_identities": [
+                    "person:grumeti reserves limited"
+                ]
+            },
+            {
+                "party_key": "person:silverlands ndolela ltd",
+                "label": "Silverlands Ndolela_Ltd",
+                "expected_count": 1,
+                "actual_count": 0,
+                "expected_waybill_nos": [
+                    "5589"
+                ],
+                "actual_waybill_nos": [],
+                "merged_identities": [
+                    "person:silverlands ndolela ltd"
+                ]
+            },
+            {
+                "party_key": "person:8916",
+                "label": "",
+                "expected_count": 0,
+                "actual_count": 1,
+                "expected_waybill_nos": [],
+                "actual_waybill_nos": [
+                    "5517"
+                ],
+                "merged_identities": [
+                    "person:8916"
+                ]
+            },
+            {
+                "party_key": "person:8917",
+                "label": "",
+                "expected_count": 0,
+                "actual_count": 1,
+                "expected_waybill_nos": [],
+                "actual_waybill_nos": [
+                    "5589"
+                ],
+                "merged_identities": [
+                    "person:8917"
+                ]
+            }
+        ],
+        "blank_individuals": [],
+        "totals": {
+            "expected": {
+                "waybills": 1180,
+                "individuals": 246,
+                "companies": 57,
+                "unassigned": 1
+            },
+            "actual": {
+                "waybills": 1180,
+                "individuals": 249,
+                "companies": 50,
+                "unassigned": 1
+            }
+        },
+        "mismatches_truncated": 0,
+        "missing_truncated": 0,
+        "extra_truncated": 0,
+        "party_count_mismatches_truncated": 0
+    },
+    "charges": {
+        "ok": true,
+        "checked": 1180,
+        "mismatch_count": 0,
+        "mismatches": [],
+        "rule": "kit_waybills AB charge_basis selects Z mass_charge or AA volume_charge as billed total (product_invoice_amount)"
+    },
+    "ok": false,
+    "mismatch_count": 5
+}
