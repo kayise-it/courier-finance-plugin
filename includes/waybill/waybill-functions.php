@@ -737,19 +737,30 @@ class KIT_Waybills
             KIT_Commons::redirectAfterAction();
         }
 
-        // Update warehouse tracking status
+        // Put the waybill on the truck: set the delivery, take it out of the
+        // warehouse and align its status with the delivery's status.
+        // (Only kit_waybills columns that are guaranteed to exist are written;
+        // assigned_by/assigned_at are not part of the waybill schema.)
+        $delivery_status = $wpdb->get_var($wpdb->prepare(
+            "SELECT status FROM {$wpdb->prefix}kit_deliveries WHERE id = %d",
+            $delivery_id
+        ));
+        $mapped_status = class_exists('KIT_Deliveries')
+            ? KIT_Deliveries::map_delivery_status_to_waybill_status((string) $delivery_status)
+            : 'assigned';
         $result = $wpdb->update(
             $wpdb->prefix . 'kit_waybills',
             [
-                'status' => 'assigned',
+                'status' => $mapped_status,
                 'delivery_id' => $delivery_id,
-                'assigned_by' => $assigned_by,
-                'assigned_at' => current_time('mysql')
+                'warehouse' => 0,
+                'last_updated_at' => current_time('mysql'),
+                'last_updated_by' => $assigned_by
             ],
-            ['waybill_no' => $waybill_no]
+            ['id' => (int) $warehouse_waybill->id]
         );
 
-        if (!$result) {
+        if ($result === false) {
             error_log("Failed to assign waybill {$waybill_no} to delivery {$delivery_id}: " . $wpdb->last_error);
             KIT_Commons::queueNotice('error', 'Assignment failed.', 'The database rejected the update, so nothing was saved.');
         } else {
@@ -823,47 +834,59 @@ class KIT_Waybills
         $cities_table = $prefix . 'kit_operating_cities';
 
         // Get all waybills for this delivery (parcels are handled via parcel_id, not consolidated_waybill_id)
+        // LEFT JOIN customers/companies on purpose: a waybill whose customer_id is
+        // empty or dangling (e.g. company-only bookings, seeded rows) must still
+        // appear on the truck. An inner join here silently hid such waybills
+        // from the delivery list, the truck PDF and the waybill counts.
+        $companies_table = $prefix . 'kit_company_customers';
         $all_waybills = $wpdb->get_results($wpdb->prepare(
-            "SELECT 
-                wb.id as waybill_id, 
-                wb.waybill_no as waybill_no, 
-                wb.direction_id, 
-                wb.delivery_id, 
-                wb.customer_id, 
-                wb.city_id, 
-                wb.approval, 
-                wb.approval_userid, 
-                wb.product_invoice_number, 
-                wb.product_invoice_amount, 
-                wb.mass_charge, 
-                wb.volume_charge, 
-                wb.charge_basis, 
-                wb.miscellaneous, 
-                wb.tracking_number, 
-                wb.created_by, 
-                wb.last_updated_by, 
-                wb.status, 
-                wb.status_userid, 
-                wb.created_at, 
-                wb.last_updated_at, 
-                wb.item_length, 
-                wb.item_width, 
-                wb.item_height, 
-                wb.total_mass_kg, 
+            "SELECT
+                wb.id as waybill_id,
+                wb.waybill_no as waybill_no,
+                wb.direction_id,
+                wb.delivery_id,
+                wb.customer_id,
+                wb.company_id,
+                wb.city_id,
+                wb.approval,
+                wb.approval_userid,
+                wb.product_invoice_number,
+                wb.product_invoice_amount,
+                wb.mass_charge,
+                wb.volume_charge,
+                wb.charge_basis,
+                wb.miscellaneous,
+                wb.tracking_number,
+                wb.created_by,
+                wb.last_updated_by,
+                wb.status,
+                wb.status_userid,
+                wb.created_at,
+                wb.last_updated_at,
+                wb.item_length,
+                wb.item_width,
+                wb.item_height,
+                wb.total_mass_kg,
                 wb.total_volume,
                 wb.description,
                 wb.parcel_id,
-                c.name as customer_name, 
-                c.surname as customer_surname, 
-                c.cell as customer_cell, 
-                c.email_address as customer_email, 
-                c.address as customer_address
-            FROM $deliveries_table d, $waybill_table as wb, $customers_table as c 
-            WHERE d.id = wb.delivery_id 
-            AND wb.customer_id = c.cust_id 
-            AND d.id = %d",
+                COALESCE(NULLIF(c.name, ''), NULLIF(co.company_name, ''), NULLIF(cust_co.company_name, ''), '') as customer_name,
+                COALESCE(c.surname, '') as customer_surname,
+                COALESCE(NULLIF(c.cell, ''), NULLIF(co.cell, ''), NULLIF(cust_co.cell, ''), '') as customer_cell,
+                COALESCE(NULLIF(c.email_address, ''), NULLIF(co.email_address, ''), NULLIF(cust_co.email_address, ''), '') as customer_email,
+                COALESCE(NULLIF(c.address, ''), NULLIF(co.address, ''), NULLIF(cust_co.address, ''), '') as customer_address,
+                COALESCE(NULLIF(co.company_name, ''), NULLIF(cust_co.company_name, ''), '') as company_name
+            FROM $deliveries_table d
+            JOIN $waybill_table as wb ON wb.delivery_id = d.id
+            LEFT JOIN $customers_table as c ON wb.customer_id = c.cust_id
+            LEFT JOIN $companies_table as co ON wb.company_id = co.company_id
+            LEFT JOIN $companies_table as cust_co ON c.company_id = cust_co.company_id
+            WHERE d.id = %d",
             $deliveryid
         ), ARRAY_A);
+        if (!is_array($all_waybills)) {
+            $all_waybills = [];
+        }
 
         // Sort by created_at DESC
         usort($all_waybills, function ($a, $b) {
@@ -2546,8 +2569,21 @@ class KIT_Waybills
         // ============================================
         $cust_id = isset($data['cust_id']) ? intval($data['cust_id']) : 0;
         $customer_select = isset($data['customer_select']) ? sanitize_text_field($data['customer_select']) : '';
-        $customer_name = isset($data['customer_name']) ? sanitize_text_field(trim($data['customer_name'])) : '';
-        $customer_surname = isset($data['customer_surname']) ? sanitize_text_field(trim($data['customer_surname'])) : '';
+        // The Edit Waybill customer form (theForm) posts "name"/"surname", while the
+        // create/multiform flows post "customer_name"/"customer_surname". Accept both,
+        // otherwise edits to the customer's name are silently discarded on save.
+        $customer_name = '';
+        if (isset($data['customer_name']) && trim((string) $data['customer_name']) !== '') {
+            $customer_name = sanitize_text_field(trim((string) $data['customer_name']));
+        } elseif (isset($data['name'])) {
+            $customer_name = sanitize_text_field(trim((string) $data['name']));
+        }
+        $customer_surname = '';
+        if (isset($data['customer_surname']) && trim((string) $data['customer_surname']) !== '') {
+            $customer_surname = sanitize_text_field(trim((string) $data['customer_surname']));
+        } elseif (isset($data['surname'])) {
+            $customer_surname = sanitize_text_field(trim((string) $data['surname']));
+        }
         $company_name = isset($data['company_name']) ? sanitize_text_field(trim($data['company_name'])) : '';
         // Handle email - convert empty string to null
         $email_address = isset($data['email_address']) && trim($data['email_address']) !== ''
@@ -2654,16 +2690,76 @@ class KIT_Waybills
         }
 
         // UPDATE MODE: Handle customer change
-        if ($is_update_mode && $customer_id > 0 && $customer_id != $existing->waybill['customer_id']) {
-            $customers_table = $wpdb->prefix . 'kit_customers';
-            $customer_update_data = [];
-            if (!empty($customer_name)) $customer_update_data['name'] = $customer_name;
-            if (!empty($customer_surname)) $customer_update_data['surname'] = $customer_surname;
-            if (!empty($cell)) $customer_update_data['cell'] = $cell;
-            if (!empty($address)) $customer_update_data['address'] = $address;
-            if (!empty($email_address)) $customer_update_data['email_address'] = $email_address;
-            if (!empty($customer_update_data)) {
-                $wpdb->update($customers_table, $customer_update_data, ['cust_id' => $customer_id], array_fill(0, count($customer_update_data), '%s'), ['%d']);
+        // NOTE: Editing the details of the *same* customer is applied after the
+        // waybill save by sync_customer_profile_from_waybill_post() below, and
+        // re-linking to a different customer is applied via $waybill_data.
+        // We must NOT overwrite a different customer's profile with the fields
+        // that were displayed for the previous customer.
+        //
+        // UPDATE MODE: Attach a customer when the waybill has none (or a dangling one).
+        // Seeded/company-only waybills can have customer_id empty or pointing at a
+        // customer row that no longer exists. Previously the details typed into
+        // Edit Customer were discarded, the waybill stayed customer-less, and the
+        // truck list (inner join on kit_customers) then hid the waybill entirely.
+        if ($is_update_mode && $customer_id > 0) {
+            $customer_exists = $wpdb->get_var($wpdb->prepare(
+                "SELECT cust_id FROM {$wpdb->prefix}kit_customers WHERE cust_id = %d LIMIT 1",
+                $customer_id
+            ));
+            if (!$customer_exists) {
+                $customer_id = 0;
+            }
+        }
+        if ($is_update_mode && $customer_id <= 0) {
+            $has_person = ($customer_name !== '' || $customer_surname !== '');
+            $has_company = $company_name !== ''
+                && (!class_exists('KIT_Company_Customers') || !KIT_Company_Customers::is_placeholder_company($company_name));
+            if ($has_person) {
+                // Re-use an exact existing match before creating anything new.
+                $matched_id = (int) $wpdb->get_var($wpdb->prepare(
+                    "SELECT cust_id FROM {$wpdb->prefix}kit_customers
+                     WHERE LOWER(TRIM(name)) = LOWER(%s) AND LOWER(TRIM(surname)) = LOWER(%s)
+                     ORDER BY cust_id ASC LIMIT 1",
+                    $customer_name,
+                    $customer_surname
+                ));
+                if ($matched_id > 0) {
+                    $customer_id = $matched_id;
+                } else {
+                    $country_raw = isset($data['country_id']) ? $data['country_id'] : (isset($data['origin_country']) ? $data['origin_country'] : 0);
+                    $city_raw = isset($data['city_id']) ? $data['city_id'] : (isset($data['origin_city']) ? $data['origin_city'] : 0);
+                    $created_id = class_exists('KIT_Customers') ? KIT_Customers::save_customer([
+                        'customer_name' => $customer_name,
+                        'customer_surname' => $customer_surname,
+                        'cell' => $cell,
+                        'address' => $address,
+                        'company_name' => $company_name,
+                        'email_address' => $email_address,
+                        'country_id' => !empty($country_raw) ? intval($country_raw) : 0,
+                        'city_id' => !empty($city_raw) ? intval($city_raw) : 0,
+                    ]) : false;
+                    if ($created_id && !is_wp_error($created_id)) {
+                        $customer_id = (int) $created_id;
+                        $new_customer_created_in_request = true;
+                    } else {
+                        $dup_msg = class_exists('KIT_Customers') ? KIT_Customers::get_last_customer_validation_error() : '';
+                        return new WP_Error('customer_error', $dup_msg ?: 'Could not save the customer details for this waybill. If this person already exists, no changes were made — please check the customer name and try again.');
+                    }
+                }
+            } elseif ($has_company && class_exists('KIT_Company_Customers')) {
+                // Company-only waybill: make sure the company exists and is linked.
+                $ensured_company_id = (int) KIT_Company_Customers::ensure_company($company_name, [
+                    'cell' => $cell,
+                    'telephone' => $data['telephone'] ?? '',
+                    'email' => $email_address ?? '',
+                    'address' => $address,
+                    'vat_number' => $data['vat_number'] ?? '',
+                    'country_id' => $data['country_id'] ?? $data['origin_country'] ?? null,
+                    'city_id' => $data['city_id'] ?? $data['origin_city'] ?? null,
+                ]);
+                if ($ensured_company_id > 0) {
+                    $company_id = $ensured_company_id;
+                }
             }
         }
 

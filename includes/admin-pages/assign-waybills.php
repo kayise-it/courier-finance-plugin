@@ -19,13 +19,23 @@ if (isset($_POST['assign_waybills']) && wp_verify_nonce($_POST['nonce'], 'assign
     $delivery_id = intval($_POST['delivery_id']);
     
     if (!empty($waybill_ids) && $delivery_id > 0) {
+        // Align the waybill status with the truck it is loaded onto, and take it
+        // out of the warehouse (warehouse = 0) so it belongs to the delivery only.
+        $delivery_status = $wpdb->get_var($wpdb->prepare(
+            "SELECT status FROM {$wpdb->prefix}kit_deliveries WHERE id = %d",
+            $delivery_id
+        ));
+        $mapped_status = class_exists('KIT_Deliveries')
+            ? KIT_Deliveries::map_delivery_status_to_waybill_status((string) $delivery_status)
+            : 'assigned';
         $updated = 0;
         foreach ($waybill_ids as $waybill_id) {
             $result = $wpdb->update(
                 $wpdb->prefix . 'kit_waybills',
                 [
                     'delivery_id' => $delivery_id,
-                    'status' => 'assigned',
+                    'warehouse' => 0,
+                    'status' => $mapped_status,
                     'last_updated_at' => current_time('mysql'),
                     'last_updated_by' => get_current_user_id()
                 ],
@@ -63,9 +73,13 @@ $warehouse_waybills_query = "
 ";
 $warehouse_waybills = $wpdb->get_results($warehouse_waybills_query);
 
-// Get available deliveries (excluding warehouse delivery)
+// Get available deliveries (excluding the warehouse/pending delivery).
+// Past and already-delivered trips are included so staff can correct a
+// waybill onto the truck it actually travelled on (e.g. the 2 Oct trip);
+// previously only 'scheduled' trips were offered, so such assignments
+// were impossible from this screen.
 $deliveries_query = "
-    SELECT d.*, 
+    SELECT d.*,
            sd.description as route_description,
            oc1.country_name as origin_country,
            oc2.country_name as destination_country
@@ -73,8 +87,11 @@ $deliveries_query = "
     LEFT JOIN {$wpdb->prefix}kit_shipping_directions sd ON d.direction_id = sd.id
     LEFT JOIN {$wpdb->prefix}kit_operating_countries oc1 ON sd.origin_country_id = oc1.id
     LEFT JOIN {$wpdb->prefix}kit_operating_countries oc2 ON sd.destination_country_id = oc2.id
-    WHERE d.status = 'scheduled' AND d.id != 1
-    ORDER BY d.dispatch_date ASC
+    WHERE d.status IN ('scheduled', 'unconfirmed', 'in_transit', 'delivered')
+      AND d.delivery_reference != 'pending'
+      AND d.id != 1
+    ORDER BY d.dispatch_date DESC, d.id DESC
+    LIMIT 100
 ";
 $available_deliveries = $wpdb->get_results($deliveries_query);
 

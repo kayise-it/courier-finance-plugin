@@ -525,43 +525,27 @@ class KIT_Warehouse
         global $wpdb;
         $deliveries_table = $wpdb->prefix . 'kit_deliveries';
         
-        if (empty($destination_city)) {
-            // Match by country only
-            $deliveries = $wpdb->get_results($wpdb->prepare(
-                "SELECT d.id as delivery_id, d.delivery_reference as delivery_name, 
-                        oc2.country_name as destination_country, 
-                        '' as destination_city, 
-                        d.dispatch_date 
-                 FROM $deliveries_table d
-                 LEFT JOIN {$wpdb->prefix}kit_shipping_directions sd ON d.direction_id = sd.id
-                 LEFT JOIN {$wpdb->prefix}kit_operating_countries oc2 ON sd.destination_country_id = oc2.id
-                 WHERE oc2.country_name = %s 
-                 AND oc2.is_active = 1
-                 AND d.dispatch_date >= CURDATE()
-                 AND d.status = 'scheduled'
-                 AND d.delivery_reference != 'pending'
-                 ORDER BY d.dispatch_date ASC",
-                $destination_country
-            ));
-        } else {
-            // Match by country and city (city matching not available in current schema)
-            $deliveries = $wpdb->get_results($wpdb->prepare(
-                "SELECT d.id as delivery_id, d.delivery_reference as delivery_name, 
-                        oc2.country_name as destination_country, 
-                        '' as destination_city, 
-                        d.dispatch_date 
-                 FROM $deliveries_table d
-                 LEFT JOIN {$wpdb->prefix}kit_shipping_directions sd ON d.direction_id = sd.id
-                 LEFT JOIN {$wpdb->prefix}kit_operating_countries oc2 ON sd.destination_country_id = oc2.id
-                 WHERE oc2.country_name = %s 
-                 AND oc2.is_active = 1
-                 AND d.dispatch_date >= CURDATE()
-                 AND d.status = 'scheduled'
-                 AND d.delivery_reference != 'pending'
-                 ORDER BY d.dispatch_date ASC",
-                $destination_country
-            ));
-        }
+        // Include past and already-dispatched/delivered trips as well as upcoming
+        // scheduled ones: staff must be able to correct a waybill onto the truck
+        // it actually travelled on (e.g. the 2 Oct trip) after the fact. The old
+        // filter (status = 'scheduled' AND dispatch_date >= today) made such
+        // trips impossible to select. Newest first, capped for dropdown sanity.
+        $deliveries = $wpdb->get_results($wpdb->prepare(
+            "SELECT d.id as delivery_id, d.delivery_reference as delivery_name,
+                    oc2.country_name as destination_country,
+                    '' as destination_city,
+                    d.dispatch_date
+             FROM $deliveries_table d
+             LEFT JOIN {$wpdb->prefix}kit_shipping_directions sd ON d.direction_id = sd.id
+             LEFT JOIN {$wpdb->prefix}kit_operating_countries oc2 ON sd.destination_country_id = oc2.id
+             WHERE oc2.country_name = %s
+             AND oc2.is_active = 1
+             AND d.status IN ('scheduled', 'unconfirmed', 'in_transit', 'delivered')
+             AND d.delivery_reference != 'pending'
+             ORDER BY d.dispatch_date DESC, d.id DESC
+             LIMIT 100",
+            $destination_country
+        ));
         
         return $deliveries;
     }
