@@ -566,11 +566,19 @@ $route_right = $route_right_parts ? implode(' &middot; ', array_map('esc_html', 
     </tr>
   </thead>
   <tbody>
-    <!-- Transport line -->
+    <!-- Transport line: waybill description when set, else Transport — Mass/Volume -->
+    <?php
+    if (!isset($primary_line_description) || $primary_line_description === '') {
+      $primary_line_description = 'Transport — ' . $charge_type . ' Charge';
+    }
+    $transport_line_meta = (!empty($waybill_description))
+      ? ('Transport — ' . $charge_type . ' Charge')
+      : 'Cross-border road freight';
+    ?>
     <tr class="line-row">
       <td>
-        <span class="line-title">Transport &mdash; <?= esc_html($charge_type) ?> Charge</span>
-        <span class="line-meta">Cross-border road freight</span>
+        <span class="line-title"><?= esc_html($primary_line_description) ?></span>
+        <span class="line-meta"><?= esc_html($transport_line_meta) ?></span>
       </td>
       <td class="center"><?= esc_html($transport_qty_display) ?></td>
       <td class="num"><?= esc_html($transport_rate_display) ?></td>

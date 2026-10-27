@@ -594,12 +594,11 @@ if (!defined('ABSPATH')) {
         </tr>
         
         <?php
-        $charge_type_text = $charge_type . ' Charge';
-        // Client request (Mel, 2026-08-05): goods descriptions must not appear on
-        // the invoice — the customer is billed for transport, not told back what
-        // they shipped. The description still lives on the waybill and the
-        // waybill PDF; this is the invoice only.
-        $primary_line_description = 'Transport - ' . $charge_type_text;
+        // Waybill description on the Description column when present; otherwise
+        // Transport - Mass/Volume Charge. Item/goods lines stay off the invoice.
+        if (!isset($primary_line_description) || $primary_line_description === '') {
+          $primary_line_description = 'Transport - ' . $charge_type . ' Charge';
+        }
         ?>
         <!-- Transport / primary charge line -->
         <tr>

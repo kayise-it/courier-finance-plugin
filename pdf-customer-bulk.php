@@ -77,6 +77,9 @@ if (! class_exists('KIT_Waybills')) {
 if (! class_exists('KIT_Customers')) {
     require_once __DIR__ . '/includes/customers/customers-functions.php';
 }
+if (! function_exists('kit_waybill_pdf_resolve_waybill_description')) {
+    require_once __DIR__ . '/includes/pdf/kit-waybill-pdf-invoice.php';
+}
 
 // Get customer details (required for both modes)
 if ($customer_id <= 0) {
@@ -247,12 +250,20 @@ foreach ($waybills_data as $wb) {
         $total_volume += $charge_quantity;
     }
     
+    // Prefer waybill description on the Item/Description line; fall back to Transport label.
+    $wb_desc = function_exists('kit_waybill_pdf_resolve_waybill_description')
+        ? kit_waybill_pdf_resolve_waybill_description($waybill)
+        : trim((string) ($waybill->description ?? ''));
+    $transport_label = 'Transport - ' . ucfirst($charge_basis) . ' Charge';
+    $charge_type_label = function_exists('kit_waybill_pdf_invoice_line_description')
+        ? kit_waybill_pdf_invoice_line_description($wb_desc, $transport_label)
+        : ($wb_desc !== '' ? $wb_desc : $transport_label);
+
     // Store individual waybill transport charge
     $waybill_transports[] = [
         'waybill_no' => $waybill_no,
         'charge_basis' => $charge_basis,
-        // Mel (2026-08-05): generic transport label only — no goods description.
-        'charge_type' => 'Transport - ' . ucfirst($charge_basis) . ' Charge',
+        'charge_type' => $charge_type_label,
         'amount' => $charge_amount,
         'rate' => $charge_rate,
         'quantity' => $charge_quantity,
@@ -672,9 +683,6 @@ ob_start();
           </td>
         </tr>
       </table>
-
-      <!-- DESCRIPTION intentionally omitted (Mel, 2026-08-05): goods descriptions
-           stay on the waybill, not the customer invoice. -->
 
       <!-- BULK INVOICE SUMMARY -->
       <table width="100%" cellpadding="5" cellspacing="0" style="margin-bottom:12px; border-collapse:collapse;">

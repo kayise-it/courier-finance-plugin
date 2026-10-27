@@ -270,8 +270,14 @@ $pay_ref = (isset($invoice_number) && trim((string) $invoice_number) !== '')
     <th class="col-rate" align="right">Rate</th>
     <th class="col-amt" align="right">Amount (R)</th>
   </tr>
+  <?php
+  // Waybill description in Description when set; else Transport - Mass/Volume Charge.
+  if (!isset($primary_line_description) || $primary_line_description === '') {
+    $primary_line_description = 'Transport - ' . $charge_type . ' Charge';
+  }
+  ?>
   <tr>
-    <td class="col-desc">Transport - <?= esc_html($charge_type) ?> Charge</td>
+    <td class="col-desc"><?= esc_html($primary_line_description) ?></td>
     <td class="col-qty" align="center"><?= esc_html($transport_qty_display) ?></td>
     <td class="col-rate" align="right"><?= esc_html($transport_rate_display) ?></td>
     <td class="col-amt" align="right">R <?= number_format($charge_amount, 2) ?></td>

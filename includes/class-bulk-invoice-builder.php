@@ -12,6 +12,13 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+if (!function_exists('kit_waybill_pdf_resolve_waybill_description')) {
+    $kit_invoice_helpers = dirname(__FILE__) . '/pdf/kit-waybill-pdf-invoice.php';
+    if (is_file($kit_invoice_helpers)) {
+        require_once $kit_invoice_helpers;
+    }
+}
+
 class Bulk_Invoice_Builder {
 
     /**
@@ -158,10 +165,18 @@ class Bulk_Invoice_Builder {
                 $total_volume += $charge_quantity;
             }
 
+            $wb_desc = function_exists('kit_waybill_pdf_resolve_waybill_description')
+                ? kit_waybill_pdf_resolve_waybill_description($waybill)
+                : trim((string) ($waybill->description ?? ''));
+            $transport_label = 'Transport - ' . ucfirst($charge_basis) . ' Charge';
+            $charge_type = function_exists('kit_waybill_pdf_invoice_line_description')
+                ? kit_waybill_pdf_invoice_line_description($wb_desc, $transport_label)
+                : ($wb_desc !== '' ? $wb_desc : $transport_label);
+
             $transport_rows[] = [
                 'waybill_no'   => $waybill_no,
-                // Mel (2026-08-05): generic transport label only — no goods description.
-                'charge_type'  => 'Transport - ' . ucfirst($charge_basis) . ' Charge',
+                // Prefer waybill description; fall back to Transport - Mass/Volume.
+                'charge_type'  => $charge_type,
                 'quantity'     => $charge_quantity,
                 'unit'         => $charge_unit,
                 'unit_rate'    => $charge_rate,

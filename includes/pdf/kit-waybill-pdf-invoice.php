@@ -370,10 +370,7 @@ function kit_waybill_pdf_prepare_invoice_context(int $waybill_no): array
     $terms_html = trim($kit_terms) !== '' ? $kit_terms : $default_terms_html;
 
     // Waybill description (matches UI: description column, then miscellaneous snapshot)
-    $waybill_description = trim((string) ($waybill->description ?? ''));
-    if ($waybill_description === '' && is_array($misc_data) && isset($misc_data['others']['waybill_description'])) {
-        $waybill_description = trim((string) $misc_data['others']['waybill_description']);
-    }
+    $waybill_description = kit_waybill_pdf_resolve_waybill_description($waybill, is_array($misc_data) ? $misc_data : null);
 
     // Build display values used by the template
     $invoice_number = isset($waybill->product_invoice_number) ? trim((string) $waybill->product_invoice_number) : '';
@@ -400,6 +397,11 @@ function kit_waybill_pdf_prepare_invoice_context(int $waybill_no): array
 
     $charge_type = ($charge_basis === 'mass') ? 'Mass' : 'Volume';
     $charge_amount = ($charge_basis === 'mass') ? floatval($waybill->mass_charge ?? 0) : floatval($waybill->volume_charge ?? 0);
+    $transport_fallback_label = 'Transport - ' . $charge_type . ' Charge';
+    $primary_line_description = kit_waybill_pdf_invoice_line_description(
+        $waybill_description,
+        $transport_fallback_label
+    );
 
     $mass_kg = isset($waybill->total_mass_kg) ? floatval($waybill->total_mass_kg) : 0.0;
     $length_cm = isset($waybill->item_length) ? floatval($waybill->item_length) : 0.0;
@@ -500,6 +502,8 @@ function kit_waybill_pdf_prepare_invoice_context(int $waybill_no): array
         'approval_status_label' => $approval_status_label,
         'charge_type' => $charge_type,
         'charge_amount' => $charge_amount,
+        'transport_fallback_label' => $transport_fallback_label,
+        'primary_line_description' => $primary_line_description,
         'mass_kg' => $mass_kg,
         'length_cm' => $length_cm,
         'width_cm' => $width_cm,
@@ -539,6 +543,50 @@ function kit_waybill_pdf_normalize_charge_basis($basis): string
     }
 
     return $basis;
+}
+
+/**
+ * Waybill-level description for invoices (DB column, then misc snapshot).
+ * Not item/goods lines — those stay off the invoice.
+ *
+ * @param object|array $waybill
+ * @param array|null   $misc_data Decoded miscellaneous, if already available.
+ */
+function kit_waybill_pdf_resolve_waybill_description($waybill, $misc_data = null): string
+{
+    $desc = '';
+    if (is_object($waybill)) {
+        $desc = trim((string) ($waybill->description ?? ''));
+        $raw_misc = $waybill->miscellaneous ?? null;
+    } elseif (is_array($waybill)) {
+        $desc = trim((string) ($waybill['description'] ?? ''));
+        $raw_misc = $waybill['miscellaneous'] ?? null;
+    } else {
+        return '';
+    }
+
+    if ($desc !== '') {
+        return $desc;
+    }
+
+    if ($misc_data === null && $raw_misc !== null && $raw_misc !== '') {
+        $misc_data = is_array($raw_misc) ? $raw_misc : maybe_unserialize($raw_misc);
+    }
+
+    if (is_array($misc_data) && !empty($misc_data['others']['waybill_description'])) {
+        return trim((string) $misc_data['others']['waybill_description']);
+    }
+
+    return '';
+}
+
+/**
+ * Invoice Description column: prefer waybill description; fall back to transport label.
+ */
+function kit_waybill_pdf_invoice_line_description(string $waybill_description, string $transport_fallback): string
+{
+    $desc = trim($waybill_description);
+    return $desc !== '' ? $desc : $transport_fallback;
 }
 
 function kit_waybill_pdf_render_invoice_html(int $waybill_no, ?string $template_id = null): string

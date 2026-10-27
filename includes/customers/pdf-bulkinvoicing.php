@@ -44,6 +44,12 @@ if (! class_exists('KIT_Waybills')) {
         require_once $kit_waybills_file;
     }
 }
+if (! function_exists('kit_waybill_pdf_resolve_waybill_description')) {
+    $kit_invoice_helpers = dirname(__DIR__) . '/pdf/kit-waybill-pdf-invoice.php';
+    if (file_exists($kit_invoice_helpers)) {
+        require_once $kit_invoice_helpers;
+    }
+}
 
 // Load user roles class if not already loaded
 if (! class_exists('KIT_User_Roles')) {
@@ -793,8 +799,13 @@ if (isset($_GET['selected_ids']) || isset($_POST['bulk_ids'])) {
                   $vc = floatval($waybill->volume_charge ?? 0);
                   $bulk_basis = ($mc >= $vc) ? 'mass' : 'volume';
               }
-              // Mel (2026-08-05): generic transport label only — no goods description.
-              $bulk_transport_label = 'Transport - ' . ucfirst($bulk_basis) . ' Charge';
+              $bulk_transport_fallback = 'Transport - ' . ucfirst($bulk_basis) . ' Charge';
+              $bulk_wb_desc = function_exists('kit_waybill_pdf_resolve_waybill_description')
+                  ? kit_waybill_pdf_resolve_waybill_description($waybill)
+                  : trim((string) ($waybill->description ?? ''));
+              $bulk_transport_label = function_exists('kit_waybill_pdf_invoice_line_description')
+                  ? kit_waybill_pdf_invoice_line_description($bulk_wb_desc, $bulk_transport_fallback)
+                  : ($bulk_wb_desc !== '' ? $bulk_wb_desc : $bulk_transport_fallback);
               ?>
               <span style="display:inline-block;background:<?= $lightBadge ?>; color:<?= $pTextColor ?>; font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600;"><?= esc_html($bulk_transport_label) ?></span>
             </td>
